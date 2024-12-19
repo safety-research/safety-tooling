@@ -1,0 +1,10 @@
+Batch mode (50000 prompts, repeats 10, batch size 1000):
+* Mean throughput: 41.26 prompts/second
+* Std throughput: 18.15 prompts/second
+* Completed overnight
+
+Concurrent mode (50k prompts, repeats 10, threads 20)
+* Mean throughput: 6.61 prompts/second
+* Std throughput: 0.67 prompts/second
+* Only on repeat 4/10 by the morning, sometimes the logs say the model was overloaded
+* If never overloads, max throughput would be ~30 with 100 threads which is still less than batch mode
