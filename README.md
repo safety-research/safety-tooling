@@ -17,8 +17,8 @@ Or just run:
 ```
 2. Next, you need to run the following from the root of the repository:
     ```bash
-    micromamba env create -n rtooling python=3.11.7
-    micromamba activate rtooling
+    micromamba env create -n safetytooling python=3.11.7
+    micromamba activate safetytooling
     pip install -r requirements.txt
     ```
 
@@ -74,7 +74,7 @@ To check for outdated dependencies, run `pip list --outdated`.
 
 To launch a finetuning job, run the following command:
 ```bash
-python -m rtooling.apis.finetuning.run --model 'gpt-3.5-turbo-1106' --train_file <path-to-train-file> --n_epochs 1
+python -m safetytooling.apis.finetuning.run --model 'gpt-3.5-turbo-1106' --train_file <path-to-train-file> --n_epochs 1
 ```
 This should automatically create a new job on the OpenAI API, and also sync that run to wandb. You will have to keep the program running until the OpenAI job is complete.
 
@@ -83,13 +83,13 @@ You can include the `--dry_run` flag if you just want to validate the train/val 
 ### API Usage
 To get OpenAI usage stats, run:
 ```bash
-python -m rtooling.apis.inference.usage.usage_openai
+python -m safetytooling.apis.inference.usage.usage_openai
 ```
 You can pass a list of models to get usage stats for specific models. For example:
 ```bash
-python -m rtooling.apis.inference.usage.usage_openai --models 'model-id1' 'model-id2' --openai_tags 'OPENAI_API_KEY1' 'OPENAI_API_KEY2'
+python -m safetytooling.apis.inference.usage.usage_openai --models 'model-id1' 'model-id2' --openai_tags 'OPENAI_API_KEY1' 'OPENAI_API_KEY2'
 ```
 And for Anthropic, to fine out the numbder of threads being used run:
 ```bash
-python -m rtooling.apis.inference.usage.usage_anthropic
+python -m safetytooling.apis.inference.usage.usage_anthropic
 ```
