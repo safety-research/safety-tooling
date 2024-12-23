@@ -21,7 +21,7 @@ class OpenAICompletionModel(OpenAIModel):
 
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
-        url = "https://api.openai.com/v1/completions"
+        url = "https://api.openai.com/v1/completions" if self.base_url is None else self.base_url + "/v1/completions"
         api_key = os.environ["OPENAI_API_KEY"]
         headers = {
             "Content-Type": "application/json",

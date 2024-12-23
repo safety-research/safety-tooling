@@ -51,6 +51,8 @@ def setup_environment(
     secrets = load_secrets("SECRETS")
     os.environ["OPENAI_API_KEY"] = secrets[openai_tag]
     os.environ["ANTHROPIC_API_KEY"] = secrets[anthropic_tag]
+    if "SCALE_BASE_URL" in secrets:
+        os.environ["SCALE_BASE_URL"] = secrets["SCALE_BASE_URL"]
     if "RUNPOD_API_KEY" in secrets:
         os.environ["RUNPOD_API_KEY"] = secrets["RUNPOD_API_KEY"]
     if "HF_API_KEY" in secrets:

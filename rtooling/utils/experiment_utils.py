@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import os
 import random
 from pathlib import Path
 
@@ -29,6 +30,7 @@ class ExperimentConfigBase:
     log_to_file: bool = True
     openai_fraction_rate_limit: float = 0.5
     openai_num_threads: int = 50
+    openai_base_url: str | None = None
     gemini_num_threads: int = 100
     openai_s2s_num_threads: int = 40
     gpt4o_s2s_rpm_cap: int = 10
@@ -68,8 +70,14 @@ class ExperimentConfigBase:
             if self.prompt_history_dir is not None:
                 self.prompt_history_dir.mkdir(parents=True, exist_ok=True)
 
+            # If using SCALE, set the base_url to the litellm proxy
+            if "SCALE" in self.openai_tag and self.openai_base_url is None:
+                print(f"Setting openai_base_url to {os.environ['SCALE_BASE_URL']}")
+                self.openai_base_url = os.environ["SCALE_BASE_URL"]
+
             self._api = InferenceAPI(
                 openai_fraction_rate_limit=self.openai_fraction_rate_limit,
+                openai_base_url=self.openai_base_url,
                 openai_num_threads=self.openai_num_threads,
                 gemini_num_threads=self.gemini_num_threads,
                 openai_s2s_num_threads=self.openai_s2s_num_threads,

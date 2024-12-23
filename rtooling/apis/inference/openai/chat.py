@@ -26,12 +26,13 @@ class OpenAIChatModel(OpenAIModel):
 
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
-        url = "https://api.openai.com/v1/chat/completions"
+        url = (
+            "https://api.openai.com/v1/chat/completions"
+            if self.base_url is None
+            else self.base_url + "/v1/chat/completions"
+        )
         api_key = os.environ["OPENAI_API_KEY"]
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         data = {
             "model": model_id,
             "messages": [{"role": "user", "content": "Say 1"}],

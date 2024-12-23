@@ -63,6 +63,7 @@ class InferenceAPI:
         openai_fraction_rate_limit: float = 0.8,
         openai_num_threads: int = 100,
         openai_s2s_num_threads: int = 40,
+        openai_base_url: str | None = None,
         gpt4o_s2s_rpm_cap: int = 10,
         gemini_num_threads: int = 120,
         gemini_recitation_rate_check_volume: int = 100,
@@ -83,6 +84,7 @@ class InferenceAPI:
 
         self.anthropic_num_threads = anthropic_num_threads
         self.openai_fraction_rate_limit = openai_fraction_rate_limit
+        self.openai_base_url = openai_base_url
         # limit openai api calls to stop async jamming
         self.openai_semaphore = asyncio.Semaphore(openai_num_threads)
         self.gemini_semaphore = asyncio.Semaphore(gemini_num_threads)
@@ -124,11 +126,13 @@ class InferenceAPI:
         self._openai_completion = OpenAICompletionModel(
             frac_rate_limit=self.openai_fraction_rate_limit,
             prompt_history_dir=self.prompt_history_dir,
+            base_url=self.openai_base_url,
         )
 
         self._openai_chat = OpenAIChatModel(
             frac_rate_limit=self.openai_fraction_rate_limit,
             prompt_history_dir=self.prompt_history_dir,
+            base_url=self.openai_base_url,
         )
 
         self._openai_moderation = OpenAIModerationModel()

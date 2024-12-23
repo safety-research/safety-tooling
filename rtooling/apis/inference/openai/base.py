@@ -60,12 +60,13 @@ class OpenAIModel(InferenceAPIModel):
         self,
         frac_rate_limit: float,
         prompt_history_dir: Path = None,
+        base_url: str | None = None,
     ):
         self.frac_rate_limit = frac_rate_limit
         self.prompt_history_dir = prompt_history_dir
         self.model_ids = set()
-
-        self.aclient = openai.AsyncClient()
+        self.base_url = base_url
+        self.aclient = openai.AsyncClient(base_url=self.base_url)
         self.token_capacity = dict()
         self.request_capacity = dict()
         self.lock_add = asyncio.Lock()
