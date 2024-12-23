@@ -8,6 +8,7 @@ openai==1.58.1
 # Anthropic
 anthropic==0.42.0
 grayswan-api==0.1.0a49
+litellm==1.55.4
 
 # HuggingFace
 datasets==3.2.0
