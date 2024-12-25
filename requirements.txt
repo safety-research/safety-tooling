@@ -53,6 +53,7 @@ Python-IO
 soundfile==0.12.1
 SpeechRecognition==3.12.0
 gradio==5.9.1
+librosa==0.10.2.post1
 
 # Images
 opencv-python==4.10.0.84
