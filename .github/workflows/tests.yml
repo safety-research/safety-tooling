@@ -19,11 +19,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libsndfile1 ffmpeg
+      - name: Cache Python Dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       - name: Install Python Dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
+        timeout-minutes: 15
       - name: Run Tests
         run: |
           pytest --maxfail=1 --disable-warnings -v
