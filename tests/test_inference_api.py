@@ -9,6 +9,7 @@ def mock_secrets(tmp_path):
     """Mock the load_secrets function and get_repo_root to return test values."""
     mock_values = {
         "CACHE_DIR": "/tmp/test_cache",
+        "PROMPT_HISTORY_DIR": "/tmp/test_prompt_history",
         "OPENAI_API_KEY": "test-key",
         "ANTHROPIC_API_KEY": "test-key",
         "HF_API_KEY": "test-key",
