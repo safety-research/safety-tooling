@@ -17,7 +17,8 @@ def mock_secrets(tmp_path):
     }
     with patch('safetytooling.utils.utils.load_secrets') as mock_secrets, \
          patch('safetytooling.utils.utils.get_repo_root') as mock_repo_root:
-        mock_secrets.return_value = mock_values
+        # Make mock_secrets return mock_values regardless of input argument
+        mock_secrets.side_effect = lambda _: mock_values
         mock_repo_root.return_value = tmp_path
         yield mock_secrets
 
