@@ -15,6 +15,7 @@ def mock_secrets():
         "HF_API_KEY": "test-key",
         "GRAYSWAN_API_KEY": "test-key"
     }) as mock:
+        mock.return_value = mock.return_value  # Ensure the mock works with or without arguments
         yield mock
 
 @pytest.mark.asyncio
