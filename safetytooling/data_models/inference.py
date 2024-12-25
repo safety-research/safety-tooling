@@ -1,3 +1,5 @@
+"""Data models for language model inference requests, responses, and parameters."""
+
 from enum import Enum
 from pathlib import Path
 from typing import Literal, Union

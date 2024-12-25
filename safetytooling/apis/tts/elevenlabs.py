@@ -1,3 +1,5 @@
+"""Text-to-speech audio generation and management using the ElevenLabs API."""
+
 import asyncio
 import logging
 import os

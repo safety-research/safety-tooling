@@ -1,3 +1,5 @@
+"""OpenAI chat completion model implementation and utilities."""
+
 import collections
 import logging
 import os

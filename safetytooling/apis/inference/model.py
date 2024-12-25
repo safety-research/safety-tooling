@@ -1,3 +1,5 @@
+"""Base model interface and protocol definitions for language model inference."""
+
 import json
 import logging
 from datetime import datetime

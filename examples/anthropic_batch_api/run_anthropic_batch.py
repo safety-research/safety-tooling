@@ -1,3 +1,5 @@
+"""Example script demonstrating batch processing with the Anthropic API."""
+
 import asyncio
 import dataclasses
 import json

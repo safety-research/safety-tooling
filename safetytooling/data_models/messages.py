@@ -1,3 +1,5 @@
+"""Message data models and utilities for chat-based language model interactions."""
+
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Sequence, Tuple, Union

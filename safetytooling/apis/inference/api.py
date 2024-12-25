@@ -1,3 +1,5 @@
+"""Core API for managing language model inference requests and responses."""
+
 from __future__ import annotations
 
 import asyncio

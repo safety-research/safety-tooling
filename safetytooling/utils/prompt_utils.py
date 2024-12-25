@@ -1,3 +1,5 @@
+"""Utilities for managing and rendering Jinja2-based prompt templates."""
+
 import re
 
 import jinja2
