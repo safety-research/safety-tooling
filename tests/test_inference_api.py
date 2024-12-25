@@ -7,15 +7,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 @pytest.fixture(autouse=True)
 def mock_secrets():
     """Mock the load_secrets function to return a dict with default test values."""
-    with patch('safetytooling.utils.utils.load_secrets', return_value={
+    mock_values = {
         "PROMPT_HISTORY_DIR": "/tmp/test_prompt_history",
         "CACHE_DIR": "/tmp/test_cache",
         "OPENAI_API_KEY": "test-key",
         "ANTHROPIC_API_KEY": "test-key",
         "HF_API_KEY": "test-key",
         "GRAYSWAN_API_KEY": "test-key"
-    }) as mock:
-        mock.return_value = mock.return_value  # Ensure the mock works with or without arguments
+    }
+    with patch('safetytooling.utils.utils.load_secrets') as mock:
+        mock.return_value = mock_values
         yield mock
 
 @pytest.mark.asyncio
