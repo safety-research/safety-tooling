@@ -4,6 +4,12 @@ from safetytooling.data_models.messages import Prompt, BatchPrompt, MessageRole
 from safetytooling.data_models.inference import LLMResponse, LLMParams
 from unittest.mock import AsyncMock, MagicMock, patch
 
+@pytest.fixture(autouse=True)
+def mock_secrets():
+    """Mock the load_secrets function to return an empty dict."""
+    with patch('safetytooling.apis.inference.api.load_secrets', return_value={}) as mock:
+        yield mock
+
 @pytest.mark.asyncio
 async def test_gpt4o_mini_short_call():
     """
