@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 def mock_secrets():
     """Mock the load_secrets function to return a dict with default test values."""
     mock_values = {
-        "PROMPT_HISTORY_DIR": "/tmp/test_prompt_history",
         "CACHE_DIR": "/tmp/test_cache",
         "OPENAI_API_KEY": "test-key",
         "ANTHROPIC_API_KEY": "test-key",
