@@ -18,6 +18,7 @@ Or just run:
 2. Next, you need to run the following from the root of the repository:
     ```bash
     micromamba env create -n safetytooling python=3.11.7
+    eval "$(micromamba shell hook --shell bash)"
     micromamba activate safetytooling
     pip install -r requirements.txt
     ```

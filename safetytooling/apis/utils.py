@@ -1,7 +1,12 @@
+"""
+Utility functions for handling probability and logit calculations in language model responses.
+This module provides functions to compute binary response logits and combined log probabilities
+from model outputs, primarily used for comparing token probabilities in model responses.
+"""
+
 from typing import Iterable
 
 import safetytooling.utils.math_utils
-
 from safetytooling.data_models.inference import LLMResponse
 
 
