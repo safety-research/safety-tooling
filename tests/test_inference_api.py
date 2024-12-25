@@ -5,8 +5,8 @@ from safetytooling.data_models.inference import LLMResponse, LLMParams
 from unittest.mock import AsyncMock, MagicMock, patch
 
 @pytest.fixture(autouse=True)
-def mock_secrets():
-    """Mock the load_secrets function to return a dict with default test values."""
+def mock_secrets(tmp_path):
+    """Mock the load_secrets function and get_repo_root to return test values."""
     mock_values = {
         "CACHE_DIR": "/tmp/test_cache",
         "OPENAI_API_KEY": "test-key",
@@ -14,9 +14,11 @@ def mock_secrets():
         "HF_API_KEY": "test-key",
         "GRAYSWAN_API_KEY": "test-key"
     }
-    with patch('safetytooling.utils.utils.load_secrets') as mock:
-        mock.return_value = mock_values
-        yield mock
+    with patch('safetytooling.utils.utils.load_secrets') as mock_secrets, \
+         patch('safetytooling.utils.utils.get_repo_root') as mock_repo_root:
+        mock_secrets.return_value = mock_values
+        mock_repo_root.return_value = tmp_path
+        yield mock_secrets
 
 @pytest.mark.asyncio
 async def test_gpt4o_mini_short_call():
