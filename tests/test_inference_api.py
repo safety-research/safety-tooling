@@ -7,9 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 @pytest.fixture(autouse=True)
 def mock_secrets(tmp_path):
     """Mock the load_secrets function and get_repo_root to return test values."""
+    # Create a temporary directory for prompt history
+    prompt_history_dir = tmp_path / "prompt_history"
+    prompt_history_dir.mkdir(exist_ok=True)
+    
     mock_values = {
-        "CACHE_DIR": "/tmp/test_cache",
-        "PROMPT_HISTORY_DIR": "/tmp/test_prompt_history",
+        "CACHE_DIR": str(tmp_path / "cache"),
+        "PROMPT_HISTORY_DIR": str(prompt_history_dir),
         "OPENAI_API_KEY": "test-key",
         "ANTHROPIC_API_KEY": "test-key",
         "HF_API_KEY": "test-key",
