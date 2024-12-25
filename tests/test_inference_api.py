@@ -7,9 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 @pytest.fixture(autouse=True)
 def mock_secrets():
     """Mock the load_secrets function to return a dict with default test values."""
-    with patch('safetytooling.apis.inference.api.load_secrets', return_value={
+    with patch('safetytooling.utils.utils.load_secrets', return_value={
         "PROMPT_HISTORY_DIR": "/tmp/test_prompt_history",
-        "CACHE_DIR": "/tmp/test_cache"
+        "CACHE_DIR": "/tmp/test_cache",
+        "OPENAI_API_KEY": "test-key",
+        "ANTHROPIC_API_KEY": "test-key",
+        "HF_API_KEY": "test-key",
+        "GRAYSWAN_API_KEY": "test-key"
     }) as mock:
         yield mock
 
