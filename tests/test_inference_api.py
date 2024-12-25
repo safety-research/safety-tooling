@@ -6,8 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 @pytest.fixture(autouse=True)
 def mock_secrets():
-    """Mock the load_secrets function to return an empty dict."""
-    with patch('safetytooling.apis.inference.api.load_secrets', return_value={}) as mock:
+    """Mock the load_secrets function to return a dict with default test values."""
+    with patch('safetytooling.apis.inference.api.load_secrets', return_value={
+        "PROMPT_HISTORY_DIR": "/tmp/test_prompt_history",
+        "CACHE_DIR": "/tmp/test_cache"
+    }) as mock:
         yield mock
 
 @pytest.mark.asyncio
