@@ -5,26 +5,32 @@ from safetytooling.data_models.inference import LLMResponse, LLMParams
 from unittest.mock import AsyncMock, MagicMock, patch
 
 @pytest.fixture(autouse=True)
-def mock_secrets(tmp_path):
-    """Mock the load_secrets function and get_repo_root to return test values."""
-    # Create a temporary directory for prompt history
+def mock_secrets(tmp_path, monkeypatch):
+    """Mock the load_secrets function to return test values."""
+    # Create required directories
     prompt_history_dir = tmp_path / "prompt_history"
     prompt_history_dir.mkdir(exist_ok=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(exist_ok=True)
     
     mock_values = {
-        "CACHE_DIR": str(tmp_path / "cache"),
+        "CACHE_DIR": str(cache_dir),
         "PROMPT_HISTORY_DIR": str(prompt_history_dir),
         "OPENAI_API_KEY": "test-key",
         "ANTHROPIC_API_KEY": "test-key",
         "HF_API_KEY": "test-key",
         "GRAYSWAN_API_KEY": "test-key"
     }
-    with patch('safetytooling.utils.utils.load_secrets') as mock_secrets, \
-         patch('safetytooling.utils.utils.get_repo_root') as mock_repo_root:
-        # Make mock_secrets return mock_values regardless of input argument
-        mock_secrets.side_effect = lambda _: mock_values
-        mock_repo_root.return_value = tmp_path
-        yield mock_secrets
+
+    def mock_load_secrets(_):
+        return mock_values
+
+    # Mock both possible import paths
+    monkeypatch.setattr("safetytooling.utils.utils.load_secrets", mock_load_secrets)
+    monkeypatch.setattr("safetytooling.apis.inference.api.load_secrets", mock_load_secrets)
+    monkeypatch.setattr("safetytooling.utils.utils.get_repo_root", lambda: tmp_path)
+    
+    yield mock_values
 
 @pytest.mark.asyncio
 async def test_gpt4o_mini_short_call():
