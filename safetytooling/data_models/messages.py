@@ -236,8 +236,10 @@ class Prompt(HashableBaseModel):
             )
         if self.is_none_in_messages():
             raise ValueError(f"OpenAI chat prompts cannot have a None role. Got {self.messages}")
+        
         if self.contains_image():
-            return self.openai_image_format()
+            # TODO(task): return the format for the openai image messages
+            raise NotImplementedError("Not implemented")
         return [msg.openai_format() for msg in self.messages]
 
     def gemini_format(self, use_vertexai: bool = False) -> List[str]:
