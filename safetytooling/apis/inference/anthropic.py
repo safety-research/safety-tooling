@@ -216,14 +216,12 @@ class AnthropicModelBatch:
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompts: list[Prompt],
         log_dir: Path | None = None,
         **kwargs,
     ) -> tuple[list[LLMResponse], str]:
         start = time.time()
-
-        (model_id,) = model_ids
 
         requests = self.prompts_to_requests(model_id, prompts, **kwargs)
         batch_response = self.create_message_batch(requests=requests)

@@ -111,6 +111,9 @@ def load_json(file_path: str | Path):
 
 
 def save_json(file_path: str | Path, data):
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
+    assert file_path.suffix == ".json", "file_path must end with .json"
     write_via_temp(
         file_path,
         lambda f: json.dump(data, f),
@@ -205,6 +208,7 @@ def save_jsonl(file_path: Path | str, data: list, mode="w"):
     data = convert_paths_to_strings(data)
     if isinstance(file_path, str):
         file_path = Path(file_path)
+    assert file_path.suffix == ".jsonl", "file_path must end with .jsonl"
 
     file_path.parent.mkdir(parents=True, exist_ok=True)
     with jsonlines.open(file_path, mode=mode) as f:
