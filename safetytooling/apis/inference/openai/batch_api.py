@@ -1,10 +1,8 @@
-import openai
-import json
-import time
-from pathlib import Path
 import asyncio
+import json
 import logging
 import time
+from pathlib import Path
 
 import openai
 import openai.types
@@ -14,6 +12,7 @@ from safetytooling.data_models import LLMResponse, Prompt
 from safetytooling.utils import utils
 
 LOGGER = logging.getLogger(__name__)
+
 
 class OpenAIModelBatch:
     def __init__(self):
@@ -25,7 +24,7 @@ class OpenAIModelBatch:
             input_file_id=input_file_id,
             endpoint="/v1/chat/completions",
             completion_window="24h",
-            metadata={"description": "batch processing"}
+            metadata={"description": "batch processing"},
         )
 
     def retrieve_message_batch(self, batch_id: str) -> dict:
@@ -62,16 +61,18 @@ class OpenAIModelBatch:
         for i, prompt in enumerate(prompts):
             chat_messages = prompt.openai_format()
             hash_str = prompt.model_hash()
-            requests.append({
-                "custom_id": f"{i}_{hash_str}",
-                "method": "POST",
-                "url": "/v1/chat/completions",
-                "body": {
-                    "model": model_id,
-                    "messages": chat_messages,
-                    **kwargs,
+            requests.append(
+                {
+                    "custom_id": f"{i}_{hash_str}",
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": {
+                        "model": model_id,
+                        "messages": chat_messages,
+                        **kwargs,
+                    },
                 }
-            })
+            )
         input_file_path = log_dir / "batch_input.jsonl"
         utils.save_jsonl(input_file_path, requests)
         return input_file_path
@@ -100,14 +101,14 @@ class OpenAIModelBatch:
 
         responses = []
         for result in results:
-            if result['response']['status_code'] == 200:
-                body = result['response']['body']
-                choice = body['choices'][0]
+            if result["response"]["status_code"] == 200:
+                body = result["response"]["body"]
+                choice = body["choices"][0]
                 responses.append(
                     LLMResponse(
                         model_id=model_id,
-                        completion=choice['message']['content'],
-                        stop_reason=choice['finish_reason'],
+                        completion=choice["message"]["content"],
+                        stop_reason=choice["finish_reason"],
                         duration=None,  # Batch does not track individual durations
                         api_duration=None,
                         cost=0,
