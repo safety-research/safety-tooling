@@ -49,8 +49,14 @@ def setup_environment(
 ):
     setup_logging(logging_level)
     secrets = load_secrets("SECRETS")
-    os.environ["OPENAI_API_KEY"] = secrets[openai_tag]
-    os.environ["ANTHROPIC_API_KEY"] = secrets[anthropic_tag]
+    if openai_tag in secrets:
+        os.environ["OPENAI_API_KEY"] = secrets[openai_tag]
+    if anthropic_tag in secrets:
+        os.environ["ANTHROPIC_API_KEY"] = secrets[anthropic_tag]
+    # assert that we have an openai api key
+    assert "OPENAI_API_KEY" in os.environ, "OPENAI_API_KEY not found in environment"
+    assert "ANTHROPIC_API_KEY" in os.environ, "ANTHROPIC_API_KEY not found in environment"
+
     if "SCALE_BASE_URL" in secrets:
         os.environ["SCALE_BASE_URL"] = secrets["SCALE_BASE_URL"]
     if "RUNPOD_API_KEY" in secrets:
