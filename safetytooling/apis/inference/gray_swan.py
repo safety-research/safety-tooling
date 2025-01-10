@@ -21,10 +21,12 @@ class GraySwanChatModel(InferenceAPIModel):
         prompt_history_dir: Path | None = None,
         api_key: str | None = None,
     ):
-        assert api_key is not None, "GRAYSWAN_API_KEY environment variable must be set"
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
-        self.aclient = AsyncGraySwan(api_key=api_key)
+        if api_key is not None:
+            self.aclient = AsyncGraySwan(api_key=api_key)
+        else:
+            self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
         self.allowed_kwargs = {"temperature", "max_tokens"}
 
@@ -37,6 +39,10 @@ class GraySwanChatModel(InferenceAPIModel):
         is_valid=lambda x: True,
         **kwargs,
     ) -> list[LLMResponse]:
+        if self.aclient is None:
+            raise RuntimeError(
+                "GRAYSWAN_API_KEY environment variable must be set in SECRETS before running your script"
+            )
         start = time.time()
         assert len(model_ids) == 1, "Cygnet implementation only supports one model at a time."
         (model_id,) = model_ids

@@ -102,18 +102,18 @@ class InferenceAPI:
 
         secrets = load_secrets("SECRETS")
         if prompt_history_dir == "default":
-            try:
+            if "PROMPT_HISTORY_DIR" in secrets:
                 self.prompt_history_dir = Path(secrets["PROMPT_HISTORY_DIR"])
-            except KeyError:
+            else:
                 self.prompt_history_dir = get_repo_root() / ".prompt_history"
         else:
             assert isinstance(prompt_history_dir, Path) or prompt_history_dir is None
             self.prompt_history_dir = prompt_history_dir
 
         if cache_dir == "default":
-            try:
+            if "CACHE_DIR" in secrets:
                 self.cache_dir = Path(secrets["CACHE_DIR"])
-            except KeyError:
+            else:
                 self.cache_dir = get_repo_root() / ".cache"
         else:
             assert isinstance(cache_dir, Path) or cache_dir is None

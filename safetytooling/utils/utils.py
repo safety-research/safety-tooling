@@ -105,7 +105,6 @@ def load_secrets(local_file_path):
         secrets = {
             "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY"),
             "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
-            "PROMPT_HISTORY_DIR": os.environ.get("PROMPT_HISTORY_DIR"),
         }
     return secrets
 

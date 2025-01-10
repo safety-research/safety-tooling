@@ -57,7 +57,11 @@ class GeminiVertexAIModel(InferenceAPIModel):
             "some": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             "most": HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
         }
-        vertexai.init(project=os.environ["GOOGLE_PROJECT_ID"], location=os.environ["GOOGLE_PROJECT_REGION"])
+
+        self.is_initialized = False
+        if "GOOGLE_PROJECT_ID" in os.environ and "GOOGLE_PROJECT_REGION" in os.environ:
+            vertexai.init(project=os.environ["GOOGLE_PROJECT_ID"], location=os.environ["GOOGLE_PROJECT_REGION"])
+            self.is_initialized = True
 
     @staticmethod
     def _print_prompt_and_response(prompt, responses):
@@ -113,6 +117,10 @@ class GeminiVertexAIModel(InferenceAPIModel):
         is_valid: Callable[[str], bool] = lambda x: x.stop_reason != GeminiStopReason.RECITATION,
         **kwargs,
     ) -> list[LLMResponse]:
+        if not self.is_initialized:
+            raise RuntimeError(
+                "VertexAI is not initialized. Please set GOOGLE_PROJECT_ID and GOOGLE_PROJECT_REGION in SECRETS before running your script"
+            )
         start = time.time()
 
         api_start = time.time()

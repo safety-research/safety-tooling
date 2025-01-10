@@ -31,7 +31,7 @@ class GeminiModel(InferenceAPIModel):
         prompt_history_dir: Path = None,
         recitation_rate_check_volume: int = 100,  # Number of prompts we need to have processed before checking recitation rate
         recitation_rate_threshold: float = 0.5,  # Recitation rate threshold above which we end the current run and wait due to high recitation rates
-        api_key: str = "GOOGLE_API_KEY",
+        api_key_tag: str = "GOOGLE_API_KEY",
         empty_completion_threshold: float = 0,
     ):
         self.prompt_history_dir = prompt_history_dir
@@ -63,7 +63,10 @@ class GeminiModel(InferenceAPIModel):
             "some": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             "most": HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
         }
-        genai.configure(api_key=os.environ[api_key])
+        self.is_initialized = False
+        if api_key_tag in os.environ:
+            genai.configure(api_key=os.environ[api_key_tag])
+            self.is_initialized = True
 
     @staticmethod
     def _print_prompt_and_response(prompt, responses):
@@ -99,6 +102,10 @@ class GeminiModel(InferenceAPIModel):
         safety_settings: dict[str, HarmBlockThreshold],
         generation_config: GenerationConfig = None,
     ) -> Tuple[str, List[genai.types.file_types.File]]:
+        if not self.is_initialized:
+            raise RuntimeError(
+                "Gemini is not initialized. Please set GOOGLE_API_KEY in SECRETS before running your script"
+            )
         if generation_config:
             model = genai.GenerativeModel(
                 model_name=model_id, generation_config=generation_config, safety_settings=safety_settings
