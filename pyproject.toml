@@ -13,6 +13,12 @@ dynamic = ["version"]
 [tool.setuptools]
 packages = ["safetytooling"]
 
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore:'audioop' is deprecated and slated for removal in Python 3.13:DeprecationWarning:pydub.utils"
+]
+
 [tool.ruff]
 target-version = "py311"
 extend-include = ["*.ipynb"]

@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 import websockets
 from pydub import AudioSegment
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import WebSocketException
 
 from safetytooling.data_models import LLMResponse, Prompt
@@ -89,14 +90,14 @@ class OpenAIS2SModel(InferenceAPIModel):
             f"{self.base_url}?model={self.model}", extra_headers=headers, max_size=self.max_size
         )
 
-    async def send_message(self, websocket: websockets.WebSocketClientProtocol, message: Dict[str, Any]) -> None:
+    async def send_message(self, websocket: ClientConnection, message: Dict[str, Any]) -> None:
         await websocket.send(json.dumps(message))
 
-    async def receive_message(self, websocket: websockets.WebSocketClientProtocol) -> Dict[str, Any]:
+    async def receive_message(self, websocket: ClientConnection) -> Dict[str, Any]:
         response = await websocket.recv()
         return json.loads(response)
 
-    async def send_text_input(self, websocket: websockets.WebSocketClientProtocol, text_input_data: List[str]) -> None:
+    async def send_text_input(self, websocket: ClientConnection, text_input_data: List[str]) -> None:
         for text_input in text_input_data:
             text_event = {
                 "type": "conversation.item.create",
@@ -104,9 +105,7 @@ class OpenAIS2SModel(InferenceAPIModel):
             }
             await self.send_message(websocket, text_event)
 
-    async def send_audio_input(
-        self, websocket: websockets.WebSocketClientProtocol, audio_input_data: List[str]
-    ) -> None:
+    async def send_audio_input(self, websocket: ClientConnection, audio_input_data: List[str]) -> None:
         for audio_chunk in audio_input_data:
             audio_event = {"type": "input_audio_buffer.append", "audio": audio_chunk}
             await self.send_message(websocket, audio_event)
