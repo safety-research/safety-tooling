@@ -25,3 +25,5 @@ SECRETS
 # IDE
 .idea/
 .vscode/
+.env
+__pycache__/

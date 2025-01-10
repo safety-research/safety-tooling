@@ -1,7 +1,6 @@
 from typing import Iterable
 
 import safetytooling.utils.math_utils
-
 from safetytooling.data_models.inference import LLMResponse
 
 

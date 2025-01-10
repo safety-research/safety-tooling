@@ -1,0 +1,76 @@
+name: Lint and Test
+
+on: [push]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+            python-version: '3.11'
+
+      # Get full OS version
+      # Code adapted from https://copdips.com/2023/09/github-actions-cache.html.
+      - name: Get OS version
+        run: |
+          OUR_OS_VERSION=$(cat /etc/os-release | grep -i "version=" | cut -c9- | tr -d '"' | tr ' ' '-')
+          echo "OUR_OS_VERSION=$OUR_OS_VERSION" >> $GITHUB_ENV
+
+      - uses: actions/cache@v4
+        id: cache-linting
+        with:
+          path: ${{ env.pythonLocation }}
+          key: python-linting-cache-${{ runner.os }}-${{ env.OUR_OS_VERSION }}-${{ env.pythonLocation }}
+
+      # Update the ruff and black versions if you change the version in requirements.txt
+      - name: Install ruff and black
+        if: steps.cache-linting.outputs.cache-hit != 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff==0.9.0 black==24.10.0
+
+      - name: Run ruff check
+        run: ruff check .
+
+      - name: Run black format check
+        run: black --check .
+
+  run_tests:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+            python-version: '3.11'
+
+      # Get full OS version
+      # Code adapted from https://copdips.com/2023/09/github-actions-cache.html.
+      - name: Get OS version
+        run: |
+          OUR_OS_VERSION=$(cat /etc/os-release | grep -i "version=" | cut -c9- | tr -d '"' | tr ' ' '-')
+          echo "OUR_OS_VERSION=$OUR_OS_VERSION" >> $GITHUB_ENV
+
+      # Set up Python caching
+      - uses: actions/cache@v4
+        id: cache-python
+        with:
+          path: ${{ env.pythonLocation }}
+          key: python-full-cache-${{ runner.os }}-${{ env.OUR_OS_VERSION }}-${{ env.pythonLocation }}-${{ hashFiles('**/requirements.txt', 'pyproject.toml') }}
+
+      # Install dependencies
+      - name: Install requirements
+        if: steps.cache-python.outputs.cache-hit != 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Run pytest with xdist for parallel execution
+      - name: Run tests with pytest
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: pytest -n 6
