@@ -66,8 +66,8 @@ class CacheManager:
         empty_completion_threshold: float = 0.5,  # If we have multiple responses in a cache, threshold proportion of them that can be empty before we run retries
     ) -> Tuple[
         List[LLMResponse | List[LLMResponse] | None],
-        List[[LLMCache | None]],
-        [List[LLMResponse | List[LLMResponse] | None]],
+        List[LLMCache | None],
+        List[LLMResponse | List[LLMResponse] | None]
     ]:
         """
         Process cached responses for a given prompt or batch of prompts.
