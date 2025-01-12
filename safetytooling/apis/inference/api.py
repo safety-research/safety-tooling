@@ -73,6 +73,7 @@ class InferenceAPI:
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
         empty_completion_threshold: int = 0,
+        use_gpu_models: bool = False
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -167,8 +168,7 @@ class InferenceAPI:
         self._batch_audio_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
-        print(torch.cuda.is_available())
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and use_gpu_models:
             for model_name in BATCHED_MODELS:
                 try:
                     self._batch_audio_models[model_name] = BatchAudioModel(
