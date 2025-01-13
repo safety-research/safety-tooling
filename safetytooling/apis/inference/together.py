@@ -17,6 +17,10 @@ TOGETHER_MODELS = {
     "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
     "meta-llama/Llama-3.3-70B-Instruct-Turbo",
     "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
+    "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "deepseek-ai/DeepSeek-V3",
+    "deepseek-ai/deepseek-llm-67b-chat",
+    "Qwen/Qwen2.5-72B-Instruct-Turbo",
 }
 LOGGER = logging.getLogger(__name__)
 
