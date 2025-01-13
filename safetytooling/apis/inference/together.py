@@ -39,7 +39,7 @@ class TogetherChatModel(InferenceAPIModel):
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens"}
+        self.allowed_kwargs = {"temperature", "max_tokens", "logprobs"}
 
     async def __call__(
         self,
@@ -90,13 +90,20 @@ class TogetherChatModel(InferenceAPIModel):
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
-
+        
+        if response.choices[0].logprobs is not None:
+            logprobs = []
+            for (token, logprob) in zip(response.choices[0].logprobs.tokens, response.choices[0].logprobs.token_logprobs):
+                logprobs.append({token : logprob})
+        else:
+            logprobs = None
         assert len(response.choices) == 1, f"Expected 1 choice, got {len(response.choices)}"
         response = LLMResponse(
             model_id=model_id,
             completion=response.choices[0].message.content,
             stop_reason=response.choices[0].finish_reason.value,
             duration=duration,
+            logprobs=logprobs,
             api_duration=api_duration,
             cost=0,
         )
