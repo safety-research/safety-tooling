@@ -70,6 +70,7 @@ class InferenceAPI:
         gemini_recitation_rate_check_volume: int = 100,
         gemini_recitation_rate_threshold: float = 0.5,
         gray_swan_num_threads: int = 80,
+        together_num_threads: int = 80,
         huggingface_num_threads: int = 100,
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
@@ -94,6 +95,7 @@ class InferenceAPI:
         self.gemini_recitation_rate_check_volume = gemini_recitation_rate_check_volume
         self.gemini_recitation_rate_threshold = gemini_recitation_rate_threshold
         self.gray_swan_num_threads = gray_swan_num_threads
+        self.together_num_threads = together_num_threads
         self.huggingface_num_threads = huggingface_num_threads
         self.empty_completion_threshold = empty_completion_threshold
         self.gpt4o_s2s_rpm_cap = gpt4o_s2s_rpm_cap
@@ -160,7 +162,7 @@ class InferenceAPI:
         )
 
         self._together = TogetherChatModel(
-            num_threads=self.gray_swan_num_threads,
+            num_threads=self.together_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             api_key=secrets["TOGETHER_API_KEY"] if "TOGETHER_API_KEY" in secrets else None,
         )
