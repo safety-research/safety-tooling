@@ -35,6 +35,7 @@ from .cache_manager import CacheManager
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
+from .together import TOGETHER_MODELS, TogetherChatModel
 from .huggingface import HUGGINGFACE_MODELS, HuggingFaceModel
 from .model import InferenceAPIModel
 from .openai.chat import OpenAIChatModel
@@ -44,6 +45,7 @@ from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,6 +72,7 @@ class InferenceAPI:
         gemini_recitation_rate_threshold: float = 0.5,
         gray_swan_num_threads: int = 80,
         huggingface_num_threads: int = 100,
+        together_num_threads: int = 80,
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
         empty_completion_threshold: int = 0,
@@ -196,6 +199,16 @@ class InferenceAPI:
             print("GOOGLE_API_KEY not found in secrets, Gemini API will not be available.")
             self._gemini_genai = None
 
+        if "TOGETHER_API_KEY" in secrets:
+            self._together_chat = TogetherChatModel(
+                num_threads=together_num_threads,
+                prompt_history_dir=self.prompt_history_dir,
+                api_key=secrets["TOGETHER_API_KEY"],
+            )
+        else:
+            print("TOGETHER_API_KEY not found in secrets, Together API will not be available.")
+            self._together_chat = None
+
         self._batch_audio_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
@@ -260,6 +273,9 @@ class InferenceAPI:
             return class_for_model
         elif model_id in S2S_MODELS:
             return self._openai_s2s
+        elif model_id in TOGETHER_MODELS:
+            return self._together_chat
+
         raise ValueError(f"Invalid model id: {model_id}")
 
     async def check_rate_limit(self, wait_time=60):
