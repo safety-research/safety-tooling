@@ -54,16 +54,6 @@ If you use vscode, it's recommended to install the official Ruff extension.
 In addition, there is a pre-commit hook that runs the linter and formatter before you commit.
 To enable it, run `make hooks` but this is optional.
 
-### Testing
-Run tests as a python module using:
-```bash
-python -m pytest -n 6
-```
-You can run all tests (including some slow flaky ones) with:
-```bash
-RUN_SLOW_TESTS=1 python -m pytest -n 6
-```
-
 ### Updating dependencies
 We only pin top-level dependencies only to make cross-platform development easier.
 
