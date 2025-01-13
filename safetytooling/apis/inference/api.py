@@ -35,6 +35,7 @@ from .cache_manager import CacheManager
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
+from .together import TOGETHER_MODELS, TogetherChatModel
 from .huggingface import HUGGINGFACE_MODELS, HuggingFaceModel
 from .model import InferenceAPIModel
 from .openai.chat import OpenAIChatModel
@@ -157,7 +158,13 @@ class InferenceAPI:
             prompt_history_dir=self.prompt_history_dir,
             api_key=secrets["GRAYSWAN_API_KEY"] if "GRAYSWAN_API_KEY" in secrets else None,
         )
-
+        
+        self._together = TogetherChatModel(
+            num_threads=self.gray_swan_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+            api_key=secrets["TOGETHER_API_KEY"] if "TOGETHER_API_KEY" in secrets else None,
+        )
+        
         self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
         self._gemini_genai = GeminiModel(
             prompt_history_dir=self.prompt_history_dir,
@@ -228,6 +235,8 @@ class InferenceAPI:
             return class_for_model
         elif model_id in S2S_MODELS:
             return self._openai_s2s
+        elif model_id in TOGETHER_MODELS:
+            return self._together
         raise ValueError(f"Invalid model id: {model_id}")
 
     async def check_rate_limit(self, wait_time=60):
