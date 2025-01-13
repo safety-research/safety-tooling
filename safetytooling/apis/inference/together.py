@@ -5,22 +5,21 @@ from pathlib import Path
 from traceback import format_exc
 
 from together import AsyncTogether
+
 from safetytooling.data_models import LLMResponse, Prompt
 
 from .model import InferenceAPIModel
 
-
 TOGETHER_MODELS = {
-   "meta-llama/Meta-Llama-3-8B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3-8B-Instruct-Turbo",
     "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    
-   "meta-llama/Meta-Llama-3-70B-Instruct-Turbo",
-   "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-   "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-
-    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
-    }
+    "meta-llama/Meta-Llama-3-70B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
+}
 LOGGER = logging.getLogger(__name__)
+
 
 class TogetherChatModel(InferenceAPIModel):
     def __init__(
