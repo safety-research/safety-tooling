@@ -123,47 +123,79 @@ class InferenceAPI:
         if self.cache_dir is not None:
             self.cache_manager = CacheManager(self.cache_dir)
 
-        self._openai_completion = OpenAICompletionModel(
-            frac_rate_limit=self.openai_fraction_rate_limit,
-            prompt_history_dir=self.prompt_history_dir,
-            base_url=self.openai_base_url,
-        )
+        if "OPENAI_API_KEY" not in secrets:
+            self._openai_completion = OpenAICompletionModel(
+                frac_rate_limit=self.openai_fraction_rate_limit,
+                prompt_history_dir=self.prompt_history_dir,
+                base_url=self.openai_base_url,
+            )
 
-        self._openai_chat = OpenAIChatModel(
-            frac_rate_limit=self.openai_fraction_rate_limit,
-            prompt_history_dir=self.prompt_history_dir,
-            base_url=self.openai_base_url,
-        )
+            self._openai_chat = OpenAIChatModel(
+                frac_rate_limit=self.openai_fraction_rate_limit,
+                prompt_history_dir=self.prompt_history_dir,
+                base_url=self.openai_base_url,
+            )
 
-        self._openai_moderation = OpenAIModerationModel()
+            self._openai_moderation = OpenAIModerationModel()
 
-        self._openai_embedding = OpenAIEmbeddingModel()
-        self._openai_s2s = OpenAIS2SModel()
+            self._openai_embedding = OpenAIEmbeddingModel()
+            self._openai_s2s = OpenAIS2SModel()
+        else:
+            print("OPENAI_API_KEY not found in secrets, OpenAI API will not be available.")
+            self._openai_completion = None
+            self._openai_chat = None
+            self._openai_moderation = None
+            self._openai_embedding = None
+            self._openai_s2s = None
 
-        self._anthropic_chat = AnthropicChatModel(
-            num_threads=self.anthropic_num_threads,
-            prompt_history_dir=self.prompt_history_dir,
-        )
+        if "ANTHROPIC_API_KEY" in secrets:
+            self._anthropic_chat = AnthropicChatModel(
+                num_threads=self.anthropic_num_threads,
+                prompt_history_dir=self.prompt_history_dir,
+            )
+        else:
+            print("ANTHROPIC_API_KEY not found in secrets, Anthropic API will not be available.")
+            self._anthropic_chat = None
 
-        self._huggingface = HuggingFaceModel(
-            num_threads=self.huggingface_num_threads,
-            prompt_history_dir=self.prompt_history_dir,
-            token=secrets["HF_API_KEY"] if "HF_API_KEY" in secrets else None,
-        )
+        if "HF_API_KEY" in secrets:
+            self._huggingface = HuggingFaceModel(
+                num_threads=self.huggingface_num_threads,
+                prompt_history_dir=self.prompt_history_dir,
+                token=secrets["HF_API_KEY"],
+            )
+        else:
+            print("HF_API_KEY not found in secrets, Hugging Face API will not be available.")
+            self._huggingface = None
 
-        self._gray_swan = GraySwanChatModel(
-            num_threads=self.gray_swan_num_threads,
-            prompt_history_dir=self.prompt_history_dir,
-            api_key=secrets["GRAYSWAN_API_KEY"] if "GRAYSWAN_API_KEY" in secrets else None,
-        )
+        if "GRAYSWAN_API_KEY" in secrets:
+            self._gray_swan = GraySwanChatModel(
+                num_threads=self.gray_swan_num_threads,
+                prompt_history_dir=self.prompt_history_dir,
+                api_key=secrets["GRAYSWAN_API_KEY"] if "GRAYSWAN_API_KEY" in secrets else None,
+            )
+        else:
+            print("GRAYSWAN_API_KEY not found in secrets, Gray Swan API will not be available.")
+            self._gray_swan = None
 
-        self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
-        self._gemini_genai = GeminiModel(
-            prompt_history_dir=self.prompt_history_dir,
-            recitation_rate_check_volume=self.gemini_recitation_rate_check_volume,
-            recitation_rate_threshold=self.gemini_recitation_rate_threshold,
-            empty_completion_threshold=self.empty_completion_threshold,
-        )
+        if "GOOGLE_PROJECT_ID" in secrets and "GOOGLE_CREDENTIALS" in secrets:
+            self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
+        else:
+            print(
+                "GOOGLE_PROJECT_ID and GOOGLE_CREDENTIALS not found in secrets, Gemini Vertex AI API will not be available."
+            )
+            self._gemini_vertex = None
+
+        if "GOOGLE_API_KEY" in secrets:
+            self._gemini_genai = GeminiModel(
+                prompt_history_dir=self.prompt_history_dir,
+                recitation_rate_check_volume=self.gemini_recitation_rate_check_volume,
+                recitation_rate_threshold=self.gemini_recitation_rate_threshold,
+                empty_completion_threshold=self.empty_completion_threshold,
+            )
+        else:
+            print("GOOGLE_API_KEY not found in secrets, Gemini API will not be available.")
+            self._gemini_genai = None
+
         self._batch_audio_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
