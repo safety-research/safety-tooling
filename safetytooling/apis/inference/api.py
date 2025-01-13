@@ -35,7 +35,6 @@ from .cache_manager import CacheManager
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
-from .together import TOGETHER_MODELS, TogetherChatModel
 from .huggingface import HUGGINGFACE_MODELS, HuggingFaceModel
 from .model import InferenceAPIModel
 from .openai.chat import OpenAIChatModel
@@ -45,6 +44,7 @@ from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
+from .together import TOGETHER_MODELS, TogetherChatModel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class InferenceAPI:
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
         empty_completion_threshold: int = 0,
-        use_gpu_models: bool = False
+        use_gpu_models: bool = False,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -158,13 +158,13 @@ class InferenceAPI:
             prompt_history_dir=self.prompt_history_dir,
             api_key=secrets["GRAYSWAN_API_KEY"] if "GRAYSWAN_API_KEY" in secrets else None,
         )
-        
+
         self._together = TogetherChatModel(
             num_threads=self.gray_swan_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             api_key=secrets["TOGETHER_API_KEY"] if "TOGETHER_API_KEY" in secrets else None,
         )
-        
+
         self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
         self._gemini_genai = GeminiModel(
             prompt_history_dir=self.prompt_history_dir,
