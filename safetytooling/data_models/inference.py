@@ -57,7 +57,7 @@ class LLMResponse(pydantic.BaseModel):
     def parse_stop_reason(cls, v: str):
         if v in ["length", "max_tokens"]:
             return StopReason.MAX_TOKENS
-        elif v in ["stop", "stop_sequence", "end_turn"]:
+        elif v in ["stop", "stop_sequence", "end_turn", "eos"]:
             # end_turn is for Anthropic
             return StopReason.STOP_SEQUENCE
         elif v in ["content_filter"]:

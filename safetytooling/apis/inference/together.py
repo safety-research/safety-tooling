@@ -10,59 +10,16 @@ from safetytooling.data_models import LLMResponse, Prompt
 from .model import InferenceAPIModel
 
 TOGETHER_MODELS = {
-    # Meta/Llama Models
-    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.3-70B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3-70B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3-70B-Instruct-Lite",
-    "meta-llama/Llama-3-70b-chat-hf",
-    "meta-llama/Llama-2-13b-chat-hf",
-    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3-8B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3-8B-Instruct-Lite",
-    "meta-llama/Llama-3-8b-chat-hf",
-    "meta-llama/Llama-2-7b-chat-hf",
-    "meta-llama/Llama-3.2-3B-Instruct-Turbo",
-    # Mistral Models
-    "mistralai/Mixtral-8x22B-Instruct-v0.1",
     "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    "mistralai/Mistral-7B-Instruct-v0.2",
-    "mistralai/Mistral-7B-Instruct-v0.1",
-    # Qwen Models
-    "Qwen/Qwen2.5-72B-Instruct-Turbo",
-    "Qwen/Qwen2-72B-Instruct",
-    "Qwen/Qwen2-VL-72B-Instruct",
-    "Qwen/Qwen2.5-Coder-32B-Instruct",
-    "Qwen/QwQ-32B-Preview",
-    "Qwen/Qwen2.5-7B-Instruct-Turbo",
-    # Google Models
-    "google/gemma-2-27b-it",
-    "google/gemma-2-9b-it",
-    "google/gemma-2b-it",
-    # Vision Language Models
-    "llava-hf/llava-v1.6-mistral-7b-hf",
-    "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
-    "dev-vfs/Qwen2-VL-72B-Instruct",
-    # Misc Large Models
-    "microsoft/WizardLM-2-8x22B",
-    "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF",
+    "deepseek-ai/DeepSeek-V3",
     "deepseek-ai/deepseek-llm-67b-chat",
-    "databricks/dbrx-instruct",
-    # Other Models
-    "NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO",
-    "salesforce/OS-Atlas-Pro-7B",
-    "upstage/SOLAR-10.7B-Instruct-v1.0",
-    # Together's Optimized Versions
-    "togethercomputer/Llama-3-8b-chat-hf-int8",
-    "togethercomputer/Llama-3-8b-chat-hf-int4",
-    # SCB10X Models
-    "scb10x/scb10x-llama3-typhoon-v1-5-8b-instruct",
-    "scb10x/llama-3-typhoon-v1.5-8b-instruct",
+    "Qwen/Qwen2.5-72B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
+    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo-128K",
 }
 
 LOGGER = logging.getLogger(__name__)
-
 
 class TogetherChatModel(InferenceAPIModel):
     def __init__(

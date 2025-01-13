@@ -35,7 +35,6 @@ from .cache_manager import CacheManager
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
-from .together import TOGETHER_MODELS, TogetherChatModel
 from .huggingface import HUGGINGFACE_MODELS, HuggingFaceModel
 from .model import InferenceAPIModel
 from .openai.chat import OpenAIChatModel
@@ -45,7 +44,7 @@ from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
-
+from .together import TOGETHER_MODELS, TogetherChatModel
 
 LOGGER = logging.getLogger(__name__)
 
