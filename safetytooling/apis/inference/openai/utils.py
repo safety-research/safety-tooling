@@ -233,8 +233,12 @@ def finetune_price_per_token(model_id: str) -> float | None:
     match model_id:
         case "gpt-3.5-turbo-1106" | "gpt-3.5-turbo-0613" | "gpt-3.5-turbo":
             return 0.008
-        case "gpt-4-0613":
-            raise NotImplementedError  # TODO: Add price
+        case "gpt-4o-mini-2024-07-18":
+            return 0.003
+        case "gpt-4o-2024-08-06":
+            return 0.025
+        # case "gpt-4-0613":
+        #     # raise NotImplementedError  # TODO: Add price
         case "davinci-002":
             return 0.006
         case "babbage-002":
