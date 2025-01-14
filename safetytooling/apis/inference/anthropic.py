@@ -15,6 +15,7 @@ from safetytooling.data_models import LLMResponse, Prompt
 from .model import InferenceAPIModel
 
 ANTHROPIC_MODELS = {
+    "claude-3-5-sonnet-latest",
     "claude-3-5-sonnet-20241022",
     "claude-3-5-haiku-20241022",
     "claude-3-5-sonnet-20240620",

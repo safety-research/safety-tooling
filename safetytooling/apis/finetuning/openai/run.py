@@ -8,13 +8,10 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import openai
-import openai.types.fine_tuning
 import pandas as pd
 import simple_parsing
 import wandb
 import wandb.sdk.wandb_run
-from openai import APIConnectionError, RateLimitError
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -22,6 +19,10 @@ from tenacity import (
     wait_fixed,
 )
 
+import openai
+import openai.types.fine_tuning
+from openai import APIConnectionError, RateLimitError
+from safetytooling.data_models.finetune import FinetuneConfig
 from safetytooling.utils import utils
 
 from .check import openai_check_finetuning_data
@@ -60,7 +61,7 @@ async def upload_finetuning_file_to_openai(
 
 
 async def queue_finetune(
-    cfg: Config,
+    cfg: FinetuneConfig,
     train_file_id: str,
     val_file_id: str | None,
     client: openai.AsyncClient | None = None,
@@ -103,7 +104,7 @@ def upload_file_to_wandb(
     wandb_run.log_artifact(artifact)
 
 
-async def main(cfg: Config, extra_config: dict = None, verbose: bool = True):
+async def main(cfg: FinetuneConfig, extra_config: dict = None, verbose: bool = True):
     """
     WARNING: This function cannot be called concurrently, wandb does not support
     concurrent runs. See
@@ -217,6 +218,7 @@ async def main(cfg: Config, extra_config: dict = None, verbose: bool = True):
 
             case "failed" | "cancelled":
                 LOGGER.error(f"Fine-tuning job failed: {ft_job.status}")
+                LOGGER.error(ft_job.error)
                 raise RuntimeError
 
             case _:
@@ -252,26 +254,11 @@ async def main(cfg: Config, extra_config: dict = None, verbose: bool = True):
     return ft_job, train_cost_usd
 
 
-@dataclasses.dataclass
-class Config:
-    train_file: Path  # Training data
-    val_file: Path | None = None  # Validation data
-    model: str = "gpt-3.5-turbo-1106"  # The model to fine-tune
-    n_epochs: int = 3
-
-    dry_run: bool = False  # Just validate the data, don't launch the job
-    logging_level: str = "info"
-
-    openai_tag: str = "OPENAI_API_KEY1"
-    wandb_project_name: str = "adv-robustness"
-    tags: tuple[str, ...] = ("test",)
-
-
 if __name__ == "__main__":
     parser = simple_parsing.ArgumentParser()
-    parser.add_arguments(Config, dest="experiment_config")
+    parser.add_arguments(FinetuneConfig, dest="experiment_config")
     args = parser.parse_args()
-    cfg: Config = args.experiment_config
+    cfg: FinetuneConfig = args.experiment_config
 
     utils.setup_environment(
         openai_tag=cfg.openai_tag,
