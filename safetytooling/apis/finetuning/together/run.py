@@ -137,7 +137,6 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
 
 @dataclasses.dataclass
 class TogetherFTConfig(FinetuneConfig):
-    batch_size: int = 16
     learning_rate: float = 1e-5
     suffix: str = ""  # Together suffix to append to the model name
 

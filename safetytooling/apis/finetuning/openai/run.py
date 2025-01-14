@@ -22,10 +22,9 @@ from tenacity import (
 import openai
 import openai.types.fine_tuning
 from openai import APIConnectionError, RateLimitError
+from safetytooling.apis.finetuning.openai.check import openai_check_finetuning_data
 from safetytooling.data_models.finetune import FinetuneConfig
 from safetytooling.utils import utils
-
-from .check import openai_check_finetuning_data
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,7 +60,7 @@ async def upload_finetuning_file_to_openai(
 
 
 async def queue_finetune(
-    cfg: FinetuneConfig,
+    cfg: OpenAIFTConfig,
     train_file_id: str,
     val_file_id: str | None,
     client: openai.AsyncClient | None = None,
@@ -104,7 +103,7 @@ def upload_file_to_wandb(
     wandb_run.log_artifact(artifact)
 
 
-async def main(cfg: FinetuneConfig, extra_config: dict = None, verbose: bool = True):
+async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = True):
     """
     WARNING: This function cannot be called concurrently, wandb does not support
     concurrent runs. See
@@ -254,11 +253,17 @@ async def main(cfg: FinetuneConfig, extra_config: dict = None, verbose: bool = T
     return ft_job, train_cost_usd
 
 
+@dataclasses.dataclass
+class OpenAIFTConfig(FinetuneConfig):
+    learning_rate_multiplier: float | str = "auto"
+    batch_size: int | str = "auto"
+
+
 if __name__ == "__main__":
     parser = simple_parsing.ArgumentParser()
-    parser.add_arguments(FinetuneConfig, dest="experiment_config")
+    parser.add_arguments(OpenAIFTConfig, dest="experiment_config")
     args = parser.parse_args()
-    cfg: FinetuneConfig = args.experiment_config
+    cfg: OpenAIFTConfig = args.experiment_config
 
     utils.setup_environment(
         openai_tag=cfg.openai_tag,
