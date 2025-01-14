@@ -85,8 +85,7 @@ class OpenAIChatModel(OpenAIModel):
     async def _make_api_call(self, prompt: Prompt, model_id, start_time, **params) -> list[LLMResponse]:
         LOGGER.debug(f"Making {model_id} call")
 
-        if prompt.contains_image():
-            assert model_id in VISION_MODELS, f"Model {model_id} does not support images"
+        # TODO(task): using prompt.contains_image() check that the model supports images by using VISION_MODELS
 
         # convert completion logprobs api to chat logprobs api
         if "logprobs" in params:
