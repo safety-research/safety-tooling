@@ -44,6 +44,7 @@ from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
+from .together import TOGETHER_MODELS, TogetherChatModel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -69,11 +70,12 @@ class InferenceAPI:
         gemini_recitation_rate_check_volume: int = 100,
         gemini_recitation_rate_threshold: float = 0.5,
         gray_swan_num_threads: int = 80,
+        together_num_threads: int = 80,
         huggingface_num_threads: int = 100,
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
         empty_completion_threshold: int = 0,
-        use_gpu_models: bool = False
+        use_gpu_models: bool = False,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -93,6 +95,7 @@ class InferenceAPI:
         self.gemini_recitation_rate_check_volume = gemini_recitation_rate_check_volume
         self.gemini_recitation_rate_threshold = gemini_recitation_rate_threshold
         self.gray_swan_num_threads = gray_swan_num_threads
+        self.together_num_threads = together_num_threads
         self.huggingface_num_threads = huggingface_num_threads
         self.empty_completion_threshold = empty_completion_threshold
         self.gpt4o_s2s_rpm_cap = gpt4o_s2s_rpm_cap
@@ -156,6 +159,12 @@ class InferenceAPI:
             num_threads=self.gray_swan_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             api_key=secrets["GRAYSWAN_API_KEY"] if "GRAYSWAN_API_KEY" in secrets else None,
+        )
+
+        self._together = TogetherChatModel(
+            num_threads=self.together_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+            api_key=secrets["TOGETHER_API_KEY"] if "TOGETHER_API_KEY" in secrets else None,
         )
 
         self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
@@ -228,6 +237,8 @@ class InferenceAPI:
             return class_for_model
         elif model_id in S2S_MODELS:
             return self._openai_s2s
+        elif model_id in TOGETHER_MODELS:
+            return self._together
         raise ValueError(f"Invalid model id: {model_id}")
 
     async def check_rate_limit(self, wait_time=60):

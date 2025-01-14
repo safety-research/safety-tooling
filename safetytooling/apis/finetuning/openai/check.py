@@ -5,9 +5,9 @@ import logging
 import pathlib
 import random
 
-import safetytoolingapis.inference.openai.utils
 import tiktoken
 
+import safetytooling.apis.inference.openai.utils
 from safetytooling.data_models import Prompt
 from safetytooling.utils import utils
 
@@ -42,9 +42,9 @@ class FTDatasetCostEstimate:
             (
                 _,
                 self.cost_per_1k_tokens_usd,
-            ) = safetytoolingapis.inference.openai.utils.price_per_token(model_id=self.model_id)
+            ) = safetytooling.apis.inference.openai.utils.price_per_token(model_id=self.model_id)
         else:
-            price = safetytoolingapis.inference.openai.utils.finetune_price_per_token(model_id=self.model_id)
+            price = safetytooling.apis.inference.openai.utils.finetune_price_per_token(model_id=self.model_id)
             assert price is not None
             self.cost_per_1k_tokens_usd = price
 
@@ -93,7 +93,7 @@ def openai_check_finetuning_data(
         )
 
     encoding = tiktoken.encoding_for_model(model_id)
-    context_length = safetytoolingapis.inference.openai.utils.get_max_context_length(model_id)
+    context_length = safetytooling.apis.inference.openai.utils.get_max_context_length(model_id)
 
     # Count number of tokens in file to estimate fine-tuning costs
     # Also flag if any examples are too long and would get truncated
