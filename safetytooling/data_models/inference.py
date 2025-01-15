@@ -20,11 +20,11 @@ class LLMParams(HashableBaseModel):
     max_tokens: int | None = None
     logprobs: int | None = None
     seed: int | None = None
-    return_logprobs: bool = False
-    top_k_logprobs: int | None = None
+    return_logprobs: bool = False  # ?
+    top_k_logprobs: int | None = None  # ?
+    logit_bias: dict[int, float] | None = None
 
     model_config = pydantic.ConfigDict(extra="forbid")
-    # TODO: Add support for logit_bias
 
 
 class StopReason(Enum):

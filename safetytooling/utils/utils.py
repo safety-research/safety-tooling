@@ -78,6 +78,8 @@ def setup_environment(
         os.environ["OPENAI_S2S_API_KEY"] = secrets["OPENAI_S2S_API_KEY"]
     if "GRAYSWAN_API_KEY" in secrets:
         os.environ["GRAYSWAN_API_KEY"] = secrets["GRAYSWAN_API_KEY"]
+    if "TOGETHER_API_KEY" in secrets:
+        os.environ["TOGETHER_API_KEY"] = secrets["TOGETHER_API_KEY"]
 
 
 def setup_logging(logging_level):
