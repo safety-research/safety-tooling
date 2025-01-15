@@ -250,6 +250,7 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
             wrun.log(metrics, step=step)
 
     wrun.finish()
+    LOGGER.info(f"Fine-tuning job finished with id {ft_job.id}")
     return ft_job, train_cost_usd
 
 
