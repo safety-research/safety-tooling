@@ -186,7 +186,9 @@ class CacheManager:
         cache_file, prompt_hash = self.get_cache_file(prompt, params)
         cache_file.parent.mkdir(parents=True, exist_ok=True)
 
-        new_cache_entry = LLMCache(prompt=prompt, params=params, responses=responses)
+        # Unwrap the responses - we expect a list of lists where each inner list has one LLMResponse
+        unwrapped_responses = [resp[0] for resp in responses]
+        new_cache_entry = LLMCache(prompt=prompt, params=params, responses=unwrapped_responses)
 
         with filelock.FileLock(str(cache_file) + ".lock"):
             cache_data = {}

@@ -528,10 +528,16 @@ class InferenceAPI:
             responses = candidate_responses
 
         # update running cost and model timings
-        self.running_cost += sum(response.cost for response in candidate_responses)
+        # Calculate cost from flattened responses - each response is a list containing one LLMResponse
+        self.running_cost += sum(response[0].cost for response in candidate_responses)
         for response in candidate_responses:
-            self.model_timings.setdefault(response.model_id, []).append(response.api_duration)
-            self.model_wait_times.setdefault(response.model_id, []).append(response.duration - response.api_duration)
+            # Access attributes from the LLMResponse inside the list
+            llm_response = response[0]
+            if llm_response.api_duration is not None:
+                self.model_timings.setdefault(llm_response.model_id, []).append(llm_response.api_duration)
+            if llm_response.duration is not None and llm_response.api_duration is not None:
+                wait_time = llm_response.duration - llm_response.api_duration
+                self.model_wait_times.setdefault(llm_response.model_id, []).append(wait_time)
 
         return responses
 
