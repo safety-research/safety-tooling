@@ -95,7 +95,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
 
     wrun = None
     if cfg.wandb_project_name is not None:
-    # Initialize wandb run
+        # Initialize wandb run
         wrun = wandb.init(
             project=cfg.wandb_project_name,
             config=dataclasses.asdict(cfg),
