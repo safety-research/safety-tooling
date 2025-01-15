@@ -221,7 +221,7 @@ class InferenceAPI:
     def model_id_to_class(self, model_id: str, gemini_use_vertexai: bool = False) -> InferenceAPIModel:
         if model_id in COMPLETION_MODELS:
             return self._openai_completion
-        elif model_id in GPT_CHAT_MODELS or "ft:gpt-3.5-turbo" in model_id:
+        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt"):
             return self._openai_chat
         elif model_id in ANTHROPIC_MODELS:
             return self._anthropic_chat
@@ -237,7 +237,7 @@ class InferenceAPI:
             return class_for_model
         elif model_id in S2S_MODELS:
             return self._openai_s2s
-        elif model_id in TOGETHER_MODELS:
+        elif model_id in TOGETHER_MODELS or model_id.startswith("scalesafetyresearch"):
             return self._together
         raise ValueError(f"Invalid model id: {model_id}")
 
