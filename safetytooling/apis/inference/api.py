@@ -312,6 +312,7 @@ class InferenceAPI:
         is_valid: Callable[[str], bool] = lambda _: True,
         insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry",
         gemini_use_vertexai: bool = False,
+        use_cache: bool = True,
         **kwargs,
     ) -> list[LLMResponse]:
         """
@@ -374,7 +375,7 @@ class InferenceAPI:
         )
         cached_responses, cached_results, failed_cache_responses = [], [], []
 
-        if self.cache_manager is not None:
+        if self.cache_manager is not None and use_cache:
             cached_responses, cached_results, failed_cache_responses = self.cache_manager.process_cached_responses(
                 prompt=prompt,
                 params=llm_cache_params,
@@ -464,7 +465,7 @@ class InferenceAPI:
 
             # Update candidate_responses to include responses from cache
             candidate_iter = iter(candidate_responses)
-            if self.cache_manager is not None:
+            if self.cache_manager is not None and use_cache:
                 candidate_responses = [
                     next(candidate_iter) if response is None else response for response in cached_responses
                 ]

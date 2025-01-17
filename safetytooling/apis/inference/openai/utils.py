@@ -207,6 +207,8 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         prices = 20, 20
     elif "ft:gpt-3.5-turbo" in model_id:
         prices = 3, 6
+    elif "ft:gpt-4o-mini" in model_id:
+        prices = 0.3, 1.2
     elif model_id == "text-embedding-3-small":
         prices = 0.02, 0.02
     elif model_id == "text-embedding-3-large":
@@ -237,8 +239,6 @@ def finetune_price_per_token(model_id: str) -> float | None:
             return 0.003
         case "gpt-4o-2024-08-06":
             return 0.025
-        # case "gpt-4-0613":
-        #     # raise NotImplementedError  # TODO: Add price
         case "davinci-002":
             return 0.006
         case "babbage-002":
