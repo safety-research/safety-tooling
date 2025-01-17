@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import logging
 import os
 from pathlib import Path
@@ -81,6 +82,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         batch_size=cfg.batch_size,
         learning_rate=cfg.learning_rate,
         lora=cfg.lora,
+        suffix=cfg.suffix,
     )
     LOGGER.info(f"Started fine-tuning job: {ft_job.id}")
 
@@ -135,14 +137,27 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
     wrun.finish()
     LOGGER.info(f"Fine-tuning job finished with id <ft_id>{ft_job.id}</ft_id>")
 
-    if cfg.save_model:
-        LOGGER.info("Saving model...")
-        assert ft_job.id is not None
-        if cfg.save_model_path.endswith(".tar.zst"):
-            client.fine_tuning.download(ft_job.id, output=cfg.save_model_path)
+    if cfg.save_folder is not None:
+        output_name = ft_job.output_name
+        assert output_name is not None, "Output name is None"
+        output_name = output_name.replace("/", "_")
+        if cfg.save_folder.endswith("/"):
+            cfg.save_folder += f"{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{output_name}"
         else:
-            client.fine_tuning.download(ft_job.id, output=cfg.save_model_path + ".tar.zst")
-        LOGGER.info("Model saved.")
+            cfg.save_folder += f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{output_name}"
+
+        os.makedirs(cfg.save_folder, exist_ok=True)
+        if cfg.save_model:
+            LOGGER.info("Saving model...")
+            assert ft_job.id is not None
+            save_model_path = cfg.save_folder + "/weights/model.tar.zst"
+            client.fine_tuning.download(ft_job.id, output=save_model_path)
+            LOGGER.info("Model saved.")
+        if cfg.save_config:
+            save_config_path = cfg.save_folder + "/train_config.json"
+            with open(save_config_path, "w") as f:
+                json.dump(ft_job.model_dump(), f)
+            LOGGER.info("Config saved.")
 
     return ft_job
 
@@ -154,7 +169,6 @@ class TogetherFTConfig(FinetuneConfig):
     lora: bool = False
 
     save_model: bool = False
-    save_model_path: str = "model.tar.zst"
 
 
 # Relevant Docs
