@@ -209,6 +209,8 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         prices = 3, 6
     elif "ft:gpt-4o-mini" in model_id:
         prices = 0.3, 1.2
+    elif "ft:gpt-4o" in model_id:
+        prices = 3.75, 15
     elif model_id == "text-embedding-3-small":
         prices = 0.02, 0.02
     elif model_id == "text-embedding-3-large":
