@@ -191,7 +191,7 @@ class OpenAIS2SModel(InferenceAPIModel):
         model_ids: str | tuple[str, ...],
         prompt: Prompt,
         audio_out_dir: str | Path,
-        print_prompt_and_response: bool = False,
+        print_prompt_and_response: bool = True,
         max_attempts: int = 10,
         **kwargs,
     ) -> List[LLMResponse]:

@@ -44,8 +44,8 @@ class AnthropicChatModel(InferenceAPIModel):
         self,
         model_ids: tuple[str, ...],
         prompt: Prompt,
-        print_prompt_and_response: bool,
         max_attempts: int,
+        print_prompt_and_response: bool = True,
         is_valid=lambda x: True,
         **kwargs,
     ) -> list[LLMResponse]:

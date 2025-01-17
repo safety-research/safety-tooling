@@ -293,7 +293,7 @@ class InferenceAPI:
         model_ids: str | tuple[str, ...],
         prompt: Prompt | BatchPrompt,
         audio_out_dir: str | Path = None,
-        print_prompt_and_response: bool = False,
+        print_prompt_and_response: bool = True,
         max_tokens: int | None = None,
         n: int = 1,
         max_attempts_per_api_call: int = 10,
