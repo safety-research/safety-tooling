@@ -128,7 +128,7 @@ class OpenAIModel(InferenceAPIModel):
         model_ids: tuple[str, ...],
         prompt,
         max_attempts: int,
-        print_prompt_and_response: bool = True,
+        print_prompt_and_response: bool | None = None,
         is_valid=lambda x: True,
         **kwargs,
     ) -> list[LLMResponse]:

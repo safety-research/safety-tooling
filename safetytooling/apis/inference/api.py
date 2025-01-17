@@ -410,8 +410,8 @@ class InferenceAPI:
                             model_class(
                                 model_ids,
                                 prompt,
-                                print_prompt_and_response,
                                 max_attempts_per_api_call,
+                                print_prompt_and_response=print_prompt_and_response if print_prompt_and_response is not None else self.print_prompt_and_response,
                                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                                 **kwargs,
                             )
@@ -444,7 +444,7 @@ class InferenceAPI:
             candidate_responses = model_class(
                 model_ids=model_ids,
                 batch_prompt=prompt,
-                print_prompt_and_response=print_prompt_and_response,
+                print_prompt_and_response=print_prompt_and_response if print_prompt_and_response is not None else self.print_prompt_and_response,
                 max_attempts_per_api_call=max_attempts_per_api_call,
                 n=num_candidates,
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
@@ -470,7 +470,7 @@ class InferenceAPI:
                         model_ids=model_ids,
                         prompt=prompt,
                         audio_out_dir=audio_out_dir,
-                        print_prompt_and_response=print_prompt_and_response,
+                        print_prompt_and_response=print_prompt_and_response if print_prompt_and_response is not None else self.print_prompt_and_response,
                         max_attempts_per_api_call=max_attempts_per_api_call,
                         is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                         **kwargs,
@@ -481,8 +481,8 @@ class InferenceAPI:
                 candidate_responses = await model_class(
                     model_ids,
                     prompt,
-                    print_prompt_and_response,
                     max_attempts_per_api_call,
+                    print_prompt_and_response=print_prompt_and_response if print_prompt_and_response is not None else self.print_prompt_and_response,
                     n=num_candidates,
                     is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                     **kwargs,

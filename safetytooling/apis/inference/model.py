@@ -14,7 +14,7 @@ class InferenceAPIModel(Protocol):
         self,
         model_ids: tuple[str, ...],
         prompt,
-        print_prompt_and_response: bool,
+        print_prompt_and_response: bool | None,
         max_attempts: int,
         **kwargs,
     ) -> list[LLMResponse]:
