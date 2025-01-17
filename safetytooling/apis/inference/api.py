@@ -31,7 +31,7 @@ from safetytooling.data_models import (
 from safetytooling.utils.utils import get_repo_root, load_secrets, setup_environment
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
-from .cache_manager import CacheManager
+from .cache_manager import get_cache_manager
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
@@ -121,7 +121,7 @@ class InferenceAPI:
 
         self.cache_manager: CacheManager | None = None
         if self.cache_dir is not None:
-            self.cache_manager = CacheManager(self.cache_dir)
+            self.cache_manager = get_cache_manager(self.cache_dir)
 
         self._openai_completion = OpenAICompletionModel(
             frac_rate_limit=self.openai_fraction_rate_limit,
@@ -263,27 +263,28 @@ class InferenceAPI:
 
         # return the valid responses, or pad with invalid responses if there aren't enough
         if num_valid < n:
-            match insufficient_valids_behaviour:
-                case "error":
-                    raise RuntimeError(f"Only found {num_valid} valid responses from {num_candidates} candidates.")
-                case "retry":
-                    raise RuntimeError(
-                        f"Only found {num_valid} valid responses from {num_candidates} candidates. n={n}"
-                    )
-                case "continue":
-                    responses = valid_responses
-                case "pad_invalids":
-                    invalid_responses = [
-                        response for response in candidate_responses if not is_valid(response.completion)
-                    ]
-                    invalids_needed = n - num_valid
-                    responses = [
-                        *valid_responses,
-                        *invalid_responses[:invalids_needed],
-                    ]
-                    LOGGER.info(
-                        f"Padded {num_valid} valid responses with {invalids_needed} invalid responses to get {len(responses)} total responses"
-                    )
+            if insufficient_valids_behaviour == "error":
+                raise RuntimeError(f"Only found {num_valid} valid responses from {num_candidates} candidates.")
+            elif insufficient_valids_behaviour == "retry":
+                raise RuntimeError(
+                    f"Only found {num_valid} valid responses from {num_candidates} candidates. n={n}"
+                )
+            elif insufficient_valids_behaviour == "continue":
+                responses = valid_responses
+            elif insufficient_valids_behaviour == "pad_invalids":
+                invalid_responses = [
+                    response for response in candidate_responses if not is_valid(response.completion)
+                ]
+                invalids_needed = n - num_valid
+                responses = [
+                    *valid_responses,
+                    *invalid_responses[:invalids_needed],
+                ]
+                LOGGER.info(
+                    f"Padded {num_valid} valid responses with {invalids_needed} invalid responses to get {len(responses)} total responses"
+                )
+            else:
+                raise ValueError(f"Unknown insufficient_valids_behaviour: {insufficient_valids_behaviour}")
         else:
             responses = valid_responses
         return responses[:n]
