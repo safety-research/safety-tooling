@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from traceback import format_exc
@@ -42,6 +43,7 @@ class AnthropicChatModel(InferenceAPIModel):
         self.aclient = AsyncAnthropic()  # Assuming AsyncAnthropic has a default constructor
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
         self.allowed_kwargs = {"temperature", "max_tokens"}
+        self.print_prompt_and_response = os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "").lower() == "true"
 
     async def __call__(
         self,
@@ -143,7 +145,7 @@ class AnthropicChatModel(InferenceAPIModel):
         responses = [response]
 
         self.add_response_to_prompt_file(prompt_file, responses)
-        if print_prompt_and_response:
+        if self.print_prompt_and_response or print_prompt_and_response:
             prompt.pretty_print(responses)
 
         return responses

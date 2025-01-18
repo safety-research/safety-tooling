@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from collections import defaultdict
 from functools import wraps
@@ -103,6 +104,7 @@ class InferenceAPI:
         self.current_time = time.time()
         self.n_calls = 0
         self.gpt_4o_rate_limiter = S2SRateLimiter(self.gpt4o_s2s_rpm_cap)
+        self.print_prompt_and_response = os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "").lower() == "true"
 
         secrets = load_secrets("SECRETS")
         if prompt_history_dir == "default":
@@ -381,7 +383,7 @@ class InferenceAPI:
                 params=llm_cache_params,
                 n=n,
                 insufficient_valids_behaviour=insufficient_valids_behaviour,
-                print_prompt_and_response=print_prompt_and_response,
+                print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                 empty_completion_threshold=self.empty_completion_threshold,
             )
 
@@ -422,7 +424,7 @@ class InferenceAPI:
                             model_class(
                                 model_ids,
                                 prompt,
-                                print_prompt_and_response,
+                                self.print_prompt_and_response,
                                 max_attempts_per_api_call,
                                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                                 **kwargs,
@@ -440,7 +442,7 @@ class InferenceAPI:
                     response = await model_class(
                         model_ids,
                         prompt,
-                        print_prompt_and_response,
+                        self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call,
                         is_valid=(
                             lambda x: (
@@ -456,7 +458,7 @@ class InferenceAPI:
             candidate_responses = model_class(
                 model_ids=model_ids,
                 batch_prompt=prompt,
-                print_prompt_and_response=print_prompt_and_response,
+                print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call=max_attempts_per_api_call,
                 n=num_candidates,
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
@@ -482,7 +484,7 @@ class InferenceAPI:
                         model_ids=model_ids,
                         prompt=prompt,
                         audio_out_dir=audio_out_dir,
-                        print_prompt_and_response=print_prompt_and_response,
+                        print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call=max_attempts_per_api_call,
                         is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                         **kwargs,
@@ -493,7 +495,7 @@ class InferenceAPI:
                 candidate_responses = await model_class(
                     model_ids,
                     prompt,
-                    print_prompt_and_response,
+                    self.print_prompt_and_response or print_prompt_and_response,
                     max_attempts_per_api_call,
                     n=num_candidates,
                     is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
