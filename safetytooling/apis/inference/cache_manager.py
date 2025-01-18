@@ -1,9 +1,10 @@
 import logging
+import os
 from pathlib import Path
 from typing import List, Tuple, Union
-import os
-import redis
+
 import filelock
+import redis
 
 from safetytooling.data_models import (
     BatchPrompt,
@@ -31,9 +32,10 @@ REDIS_CONFIG_DEFAULT = {
 if os.getenv("REDIS_PASSWORD"):
     REDIS_CONFIG_DEFAULT["password"] = os.getenv("REDIS_PASSWORD")
 
+
 class BaseCacheManager:
     """Base class for cache management implementations."""
-    
+
     def __init__(self, cache_dir: Path, num_bins: int = 20):
         self.cache_dir = cache_dir
         self.num_bins = num_bins
@@ -92,9 +94,10 @@ class BaseCacheManager:
     def save_embeddings(self, params: EmbeddingParams, response: EmbeddingResponseBase64):
         raise NotImplementedError
 
+
 class FileBasedCacheManager(BaseCacheManager):
     """Original file-based cache manager implementation."""
-    
+
     def __init__(self, cache_dir: Path, num_bins: int = 20):
         super().__init__(cache_dir, num_bins)
         self.in_memory_cache = {}
@@ -332,9 +335,10 @@ class FileBasedCacheManager(BaseCacheManager):
 
             save_json(cache_file, cache_data)
 
+
 class RedisCacheManager(BaseCacheManager):
     """Redis-based cache manager implementation."""
-    
+
     def __init__(self, cache_dir: Path, num_bins: int = 20, redis_config: dict | None = None):
         super().__init__(cache_dir, num_bins)
         self.redis_config = redis_config if redis_config else REDIS_CONFIG_DEFAULT
@@ -351,9 +355,7 @@ class RedisCacheManager(BaseCacheManager):
 
     def get_cache_file(self, prompt: Prompt, params: LLMParams) -> tuple[Path, str]:
         prompt_hash = prompt.model_hash()
-        bin_number = self.get_bin_number(prompt_hash, self.num_bins)
         cache_dir = self.cache_dir / params.model_hash()
-        cache_key = f"bin{str(bin_number)}"
         return cache_dir, prompt_hash
 
     def maybe_load_cache(self, prompt: Prompt, params: LLMParams):
@@ -362,7 +364,7 @@ class RedisCacheManager(BaseCacheManager):
         data = self.db.get(key)
         if data is None:
             return None
-        return LLMCache.model_validate_json(data.decode('utf-8'))
+        return LLMCache.model_validate_json(data.decode("utf-8"))
 
     def process_cached_responses(
         self,
@@ -407,7 +409,9 @@ class RedisCacheManager(BaseCacheManager):
                 else:
                     cached_response = cached_result.responses
                     if insufficient_valids_behaviour != "continue":
-                        assert len(cached_result.responses) == n, f"cache is inconsistent with n={n}\n{cached_result.responses}"
+                        assert (
+                            len(cached_result.responses) == n
+                        ), f"cache is inconsistent with n={n}\n{cached_result.responses}"
                     if print_prompt_and_response:
                         individual_prompt.pretty_print(cached_result.responses)
 
@@ -420,13 +424,15 @@ class RedisCacheManager(BaseCacheManager):
             cached_results.append(cached_result)
             failed_cache_responses.append(failed_cache_response)
 
-        assert len(cached_results) == len(prompts) == len(cached_responses) == len(failed_cache_responses), \
-            f"""Different number of cached_results, prompts, cached_responses and failed_cached_responses when they should all be length {len(prompts)}!
+        assert (
+            len(cached_results) == len(prompts) == len(cached_responses) == len(failed_cache_responses)
+        ), f"""Different number of cached_results, prompts, cached_responses and failed_cached_responses when they should all be length {len(prompts)}!
                 Number of prompts: {len(prompts)} \n Number of cached_results: {len(cached_results)} \n Number of cached_responses: {len(cached_responses)} \n Number of failed_cache_responses: {len(failed_cache_responses)}"""
 
         if all(result is None for result in cached_results):
-            assert all(response is None for response in cached_responses), \
-                f"No cached results found so responses should be length 0. Instead responses is length {len(cached_responses)}"
+            assert all(
+                response is None for response in cached_responses
+            ), f"No cached results found so responses should be length 0. Instead responses is length {len(cached_responses)}"
         return cached_responses, cached_results, failed_cache_responses
 
     def update_failed_cache(
@@ -435,8 +441,9 @@ class RedisCacheManager(BaseCacheManager):
         responses: list[LLMResponse],
         failed_cache_responses: List[List[LLMResponse]],
     ) -> list[LLMResponse]:
-        assert len(responses) == len(failed_cache_responses[0]), \
-            f"There should be the same number of responses and failed_cache_responses! Instead we have {len(responses)} responses and {len(failed_cache_responses)} failed_cache_responses."
+        assert len(responses) == len(
+            failed_cache_responses[0]
+        ), f"There should be the same number of responses and failed_cache_responses! Instead we have {len(responses)} responses and {len(failed_cache_responses)} failed_cache_responses."
         for i in range(len(responses)):
             responses[i].api_failures = failed_cache_responses[0][i].api_failures + 1
 
@@ -451,7 +458,7 @@ class RedisCacheManager(BaseCacheManager):
     def save_cache(self, prompt: Prompt, params: LLMParams, responses: list):
         cache_dir, prompt_hash = self.get_cache_file(prompt, params)
         key = self._make_key(f"{cache_dir}/{prompt_hash}")
-        
+
         new_cache_entry = LLMCache(prompt=prompt, params=params, responses=responses)
         self.db.set(key, new_cache_entry.model_dump_json())
 
@@ -468,12 +475,12 @@ class RedisCacheManager(BaseCacheManager):
         data = self.db.get(key)
         if data is None:
             return None
-        return LLMCacheModeration.model_validate_json(data.decode('utf-8'))
+        return LLMCacheModeration.model_validate_json(data.decode("utf-8"))
 
     def save_moderation(self, texts: list[str], moderation: list[TaggedModeration]):
         _, hash = self.get_moderation_file(texts)
         key = self._make_key(f"moderation/{hash}")
-        
+
         new_cache_entry = LLMCacheModeration(texts=texts, moderation=moderation)
         self.db.set(key, new_cache_entry.model_dump_json())
 
@@ -489,12 +496,13 @@ class RedisCacheManager(BaseCacheManager):
         data = self.db.get(key)
         if data is None:
             return None
-        return EmbeddingResponseBase64.model_validate_json(data.decode('utf-8'))
+        return EmbeddingResponseBase64.model_validate_json(data.decode("utf-8"))
 
     def save_embeddings(self, params: EmbeddingParams, response: EmbeddingResponseBase64):
         _, hash = self.get_embeddings_file(params)
         key = self._make_key(f"embeddings/{hash}")
         self.db.set(key, response.model_dump_json())
+
 
 def get_cache_manager(cache_dir: Path, num_bins: int = 20) -> BaseCacheManager:
     """Factory function to get the appropriate cache manager based on environment variable."""

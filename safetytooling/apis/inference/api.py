@@ -31,7 +31,7 @@ from safetytooling.data_models import (
 from safetytooling.utils.utils import get_repo_root, load_secrets, setup_environment
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
-from .cache_manager import get_cache_manager
+from .cache_manager import BaseCacheManager, get_cache_manager
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
@@ -119,7 +119,7 @@ class InferenceAPI:
             assert isinstance(cache_dir, Path) or cache_dir is None
             self.cache_dir = cache_dir
 
-        self.cache_manager: CacheManager | None = None
+        self.cache_manager: BaseCacheManager | None = None
         if self.cache_dir is not None:
             self.cache_manager = get_cache_manager(self.cache_dir)
 
@@ -266,15 +266,11 @@ class InferenceAPI:
             if insufficient_valids_behaviour == "error":
                 raise RuntimeError(f"Only found {num_valid} valid responses from {num_candidates} candidates.")
             elif insufficient_valids_behaviour == "retry":
-                raise RuntimeError(
-                    f"Only found {num_valid} valid responses from {num_candidates} candidates. n={n}"
-                )
+                raise RuntimeError(f"Only found {num_valid} valid responses from {num_candidates} candidates. n={n}")
             elif insufficient_valids_behaviour == "continue":
                 responses = valid_responses
             elif insufficient_valids_behaviour == "pad_invalids":
-                invalid_responses = [
-                    response for response in candidate_responses if not is_valid(response.completion)
-                ]
+                invalid_responses = [response for response in candidate_responses if not is_valid(response.completion)]
                 invalids_needed = n - num_valid
                 responses = [
                     *valid_responses,
