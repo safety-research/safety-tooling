@@ -8,10 +8,13 @@ name = "safetytooling"
 description = "Safety Tooling"
 requires-python = ">=3.10"
 readme = "README.md"
-dynamic = ["version"]
+dynamic = ["version", "dependencies"]
 
 [tool.setuptools]
 packages = ["safetytooling"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
