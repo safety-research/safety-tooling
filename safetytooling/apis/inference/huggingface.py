@@ -215,12 +215,18 @@ class HuggingFaceModel(InferenceAPIModel):
         response = LLMResponse(
             model_id=model_id,
             completion=response_data[0]["generated_text"],
-            stop_reason=("eos" if "details" not in response_data[0] 
-                        else self.stop_reason_map[response_data[0]["details"]["finish_reason"]]),
+            stop_reason=(
+                "eos"
+                if "details" not in response_data[0]
+                else self.stop_reason_map[response_data[0]["details"]["finish_reason"]]
+            ),
             duration=duration,
             api_duration=api_duration,
-            logprobs=(None if "details" not in response_data[0] 
-                    else self.parse_logprobs(response_details=response_data[0]["details"])),
+            logprobs=(
+                None
+                if "details" not in response_data[0]
+                else self.parse_logprobs(response_details=response_data[0]["details"])
+            ),
             cost=0,
         )
         responses = [response]

@@ -67,7 +67,7 @@ class CacheManager:
     ) -> Tuple[
         List[LLMResponse | List[LLMResponse] | None],
         List[LLMCache | None],
-        List[LLMResponse | List[LLMResponse] | None]
+        List[LLMResponse | List[LLMResponse] | None],
     ]:
         """
         Process cached responses for a given prompt or batch of prompts.
