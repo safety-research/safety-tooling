@@ -2,7 +2,7 @@
 # We pin top-level dependencies only to make cross-platform development easier.
 
 # OpenAI
-tiktoken==0.8.0
+tiktoken==0.7.0
 openai==1.58.1
 
 # Anthropic
