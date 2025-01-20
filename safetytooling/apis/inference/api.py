@@ -77,6 +77,7 @@ class InferenceAPI:
         cache_dir: Path | Literal["default"] | None = "default",
         empty_completion_threshold: int = 0,
         use_gpu_models: bool = False,
+        print_prompt_and_response: bool = False,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -104,8 +105,10 @@ class InferenceAPI:
         self.current_time = time.time()
         self.n_calls = 0
         self.gpt_4o_rate_limiter = S2SRateLimiter(self.gpt4o_s2s_rpm_cap)
-        self.print_prompt_and_response = os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "").lower() == "true"
-
+        self.print_prompt_and_response = print_prompt_and_response
+        # can also set via env var
+        if os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "").lower() == "true":
+            self.print_prompt_and_response = True
         secrets = load_secrets("SECRETS")
         if prompt_history_dir == "default":
             if "PROMPT_HISTORY_DIR" in secrets:
@@ -424,7 +427,7 @@ class InferenceAPI:
                             model_class(
                                 model_ids,
                                 prompt,
-                                self.print_prompt_and_response,
+                                self.print_prompt_and_response or print_prompt_and_response,
                                 max_attempts_per_api_call,
                                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                                 **kwargs,

@@ -89,6 +89,7 @@ class ExperimentConfigBase:
                 huggingface_num_threads=self.huggingface_num_threads,
                 cache_dir=self.cache_dir,
                 prompt_history_dir=self.prompt_history_dir,
+                print_prompt_and_response=self.print_prompt_and_response,
             )
 
         return self._api
