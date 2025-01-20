@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import time
 from itertools import cycle
 from pathlib import Path
@@ -73,7 +72,6 @@ class OpenAIModel(InferenceAPIModel):
         self.lock_add = asyncio.Lock()
         self.lock_consume = asyncio.Lock()
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
-        self.print_prompt_and_response = os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "").lower() == "true"
 
     @staticmethod
     def _assert_valid_id(model_id: str):
@@ -182,7 +180,7 @@ class OpenAIModel(InferenceAPIModel):
         if responses is None:
             raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
 
-        if self.print_prompt_and_response or print_prompt_and_response:
+        if print_prompt_and_response:
             prompt.pretty_print(responses)
 
         end = time.time()
