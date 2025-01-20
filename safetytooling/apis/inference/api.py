@@ -45,6 +45,7 @@ from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
+from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
 
 LOGGER = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class InferenceAPI:
         gray_swan_num_threads: int = 80,
         together_num_threads: int = 80,
         huggingface_num_threads: int = 100,
+        vllm_num_threads: int = 8,
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
         empty_completion_threshold: int = 0,
@@ -99,6 +101,7 @@ class InferenceAPI:
         self.gray_swan_num_threads = gray_swan_num_threads
         self.together_num_threads = together_num_threads
         self.huggingface_num_threads = huggingface_num_threads
+        self.vllm_num_threads = vllm_num_threads
         self.empty_completion_threshold = empty_completion_threshold
         self.gpt4o_s2s_rpm_cap = gpt4o_s2s_rpm_cap
         self.init_time = time.time()
@@ -179,6 +182,12 @@ class InferenceAPI:
             recitation_rate_threshold=self.gemini_recitation_rate_threshold,
             empty_completion_threshold=self.empty_completion_threshold,
         )
+
+        self._vllm = VLLMChatModel(
+            num_threads=vllm_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+        )
+
         self._batch_audio_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
@@ -236,6 +245,8 @@ class InferenceAPI:
             return self._gray_swan
         elif model_id in GEMINI_MODELS:
             return self.select_gemini_model(gemini_use_vertexai)
+        elif model_id in VLLM_MODELS:
+            return self._vllm
         elif model_id in BATCHED_MODELS:
             class_for_model = self._batch_audio_models[model_id]
             assert class_for_model is not None, f"Error loading class for {model_id}"
