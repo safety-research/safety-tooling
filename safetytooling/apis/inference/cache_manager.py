@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 from typing import List, Tuple, Union
 
@@ -27,7 +26,6 @@ class CacheManager:
         self.cache_dir = cache_dir
         self.num_bins = num_bins  # Number of bins for cache division
         self.in_memory_cache = {}
-        self.print_prompt_and_response = os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "").lower() == "true"
 
     @staticmethod
     def get_bin_number(hash_value, num_bins):
@@ -138,7 +136,7 @@ class CacheManager:
                         assert (
                             len(cached_result.responses) == n
                         ), f"cache is inconsistent with n={n}\n{cached_result.responses}"
-                    if self.print_prompt_and_response or print_prompt_and_response:
+                    if print_prompt_and_response:
                         individual_prompt.pretty_print(cached_result.responses)
 
                     failed_cache_response = None
