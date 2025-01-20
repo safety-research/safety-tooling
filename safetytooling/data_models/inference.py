@@ -33,6 +33,7 @@ class StopReason(Enum):
     CONTENT_FILTER = "content_filter"
     API_ERROR = "api_error"
     PROMPT_BLOCKED = "prompt_blocked"
+    UNKNOWN = "unknown"
 
     def __str__(self):
         return self.value

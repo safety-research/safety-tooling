@@ -216,7 +216,7 @@ class HuggingFaceModel(InferenceAPIModel):
             model_id=model_id,
             completion=response_data[0]["generated_text"],
             stop_reason=(
-                "eos"
+                StopReason.UNKNOWN.value
                 if "details" not in response_data[0]
                 else self.stop_reason_map[response_data[0]["details"]["finish_reason"]]
             ),
