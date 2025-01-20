@@ -171,7 +171,6 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
                 json.dump(ft_job.model_dump(), f)
             LOGGER.info("Config saved.")
 
-
     return ft_job
 
 
