@@ -68,15 +68,15 @@ class DeepSeekChatModel(InferenceAPIModel):
                                 "model": model_id,
                                 "messages": prompt.openai_format(),
                                 **filtered_kwargs,
-                            }
+                            },
                         ) as response:
                             response_data = await response.json()
-                            
+
                     api_duration = time.time() - api_start
-                    
+
                     if "error" in response_data:
                         raise RuntimeError(f"API Error: {response_data['error']}")
-                        
+
                     if not is_valid(response_data["choices"][0]["message"]["content"]):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
                     break
@@ -98,7 +98,7 @@ class DeepSeekChatModel(InferenceAPIModel):
             duration=duration,
             api_duration=api_duration,
             cost=0,
-            reasoning_content=response_data["choices"][0]["message"].get("reasoning_content")
+            reasoning_content=response_data["choices"][0]["message"].get("reasoning_content"),
         )
         responses = [response]
 
