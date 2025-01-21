@@ -11,7 +11,7 @@ from safetytooling.data_models import LLMResponse, Prompt, StopReason
 from .model import InferenceAPIModel
 
 VLLM_MODELS = {
-    "70B_test": "https://mh5mocawckan4s-8000.proxy.runpod.net/v1/chat/completions",
+    "dummy": "https://pod-port.proxy.runpod.net/v1/chat/completions",
     # Add more models and their endpoints as needed
 }
 
