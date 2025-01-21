@@ -504,9 +504,8 @@ class RedisCacheManager(BaseCacheManager):
         self.db.set(key, response.model_dump_json())
 
 
-def get_cache_manager(cache_dir: Path, num_bins: int = 20) -> BaseCacheManager:
+def get_cache_manager(cache_dir: Path, use_redis: bool = False, num_bins: int = 20) -> BaseCacheManager:
     """Factory function to get the appropriate cache manager based on environment variable."""
-    use_redis = os.environ.get("REDIS_CACHE", "false").lower() == "true"
     if use_redis:
         print("Using Redis cache:", use_redis)
         return RedisCacheManager(cache_dir, num_bins)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from collections import defaultdict
 from functools import wraps
@@ -72,11 +73,14 @@ class InferenceAPI:
         huggingface_num_threads: int = 100,
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
+        use_redis: bool = False,
         empty_completion_threshold: int = 0,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
         Set prompt_history_dir to "default" to use the default prompt history directory.
+
+        If REDIS_CACHE is set to true, use_redis will be set to true in any case.
         """
 
         if openai_fraction_rate_limit > 1:
@@ -120,8 +124,9 @@ class InferenceAPI:
             self.cache_dir = cache_dir
 
         self.cache_manager: BaseCacheManager | None = None
+        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         if self.cache_dir is not None:
-            self.cache_manager = get_cache_manager(self.cache_dir)
+            self.cache_manager = get_cache_manager(self.cache_dir, use_redis)
 
         self._openai_completion = OpenAICompletionModel(
             frac_rate_limit=self.openai_fraction_rate_limit,
