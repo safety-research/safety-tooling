@@ -33,6 +33,7 @@ from safetytooling.utils.utils import get_repo_root, load_secrets, setup_environ
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
 from .cache_manager import CacheManager
+from .deepseek import DEEPSEEK_MODELS, DeepSeekChatModel
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
@@ -72,9 +73,10 @@ class InferenceAPI:
         gemini_recitation_rate_check_volume: int = 100,
         gemini_recitation_rate_threshold: float = 0.5,
         gray_swan_num_threads: int = 80,
-        together_num_threads: int = 80,
         huggingface_num_threads: int = 100,
+        together_num_threads: int = 80,
         vllm_num_threads: int = 8,
+        deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
         empty_completion_threshold: int = 0,
@@ -102,6 +104,7 @@ class InferenceAPI:
         self.together_num_threads = together_num_threads
         self.huggingface_num_threads = huggingface_num_threads
         self.vllm_num_threads = vllm_num_threads
+        self.deepseek_num_threads = deepseek_num_threads
         self.empty_completion_threshold = empty_completion_threshold
         self.gpt4o_s2s_rpm_cap = gpt4o_s2s_rpm_cap
         self.init_time = time.time()
@@ -188,6 +191,12 @@ class InferenceAPI:
             prompt_history_dir=self.prompt_history_dir,
         )
 
+        self._deepseek = DeepSeekChatModel(
+            num_threads=self.deepseek_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+            api_key=secrets["DEEPSEEK_API_KEY"] if "DEEPSEEK_API_KEY" in secrets else None,
+        )
+
         self._batch_audio_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
@@ -245,8 +254,6 @@ class InferenceAPI:
             return self._gray_swan
         elif model_id in GEMINI_MODELS:
             return self.select_gemini_model(gemini_use_vertexai)
-        elif model_id in VLLM_MODELS:
-            return self._vllm
         elif model_id in BATCHED_MODELS:
             class_for_model = self._batch_audio_models[model_id]
             assert class_for_model is not None, f"Error loading class for {model_id}"
@@ -255,6 +262,10 @@ class InferenceAPI:
             return self._openai_s2s
         elif model_id in TOGETHER_MODELS or model_id.startswith("scalesafetyresearch"):
             return self._together
+        elif model_id in VLLM_MODELS:
+            return self._vllm
+        elif model_id in DEEPSEEK_MODELS:  # Add this condition
+            return self._deepseek
         raise ValueError(f"Invalid model id: {model_id}")
 
     async def check_rate_limit(self, wait_time=60):

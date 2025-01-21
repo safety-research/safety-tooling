@@ -51,6 +51,7 @@ class LLMResponse(pydantic.BaseModel):
     safety_ratings: Union[dict, SafetyRatings] | None = None
     recitation_retries: int | None = None
     api_failures: int | None = 0
+    reasoning_content: str | None = None
 
     model_config = pydantic.ConfigDict(protected_namespaces=())
 
