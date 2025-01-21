@@ -22,6 +22,7 @@ class ExperimentConfigBase:
     # If None, defaults to output_dir / "cache"
     enable_cache: bool = True
     cache_dir: Path | None = None
+    use_redis: bool = False
 
     # If None, defaults to output_dir / "prompt-history"
     enable_prompt_history: bool = False
@@ -89,6 +90,7 @@ class ExperimentConfigBase:
                 huggingface_num_threads=self.huggingface_num_threads,
                 cache_dir=self.cache_dir,
                 prompt_history_dir=self.prompt_history_dir,
+                use_redis=self.use_redis,
                 print_prompt_and_response=self.print_prompt_and_response,
             )
 

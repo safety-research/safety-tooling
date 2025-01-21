@@ -27,6 +27,22 @@ Or just run:
     pip install -r requirements.txt
     ```
 
+### Redis Configuration (Optional)
+
+To use Redis for caching instead of writing everything to disk, *[install Redis](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/)*, and make sure it's running by doing `redis-cli ping`.
+
+```bash
+export REDIS_CACHE=True  # Enable Redis caching (defaults to False)
+export REDIS_PASSWORD=<your-password>  # Optional Redis password, in case the Redis instance on your machine is password protected
+```
+
+Default Redis configuration if not specified:
+- Host: localhost
+- Port: 6379
+- No authentication
+
+You can monitor what is being read from or written to Redis by running `redis-cli` and then `MONITOR`.
+
 ### Secrets
 
 You should create a file called `SECRETS` at the root of the repository
@@ -109,15 +125,20 @@ python -m safetytooling.apis.inference.usage.usage_anthropic
 
 - **LLM Inference API:**
     - Location:`safetytooling/apis/inference/api.py`
-    - **Caching Mechanism:** Caches prompt calls to avoid redundant API calls. Cache location defaults to `$exp_dir/cache`. This means you can kill your run anytime and restart it without worrying about wasting API calls.
-    - **Prompt Logging:** For debugging, human-readable `.txt` files are can be output in `$exp_dir/prompt_history` and timestamped for easy reference (off by default). You can also pass `print_prompt_and_response` to the api object to print coloured messages to the terminal.
+    - **Caching Mechanism:**
+        - Caches prompt calls to avoid redundant API calls. Cache location defaults to `$exp_dir/cache`. This means you can kill your run anytime and restart it without worrying about wasting API calls.
+        - **Redis Cache:** Optionally use Redis for caching instead of files by setting `REDIS_CACHE=true` in your environment. Configure Redis connection with:
+            - `REDIS_PASSWORD`: Optional Redis password for authentication
+            - Default Redis configuration: localhost:6379, no password
+        - The cache implementation is automatically selected based on the `REDIS_CACHE` environment variable.
+    - **Prompt Logging:** For debugging, human-readable `.txt` files are can be output in `$exp_dir/prompt_history` and timestamped for easy reference (off by default). You can also pass `print_prompt_and_response` to the api object to print coloured messages to the terminal.
     - Ability to double the rate limit if you pass a list of models e.g. `["gpt-3.5-turbo", "gpt-3.5-turbo-0613"]`
     - Manages rate limits efficiently for OpenAI bypassing the need for exponential backoff.
     - Number of concurrent threads can be customised when initialising the api object for each provider (e.g. `openai_num_threads`, `anthropic_num_threads`). Furthermore, the fraction of the OpenAI rate limit can be specified (e.g. only using 50% rate limit by setting `openai_fraction_rate_limit=0.5`.
     - When initialising the API it checks how much OpenAI rate limit is available and sets caps based on that.
-    - Allows custom filtering of responses via `is_valid` function and will retry until a valid one is generated (e.g. ensuring json output).
+    - Allows custom filtering of responses via `is_valid` function and will retry until a valid one is generated (e.g. ensuring json output).
     - Provides a running total of cost for OpenAI models and model timings for performance analysis.
-    - Utilise maximum rate limit by setting `max_tokens=None` for OpenAI models.
+    - Utilise maximum rate limit by setting `max_tokens=None` for OpenAI models.
     - Supports OpenAI moderation, embedding and Realtime (audio) API
     - Supports OpenAI chat/completion models, Anthropic, Gemini (all modalities), GraySwan, HuggingFace inference endpoints (e.g. for llama3).
 - Prompt, LLMResponse and ChatMessage class
