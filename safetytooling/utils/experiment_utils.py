@@ -91,6 +91,7 @@ class ExperimentConfigBase:
                 cache_dir=self.cache_dir,
                 prompt_history_dir=self.prompt_history_dir,
                 use_redis=self.use_redis,
+                print_prompt_and_response=self.print_prompt_and_response,
             )
 
         return self._api

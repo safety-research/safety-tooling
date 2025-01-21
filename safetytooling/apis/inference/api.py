@@ -45,6 +45,7 @@ from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
+from .together import TOGETHER_MODELS, TogetherChatModel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,11 +71,14 @@ class InferenceAPI:
         gemini_recitation_rate_check_volume: int = 100,
         gemini_recitation_rate_threshold: float = 0.5,
         gray_swan_num_threads: int = 80,
+        together_num_threads: int = 80,
         huggingface_num_threads: int = 100,
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
         use_redis: bool = False,
         empty_completion_threshold: int = 0,
+        use_gpu_models: bool = False,
+        print_prompt_and_response: bool = False,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -96,6 +100,7 @@ class InferenceAPI:
         self.gemini_recitation_rate_check_volume = gemini_recitation_rate_check_volume
         self.gemini_recitation_rate_threshold = gemini_recitation_rate_threshold
         self.gray_swan_num_threads = gray_swan_num_threads
+        self.together_num_threads = together_num_threads
         self.huggingface_num_threads = huggingface_num_threads
         self.empty_completion_threshold = empty_completion_threshold
         self.gpt4o_s2s_rpm_cap = gpt4o_s2s_rpm_cap
@@ -103,7 +108,10 @@ class InferenceAPI:
         self.current_time = time.time()
         self.n_calls = 0
         self.gpt_4o_rate_limiter = S2SRateLimiter(self.gpt4o_s2s_rpm_cap)
-
+        self.print_prompt_and_response = print_prompt_and_response
+        # can also set via env var
+        if os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "").lower() == "true":
+            self.print_prompt_and_response = True
         secrets = load_secrets("SECRETS")
         if prompt_history_dir == "default":
             if "PROMPT_HISTORY_DIR" in secrets:
@@ -162,6 +170,12 @@ class InferenceAPI:
             api_key=secrets["GRAYSWAN_API_KEY"] if "GRAYSWAN_API_KEY" in secrets else None,
         )
 
+        self._together = TogetherChatModel(
+            num_threads=self.together_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+            api_key=secrets["TOGETHER_API_KEY"] if "TOGETHER_API_KEY" in secrets else None,
+        )
+
         self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
         self._gemini_genai = GeminiModel(
             prompt_history_dir=self.prompt_history_dir,
@@ -172,8 +186,7 @@ class InferenceAPI:
         self._batch_audio_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
-        print(torch.cuda.is_available())
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and use_gpu_models:
             for model_name in BATCHED_MODELS:
                 try:
                     self._batch_audio_models[model_name] = BatchAudioModel(
@@ -217,7 +230,7 @@ class InferenceAPI:
     def model_id_to_class(self, model_id: str, gemini_use_vertexai: bool = False) -> InferenceAPIModel:
         if model_id in COMPLETION_MODELS:
             return self._openai_completion
-        elif model_id in GPT_CHAT_MODELS or "ft:gpt-3.5-turbo" in model_id:
+        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt"):
             return self._openai_chat
         elif model_id in ANTHROPIC_MODELS:
             return self._anthropic_chat
@@ -233,6 +246,8 @@ class InferenceAPI:
             return class_for_model
         elif model_id in S2S_MODELS:
             return self._openai_s2s
+        elif model_id in TOGETHER_MODELS or model_id.startswith("scalesafetyresearch"):
+            return self._together
         raise ValueError(f"Invalid model id: {model_id}")
 
     async def check_rate_limit(self, wait_time=60):
@@ -303,6 +318,7 @@ class InferenceAPI:
         is_valid: Callable[[str], bool] = lambda _: True,
         insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry",
         gemini_use_vertexai: bool = False,
+        use_cache: bool = True,
         **kwargs,
     ) -> list[LLMResponse]:
         """
@@ -365,13 +381,13 @@ class InferenceAPI:
         )
         cached_responses, cached_results, failed_cache_responses = [], [], []
 
-        if self.cache_manager is not None:
+        if self.cache_manager is not None and use_cache:
             cached_responses, cached_results, failed_cache_responses = self.cache_manager.process_cached_responses(
                 prompt=prompt,
                 params=llm_cache_params,
                 n=n,
                 insufficient_valids_behaviour=insufficient_valids_behaviour,
-                print_prompt_and_response=print_prompt_and_response,
+                print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                 empty_completion_threshold=self.empty_completion_threshold,
             )
 
@@ -412,7 +428,7 @@ class InferenceAPI:
                             model_class(
                                 model_ids,
                                 prompt,
-                                print_prompt_and_response,
+                                self.print_prompt_and_response or print_prompt_and_response,
                                 max_attempts_per_api_call,
                                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                                 **kwargs,
@@ -430,7 +446,7 @@ class InferenceAPI:
                     response = await model_class(
                         model_ids,
                         prompt,
-                        print_prompt_and_response,
+                        self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call,
                         is_valid=(
                             lambda x: (
@@ -446,7 +462,7 @@ class InferenceAPI:
             candidate_responses = model_class(
                 model_ids=model_ids,
                 batch_prompt=prompt,
-                print_prompt_and_response=print_prompt_and_response,
+                print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call=max_attempts_per_api_call,
                 n=num_candidates,
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
@@ -455,7 +471,7 @@ class InferenceAPI:
 
             # Update candidate_responses to include responses from cache
             candidate_iter = iter(candidate_responses)
-            if self.cache_manager is not None:
+            if self.cache_manager is not None and use_cache:
                 candidate_responses = [
                     next(candidate_iter) if response is None else response for response in cached_responses
                 ]
@@ -472,7 +488,7 @@ class InferenceAPI:
                         model_ids=model_ids,
                         prompt=prompt,
                         audio_out_dir=audio_out_dir,
-                        print_prompt_and_response=print_prompt_and_response,
+                        print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call=max_attempts_per_api_call,
                         is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                         **kwargs,
@@ -483,7 +499,7 @@ class InferenceAPI:
                 candidate_responses = await model_class(
                     model_ids,
                     prompt,
-                    print_prompt_and_response,
+                    self.print_prompt_and_response or print_prompt_and_response,
                     max_attempts_per_api_call,
                     n=num_candidates,
                     is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),

@@ -78,6 +78,8 @@ def setup_environment(
         os.environ["OPENAI_S2S_API_KEY"] = secrets["OPENAI_S2S_API_KEY"]
     if "GRAYSWAN_API_KEY" in secrets:
         os.environ["GRAYSWAN_API_KEY"] = secrets["GRAYSWAN_API_KEY"]
+    if "TOGETHER_API_KEY" in secrets:
+        os.environ["TOGETHER_API_KEY"] = secrets["TOGETHER_API_KEY"]
 
 
 def setup_logging(logging_level):
@@ -92,14 +94,34 @@ def setup_logging(logging_level):
     logging.getLogger("httpx").setLevel(logging.CRITICAL)
 
 
-def load_secrets(local_file_path):
-    secrets = {}
+def load_secrets(local_file_path: str | Path) -> dict[str, str | None]:
+    """Load secrets from a file, supporting comments and blank lines.
+
+    The file should contain KEY=value pairs, one per line.
+    Lines starting with # are treated as comments and ignored.
+    Blank lines are also ignored.
+    If the file doesn't exist, falls back to environment variables for CI.
+
+    Args:
+        local_file_path: Path to the secrets file, relative to repo root
+
+    Returns:
+        Dictionary mapping secret names to their values
+    """
+    secrets: dict[str, str | None] = {}
     secrets_file = get_repo_root() / local_file_path
     if secrets_file.exists():
         with open(secrets_file) as f:
             for line in f:
-                key, value = line.strip().split("=", 1)
-                secrets[key] = value
+                line = line.strip()
+                # Skip blank lines or comments
+                if not line or line.startswith("#"):
+                    continue
+                # Skip lines without =
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                secrets[key] = value.strip()
     else:
         # required for CI
         secrets = {

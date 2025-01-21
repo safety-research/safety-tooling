@@ -22,6 +22,7 @@ Or just run:
 2. Next, you need to run the following from the root of the repository:
     ```bash
     micromamba env create -n safetytooling python=3.11.7
+    eval "$(micromamba shell hook --shell bash)"
     micromamba activate safetytooling
     pip install -r requirements.txt
     ```
@@ -74,9 +75,10 @@ In addition, there is a pre-commit hook that runs the linter and formatter befor
 To enable it, run `make hooks` but this is optional.
 
 ### Testing
-Run `pytest -n auto` to run tests in parallel.
-You can run all tests (including some slow flaky ones) with
-`RUN_SLOW_TESTS=1 pytest -n auto`.
+Run tests as a python module using:
+```bash
+python -m pytest -n 6
+```
 
 ### Updating dependencies
 We only pin top-level dependencies only to make cross-platform development easier.
@@ -123,7 +125,7 @@ python -m safetytooling.apis.inference.usage.usage_anthropic
 
 - **LLM Inference API:**
     - Location:`safetytooling/apis/inference/api.py`
-    - **Caching Mechanism:** 
+    - **Caching Mechanism:**
         - Caches prompt calls to avoid redundant API calls. Cache location defaults to `$exp_dir/cache`. This means you can kill your run anytime and restart it without worrying about wasting API calls.
         - **Redis Cache:** Optionally use Redis for caching instead of files by setting `REDIS_CACHE=true` in your environment. Configure Redis connection with:
             - `REDIS_PASSWORD`: Optional Redis password for authentication

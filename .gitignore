@@ -27,3 +27,4 @@ SECRETS
 .vscode/
 .env
 __pycache__/
+SECRETS.test

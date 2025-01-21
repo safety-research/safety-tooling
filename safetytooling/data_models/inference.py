@@ -20,11 +20,11 @@ class LLMParams(HashableBaseModel):
     max_tokens: int | None = None
     logprobs: int | None = None
     seed: int | None = None
-    return_logprobs: bool = False
-    top_k_logprobs: int | None = None
+    return_logprobs: bool = False  # ?
+    top_k_logprobs: int | None = None  # ?
+    logit_bias: dict[int, float] | None = None
 
     model_config = pydantic.ConfigDict(extra="forbid")
-    # TODO: Add support for logit_bias
 
 
 class StopReason(Enum):
@@ -33,6 +33,7 @@ class StopReason(Enum):
     CONTENT_FILTER = "content_filter"
     API_ERROR = "api_error"
     PROMPT_BLOCKED = "prompt_blocked"
+    UNKNOWN = "unknown"
 
     def __str__(self):
         return self.value
@@ -57,7 +58,7 @@ class LLMResponse(pydantic.BaseModel):
     def parse_stop_reason(cls, v: str):
         if v in ["length", "max_tokens"]:
             return StopReason.MAX_TOKENS
-        elif v in ["stop", "stop_sequence", "end_turn"]:
+        elif v in ["stop", "stop_sequence", "end_turn", "eos"]:
             # end_turn is for Anthropic
             return StopReason.STOP_SEQUENCE
         elif v in ["content_filter"]:

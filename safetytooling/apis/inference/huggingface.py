@@ -20,10 +20,9 @@ HUGGINGFACE_MODELS = {
     "cais/HarmBench-Llama-2-13b-cls": "https://bs4v12dq6qct1vnl.us-east-1.aws.endpoints.huggingface.cloud",
     "cais/HarmBench-Mistral-7b-val-cls": "https://zxgc23txss3vps53.us-east-1.aws.endpoints.huggingface.cloud",
     "cais/zephyr_7b_r2d2": "https://kfxoz77lc3ub5jmj.us-east-1.aws.endpoints.huggingface.cloud",
-    "HuggingFaceH4/zephyr-7b-beta": "https://vzru5d0424di3uq9.us-east-1.aws.endpoints.huggingface.cloud",
     "GraySwanAI/Llama-3-8B-Instruct-RR": "https://mrxa9v3a8dv25m1m.us-east-1.aws.endpoints.huggingface.cloud",
-    # "meta-llama/Meta-Llama-3-8B": "https://aj6371hmkgygxf8q.us-east-1.aws.endpoints.huggingface.cloud",
     "meta-llama/Meta-Llama-3-8B-Instruct": "https://jn7q55wvt80rukn3.us-east-1.aws.endpoints.huggingface.cloud",
+    "jplhughes2/llama-3.2-1b-af-lora-adapters": "https://vg4zlgmijigl9stl.us-east-1.aws.endpoints.huggingface.cloud",
 }
 
 LOGGER = logging.getLogger(__name__)
@@ -184,6 +183,8 @@ class HuggingFaceModel(InferenceAPIModel):
                         params,
                     )
                     api_duration = time.time() - api_start
+                    if isinstance(response_data, dict):
+                        response_data = [response_data]
                     if not is_valid(response_data[0]["generated_text"]):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
             except Exception as e:
@@ -215,10 +216,18 @@ class HuggingFaceModel(InferenceAPIModel):
         response = LLMResponse(
             model_id=model_id,
             completion=response_data[0]["generated_text"],
-            stop_reason=self.stop_reason_map[response_data[0]["details"]["finish_reason"]],
+            stop_reason=(
+                StopReason.UNKNOWN.value
+                if "details" not in response_data[0]
+                else self.stop_reason_map[response_data[0]["details"]["finish_reason"]]
+            ),
             duration=duration,
             api_duration=api_duration,
-            logprobs=self.parse_logprobs(response_details=response_data[0]["details"]),
+            logprobs=(
+                None
+                if "details" not in response_data[0]
+                else self.parse_logprobs(response_details=response_data[0]["details"])
+            ),
             cost=0,
         )
         responses = [response]
