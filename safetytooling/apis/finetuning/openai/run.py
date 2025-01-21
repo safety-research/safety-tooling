@@ -165,6 +165,7 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
     # Initialize wandb run
     wrun = wandb.init(
         project=cfg.wandb_project_name,
+        entity=cfg.wandb_entity,
         config=dataclasses.asdict(cfg),
         tags=cfg.tags,
     )
