@@ -31,6 +31,8 @@ class VLLMChatModel(InferenceAPIModel):
 
         self.headers = {"Content-Type": "application/json"}
         self.vllm_base_url = vllm_base_url
+        if self.vllm_base_url.endswith("v1"):
+            self.vllm_base_url += "/chat/completions"
 
         self.kwarg_change_name = {
             "temperature": "temperature",
