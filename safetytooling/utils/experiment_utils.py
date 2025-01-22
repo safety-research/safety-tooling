@@ -41,6 +41,7 @@ class ExperimentConfigBase:
     gray_swan_num_threads: int = 40
     huggingface_num_threads: int = 100
     use_vllm_if_model_not_found: bool = False
+    vllm_base_url: str = "http://localhost:8000/v1/chat/completions"
     openai_tag: str = "OPENAI_API_KEY1"
     anthropic_tag: str = "ANTHROPIC_API_KEY"
     print_prompt_and_response: bool = False
@@ -94,6 +95,7 @@ class ExperimentConfigBase:
                 use_redis=self.use_redis,
                 print_prompt_and_response=self.print_prompt_and_response,
                 use_vllm_if_model_not_found=self.use_vllm_if_model_not_found,
+                vllm_base_url=self.vllm_base_url,
             )
 
         return self._api

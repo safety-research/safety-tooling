@@ -23,12 +23,14 @@ class VLLMChatModel(InferenceAPIModel):
         self,
         num_threads: int,
         prompt_history_dir: Path | None = None,
+        vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
 
         self.headers = {"Content-Type": "application/json"}
+        self.vllm_base_url = vllm_base_url
 
         self.kwarg_change_name = {
             "temperature": "temperature",
@@ -76,9 +78,9 @@ class VLLMChatModel(InferenceAPIModel):
         assert len(model_ids) == 1, "VLLM implementation only supports one model at a time."
         (model_id,) = model_ids
 
-        model_url = VLLM_MODELS.get(model_id, "http://localhost:8000/v1/chat/completions")
+        model_url = VLLM_MODELS.get(model_id, self.vllm_base_url)
         if model_id not in VLLM_MODELS:
-            LOGGER.warning(f"Model {model_id} not found in VLLM_MODELS, trying to use on localhost anyway")
+            LOGGER.warning(f"Model {model_id} not found in VLLM_MODELS, trying to use on {self.vllm_base_url}")
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
