@@ -76,8 +76,9 @@ class VLLMChatModel(InferenceAPIModel):
         assert len(model_ids) == 1, "VLLM implementation only supports one model at a time."
         (model_id,) = model_ids
 
-        assert model_id in VLLM_MODELS, f"Model {model_id} not supported"
-        model_url = VLLM_MODELS[model_id]
+        model_url = VLLM_MODELS.get(model_id, "http://localhost:8000/v1/chat/completions")
+        if model_id not in VLLM_MODELS:
+            LOGGER.warning(f"Model {model_id} not found in VLLM_MODELS, trying to use on localhost anyway")
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
