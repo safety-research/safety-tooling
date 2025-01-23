@@ -36,10 +36,15 @@ class AnthropicChatModel(InferenceAPIModel):
         self,
         num_threads: int,
         prompt_history_dir: Path | None = None,
+        anthropic_api_key: str | None = None,
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
-        self.aclient = AsyncAnthropic()  # Assuming AsyncAnthropic has a default constructor
+        if anthropic_api_key:
+            self.aclient = AsyncAnthropic(api_key=anthropic_api_key)
+        else:
+            self.aclient = AsyncAnthropic()
+
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
         self.allowed_kwargs = {"temperature", "max_tokens"}
 
@@ -166,8 +171,11 @@ class AnthropicChatModel(InferenceAPIModel):
 
 
 class AnthropicModelBatch:
-    def __init__(self):
-        self.client = anthropic.Anthropic()
+    def __init__(self, anthropic_api_key: str | None = None):
+        if anthropic_api_key:
+            self.client = anthropic.Anthropic(api_key=anthropic_api_key)
+        else:
+            self.client = anthropic.Anthropic()
 
     def create_message_batch(self, requests: list[dict]) -> dict:
         """Create a batch of messages."""
@@ -199,7 +207,9 @@ class AnthropicModelBatch:
         """Cancel a message batch."""
         return self.client.messages.batches.cancel(batch_id)
 
-    def prompts_to_requests(self, model_id: tuple[str, ...], prompts: list[Prompt], **kwargs) -> list[Request]:
+    def prompts_to_requests(
+        self, model_id: tuple[str, ...], prompts: list[Prompt], max_tokens: int, **kwargs
+    ) -> list[Request]:
         requests = []
         for i, prompt in enumerate(prompts):
             sys_prompt, chat_messages = prompt.anthropic_format()
@@ -210,6 +220,7 @@ class AnthropicModelBatch:
                     params=MessageCreateParamsNonStreaming(
                         model=model_id,
                         messages=chat_messages,
+                        max_tokens=max_tokens,
                         **(dict(system=sys_prompt) if sys_prompt else {}),
                         **kwargs,
                     ),
@@ -221,12 +232,13 @@ class AnthropicModelBatch:
         self,
         model_id: str,
         prompts: list[Prompt],
+        max_tokens: int,
         log_dir: Path | None = None,
         **kwargs,
     ) -> tuple[list[LLMResponse], str]:
         start = time.time()
 
-        requests = self.prompts_to_requests(model_id, prompts, **kwargs)
+        requests = self.prompts_to_requests(model_id, prompts, max_tokens, **kwargs)
         batch_response = self.create_message_batch(requests=requests)
         batch_id = batch_response.id
         if log_dir is not None:
@@ -254,6 +266,7 @@ class AnthropicModelBatch:
                         duration=None,  # Batch does not track individual durations
                         api_duration=None,
                         cost=0,
+                        batch_custom_id=result.custom_id,
                     )
                 )
 

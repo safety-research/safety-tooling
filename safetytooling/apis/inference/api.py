@@ -76,6 +76,7 @@ class InferenceAPI:
         cache_dir: Path | Literal["default"] | None = "default",
         empty_completion_threshold: int = 0,
         use_gpu_models: bool = False,
+        anthropic_api_key: str | None = None,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -147,6 +148,7 @@ class InferenceAPI:
         self._anthropic_chat = AnthropicChatModel(
             num_threads=self.anthropic_num_threads,
             prompt_history_dir=self.prompt_history_dir,
+            anthropic_api_key=anthropic_api_key,
         )
 
         self._huggingface = HuggingFaceModel(

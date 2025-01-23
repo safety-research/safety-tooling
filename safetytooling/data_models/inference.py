@@ -50,7 +50,7 @@ class LLMResponse(pydantic.BaseModel):
     safety_ratings: Union[dict, SafetyRatings] | None = None
     recitation_retries: int | None = None
     api_failures: int | None = 0
-
+    batch_custom_id: str | None = None
     model_config = pydantic.ConfigDict(protected_namespaces=())
 
     @pydantic.field_validator("stop_reason", mode="before")

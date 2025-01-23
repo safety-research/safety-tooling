@@ -112,6 +112,7 @@ class OpenAIModelBatch:
                         duration=None,  # Batch does not track individual durations
                         api_duration=None,
                         cost=0,
+                        batch_custom_id=result["custom_id"],
                     )
                 )
 

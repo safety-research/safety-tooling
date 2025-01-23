@@ -56,7 +56,15 @@ _GPT_3_MODELS = (
     "gpt-3.5-turbo-16k-0613",
 )
 GPT_CHAT_MODELS = set(_GPT_4_MODELS + _GPT_3_MODELS)
-
+OAI_FINETUNE_MODELS = (
+    "gpt-3.5-turbo-1106",
+    "gpt-3.5-turbo-0613",
+    "gpt-3.5-turbo",
+    "gpt-4o-mini-2024-07-18",
+    "gpt-4o-2024-08-06",
+    "davinci-002",
+    "babbage-002",
+)
 S2S_MODELS = "gpt-4o-s2s"
 
 
