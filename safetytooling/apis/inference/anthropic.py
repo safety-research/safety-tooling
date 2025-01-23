@@ -207,16 +207,20 @@ class AnthropicModelBatch:
         """Cancel a message batch."""
         return self.client.messages.batches.cancel(batch_id)
 
+    def get_custom_id(self, index: int, prompt: Prompt) -> str:
+        """Generate a custom ID for a batch request using index and prompt hash."""
+        hash_str = prompt.model_hash()
+        return f"{index}_{hash_str}"
+
     def prompts_to_requests(
         self, model_id: tuple[str, ...], prompts: list[Prompt], max_tokens: int, **kwargs
     ) -> list[Request]:
         requests = []
         for i, prompt in enumerate(prompts):
             sys_prompt, chat_messages = prompt.anthropic_format()
-            hash_str = prompt.model_hash()
             requests.append(
                 Request(
-                    custom_id=f"{i}_{hash_str}",
+                    custom_id=self.get_custom_id(i, prompt),
                     params=MessageCreateParamsNonStreaming(
                         model=model_id,
                         messages=chat_messages,

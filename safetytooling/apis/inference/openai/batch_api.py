@@ -56,14 +56,18 @@ class OpenAIModelBatch:
         """Cancel a message batch."""
         return self.client.batches.cancel(batch_id)
 
+    def get_custom_id(self, index: int, prompt: Prompt) -> str:
+        """Generate a custom ID for a batch request using index and prompt hash."""
+        hash_str = prompt.model_hash()
+        return f"{index}_{hash_str}"
+
     def prompts_to_file(self, model_id: str, prompts: list[Prompt], log_dir: Path, **kwargs) -> str:
         requests = []
         for i, prompt in enumerate(prompts):
             chat_messages = prompt.openai_format()
-            hash_str = prompt.model_hash()
             requests.append(
                 {
-                    "custom_id": f"{i}_{hash_str}",
+                    "custom_id": self.get_custom_id(i, prompt),
                     "method": "POST",
                     "url": "/v1/chat/completions",
                     "body": {
