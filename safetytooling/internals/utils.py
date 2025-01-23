@@ -1,8 +1,6 @@
-from typing import Literal, Optional, Union
+from typing import Literal
 
-import numpy as np
 import torch
-from sklearn.metrics import roc_auc_score
 
 
 def squeeze_positions(

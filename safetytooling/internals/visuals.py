@@ -9,8 +9,6 @@ import html
 import re
 import uuid
 
-import matplotlib.pyplot as plt
-
 
 def _interpolate_color(start_color, end_color, factor):
     """
@@ -484,84 +482,90 @@ def feature_centric_view(feature, short=False, extra_prompts=None):
     return _light_mode(combined_html)
 
 
-def _generate_prompt_centric_html(examples, title, get_tokens_and_acts_func, use_orange_highlight):
-
-    # Generate HTML content for the prompt-centric view
-
-    # Add a title if provided
+def _generate_prompt_centric_html(examples, title, get_tokens_and_acts_func, use_orange_highlight, **func_kwargs):
+    """Generate HTML content for the prompt-centric view"""
     if title is not None:
         html_content = f"<h2>{title}</h2>"
     else:
         html_content = ""
 
-    # Add a container for the examples
     html_content += "<div class='examples-container'>"
-
-    # Iterate through each example
     for i, example in enumerate(examples):
-
-        # Get the tokens and activations for the example
-        str_tokens, acts = get_tokens_and_acts_func(example)
+        str_tokens, acts = get_tokens_and_acts_func(example, **func_kwargs)
         html_content += f'<div class="example"><div class="example-label">Example {i}:</div>'
-
-        # Generate highlighted HTML for the example
         html_content += _generate_highlighted_html(str_tokens, acts, use_orange_highlight)
         html_content += "</div>"
     html_content += "</div>"
     return html_content
 
 
-def _generate_prompt_centric_view(examples, title, get_tokens_and_acts_func, use_orange_highlight):
-
-    # Check if examples is a single example or a list of examples
+def _generate_prompt_centric_view(examples, title, get_tokens_and_acts_func, use_orange_highlight, **func_kwargs):
+    """Generate a prompt-centric view with the given examples and function"""
     if not isinstance(examples, list) and not isinstance(examples, dict):
         examples = [examples]
 
-    # Generate the prompt-centric view HTML content
     if isinstance(examples, dict):
         html_contents = []
         for category, category_examples in examples.items():
             category_html = _generate_prompt_centric_html(
-                category_examples, None, get_tokens_and_acts_func, use_orange_highlight
+                category_examples, None, get_tokens_and_acts_func, use_orange_highlight, **func_kwargs
             )
             html_contents.append((category, category_html))
         return _light_mode(_combine_html_contents(*html_contents, title=title))
     else:
         return _light_mode(
-            _generate_prompt_centric_html(examples, title, get_tokens_and_acts_func, use_orange_highlight)
+            _generate_prompt_centric_html(
+                examples, title, get_tokens_and_acts_func, use_orange_highlight, **func_kwargs
+            )
         )
 
 
-def prompt_centric_view_feature(examples, feature):
-
-    # Generate the title for the prompt-centric view
-    title = f"Prompt-Centric View - Feature {feature.feature_id}, Hook Point {feature.hook_name}"
-
-    # Define a function to get the tokens and activations for a given example
-    get_tokens_and_acts = lambda ex: (
-        ex.str_tokens,
-        ex.get_feature_activation(feature).tolist(),
+def get_tokens_and_acts_for_feature(example, feature):
+    """Get tokens and activations for a feature from an example"""
+    return (
+        example.str_tokens,
+        example.get_feature_activation(feature).tolist(),
     )
 
-    # Generate the prompt-centric view HTML content
-    return _generate_prompt_centric_view(examples, title, get_tokens_and_acts, True)
+
+def get_tokens_and_acts_for_direction(example, encoder, direction, hook_name):
+    """Get tokens and direction scores from an example"""
+    return example.get_tokens_direction_scores(encoder, direction, hook_name)
+
+
+def get_tokens_and_acts_generic(example):
+    """Get tokens and activations from a generic example tuple"""
+    return example
+
+
+def prompt_centric_view_feature(examples, feature):
+    """Generate prompt-centric view for a feature"""
+    title = f"Prompt-Centric View - Feature {feature.feature_id}, Hook Point {feature.hook_name}"
+    return _generate_prompt_centric_view(
+        examples=examples,
+        title=title,
+        get_tokens_and_acts_func=get_tokens_and_acts_for_feature,
+        use_orange_highlight=True,
+        feature=feature,
+    )
 
 
 def prompt_centric_view_direction(examples, encoder, hook_name, direction):
-
-    # Generate the title for the prompt-centric view
+    """Generate prompt-centric view for a direction"""
     title = f"Prompt-Centric View - Hook Point {hook_name}"
-
-    # Define a function to get the tokens and activations for a given example
-    get_tokens_and_acts = lambda ex: ex.get_tokens_direction_scores(encoder, direction, hook_name)
-
-    # Generate the prompt-centric view HTML content
-    return _generate_prompt_centric_view(examples, title, get_tokens_and_acts, False)
+    return _generate_prompt_centric_view(
+        examples=examples,
+        title=title,
+        get_tokens_and_acts_func=get_tokens_and_acts_for_direction,
+        use_orange_highlight=False,
+        encoder=encoder,
+        direction=direction,
+        hook_name=hook_name,
+    )
 
 
 def prompt_centric_view_generic(token_act_pairs, title="Generic Prompt-Centric View"):
-    # Display prompt-centric view for a list of annotated examples
-    # Check if the input is a list of lists of (token, activation) tuples
+    """Display prompt-centric view for a list of annotated examples"""
     if not isinstance(token_act_pairs, list) or not all(
         isinstance(example, list) and all(isinstance(item, tuple) for item in example) for example in token_act_pairs
     ):
@@ -569,18 +573,14 @@ def prompt_centric_view_generic(token_act_pairs, title="Generic Prompt-Centric V
             f"Input should be a list of lists of (token, activation) tuples., is instead {type(token_act_pairs)}"
         )
 
-    # Separate tokens and activations for each example
     examples = []
     for example in token_act_pairs:
         tokens, acts = zip(*example)
         examples.append((list(tokens), list(acts)))
 
-    # Define a function to get the tokens and activations for a given example
-    def get_tokens_and_acts(example):
-        return example
-
-    # Generate the prompt-centric view HTML content
-    return _generate_prompt_centric_view(examples, title, get_tokens_and_acts, False)
+    return _generate_prompt_centric_view(
+        examples=examples, title=title, get_tokens_and_acts_func=get_tokens_and_acts_generic, use_orange_highlight=False
+    )
 
 
 def prompt_centric_view_generic_dict(token_act_pairs_dict, title="Generic Prompt-Centric View"):
