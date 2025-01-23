@@ -84,6 +84,8 @@ class InferenceAPI:
         use_gpu_models: bool = False,
         anthropic_api_key: str | None = None,
         print_prompt_and_response: bool = False,
+        use_vllm_if_model_not_found: bool = False,
+        vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -116,6 +118,8 @@ class InferenceAPI:
         self.n_calls = 0
         self.gpt_4o_rate_limiter = S2SRateLimiter(self.gpt4o_s2s_rpm_cap)
         self.print_prompt_and_response = print_prompt_and_response
+        self.use_vllm_if_model_not_found = use_vllm_if_model_not_found
+        self.vllm_base_url = vllm_base_url
         # can also set via env var
         if os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "").lower() == "true":
             self.print_prompt_and_response = True
@@ -195,6 +199,7 @@ class InferenceAPI:
         self._vllm = VLLMChatModel(
             num_threads=vllm_num_threads,
             prompt_history_dir=self.prompt_history_dir,
+            vllm_base_url=self.vllm_base_url,
         )
 
         self._deepseek = DeepSeekChatModel(
@@ -272,6 +277,8 @@ class InferenceAPI:
             return self._vllm
         elif model_id in DEEPSEEK_MODELS:  # Add this condition
             return self._deepseek
+        elif self.use_vllm_if_model_not_found:
+            return self._vllm
         raise ValueError(f"Invalid model id: {model_id}")
 
     async def check_rate_limit(self, wait_time=60):

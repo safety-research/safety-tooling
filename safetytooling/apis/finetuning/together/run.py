@@ -98,6 +98,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         # Initialize wandb run
         wrun = wandb.init(
             project=cfg.wandb_project_name,
+            entity=cfg.wandb_entity,
             config=dataclasses.asdict(cfg),
             tags=cfg.tags,
         )
@@ -182,7 +183,6 @@ class TogetherFTConfig(FinetuneConfig):
     lora_alpha: int = 8
     lora_dropout: float = 0.0
     suffix: str = ""  # Together suffix to append to the model name
-    lora: bool = False
 
     save_model: bool = False
 
