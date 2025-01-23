@@ -211,7 +211,7 @@ class Prompt(HashableBaseModel):
 
                 return rendered_prompt
 
-            case "meta-llama/Meta-Llama-3-8B-Instruct" | "GraySwanAI/Llama-3-8B-Instruct-RR":
+            case "meta-llama/Meta-Llama-3-8B-Instruct" | "GraySwanAI/Llama-3-8B-Instruct-RR" | "llama":
                 # See Llama 3 Model Card for prompt format.
                 rendered_prompt = "<|begin_of_text|>"
                 for msg in self.messages:
@@ -236,7 +236,7 @@ class Prompt(HashableBaseModel):
                 return rendered_prompt
 
             case _:
-                return "\n\n".join(msg.content for msg in self.messages)
+                raise ValueError(f"Unsupported model {hf_model_id}")
 
     def openai_format(
         self,

@@ -33,6 +33,7 @@ class StopReason(Enum):
     CONTENT_FILTER = "content_filter"
     API_ERROR = "api_error"
     PROMPT_BLOCKED = "prompt_blocked"
+    UNKNOWN = "unknown"
 
     def __str__(self):
         return self.value
@@ -51,6 +52,8 @@ class LLMResponse(pydantic.BaseModel):
     recitation_retries: int | None = None
     api_failures: int | None = 0
     batch_custom_id: str | None = None
+    reasoning_content: str | None = None
+
     model_config = pydantic.ConfigDict(protected_namespaces=())
 
     @pydantic.field_validator("stop_reason", mode="before")

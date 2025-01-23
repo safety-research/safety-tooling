@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from collections import defaultdict
 from functools import wraps
@@ -31,7 +32,8 @@ from safetytooling.data_models import (
 from safetytooling.utils.utils import get_repo_root, load_secrets, setup_environment
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
-from .cache_manager import CacheManager
+from .cache_manager import BaseCacheManager, get_cache_manager
+from .deepseek import DEEPSEEK_MODELS, DeepSeekChatModel
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
@@ -44,6 +46,7 @@ from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
+from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
 
 LOGGER = logging.getLogger(__name__)
@@ -70,17 +73,23 @@ class InferenceAPI:
         gemini_recitation_rate_check_volume: int = 100,
         gemini_recitation_rate_threshold: float = 0.5,
         gray_swan_num_threads: int = 80,
-        together_num_threads: int = 80,
         huggingface_num_threads: int = 100,
+        together_num_threads: int = 80,
+        vllm_num_threads: int = 8,
+        deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
+        use_redis: bool = False,
         empty_completion_threshold: int = 0,
         use_gpu_models: bool = False,
         anthropic_api_key: str | None = None,
+        print_prompt_and_response: bool = False,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
         Set prompt_history_dir to "default" to use the default prompt history directory.
+
+        If REDIS_CACHE is set to true, use_redis will be set to true in any case.
         """
 
         if openai_fraction_rate_limit > 1:
@@ -98,13 +107,18 @@ class InferenceAPI:
         self.gray_swan_num_threads = gray_swan_num_threads
         self.together_num_threads = together_num_threads
         self.huggingface_num_threads = huggingface_num_threads
+        self.vllm_num_threads = vllm_num_threads
+        self.deepseek_num_threads = deepseek_num_threads
         self.empty_completion_threshold = empty_completion_threshold
         self.gpt4o_s2s_rpm_cap = gpt4o_s2s_rpm_cap
         self.init_time = time.time()
         self.current_time = time.time()
         self.n_calls = 0
         self.gpt_4o_rate_limiter = S2SRateLimiter(self.gpt4o_s2s_rpm_cap)
-
+        self.print_prompt_and_response = print_prompt_and_response
+        # can also set via env var
+        if os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "").lower() == "true":
+            self.print_prompt_and_response = True
         secrets = load_secrets("SECRETS")
         if prompt_history_dir == "default":
             if "PROMPT_HISTORY_DIR" in secrets:
@@ -124,9 +138,10 @@ class InferenceAPI:
             assert isinstance(cache_dir, Path) or cache_dir is None
             self.cache_dir = cache_dir
 
-        self.cache_manager: CacheManager | None = None
+        self.cache_manager: BaseCacheManager | None = None
+        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         if self.cache_dir is not None:
-            self.cache_manager = CacheManager(self.cache_dir)
+            self.cache_manager = get_cache_manager(self.cache_dir, use_redis)
 
         self._openai_completion = OpenAICompletionModel(
             frac_rate_limit=self.openai_fraction_rate_limit,
@@ -176,6 +191,18 @@ class InferenceAPI:
             recitation_rate_threshold=self.gemini_recitation_rate_threshold,
             empty_completion_threshold=self.empty_completion_threshold,
         )
+
+        self._vllm = VLLMChatModel(
+            num_threads=vllm_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+        )
+
+        self._deepseek = DeepSeekChatModel(
+            num_threads=self.deepseek_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+            api_key=secrets["DEEPSEEK_API_KEY"] if "DEEPSEEK_API_KEY" in secrets else None,
+        )
+
         self._batch_audio_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
@@ -241,6 +268,10 @@ class InferenceAPI:
             return self._openai_s2s
         elif model_id in TOGETHER_MODELS or model_id.startswith("scalesafetyresearch"):
             return self._together
+        elif model_id in VLLM_MODELS:
+            return self._vllm
+        elif model_id in DEEPSEEK_MODELS:  # Add this condition
+            return self._deepseek
         raise ValueError(f"Invalid model id: {model_id}")
 
     async def check_rate_limit(self, wait_time=60):
@@ -276,27 +307,24 @@ class InferenceAPI:
 
         # return the valid responses, or pad with invalid responses if there aren't enough
         if num_valid < n:
-            match insufficient_valids_behaviour:
-                case "error":
-                    raise RuntimeError(f"Only found {num_valid} valid responses from {num_candidates} candidates.")
-                case "retry":
-                    raise RuntimeError(
-                        f"Only found {num_valid} valid responses from {num_candidates} candidates. n={n}"
-                    )
-                case "continue":
-                    responses = valid_responses
-                case "pad_invalids":
-                    invalid_responses = [
-                        response for response in candidate_responses if not is_valid(response.completion)
-                    ]
-                    invalids_needed = n - num_valid
-                    responses = [
-                        *valid_responses,
-                        *invalid_responses[:invalids_needed],
-                    ]
-                    LOGGER.info(
-                        f"Padded {num_valid} valid responses with {invalids_needed} invalid responses to get {len(responses)} total responses"
-                    )
+            if insufficient_valids_behaviour == "error":
+                raise RuntimeError(f"Only found {num_valid} valid responses from {num_candidates} candidates.")
+            elif insufficient_valids_behaviour == "retry":
+                raise RuntimeError(f"Only found {num_valid} valid responses from {num_candidates} candidates. n={n}")
+            elif insufficient_valids_behaviour == "continue":
+                responses = valid_responses
+            elif insufficient_valids_behaviour == "pad_invalids":
+                invalid_responses = [response for response in candidate_responses if not is_valid(response.completion)]
+                invalids_needed = n - num_valid
+                responses = [
+                    *valid_responses,
+                    *invalid_responses[:invalids_needed],
+                ]
+                LOGGER.info(
+                    f"Padded {num_valid} valid responses with {invalids_needed} invalid responses to get {len(responses)} total responses"
+                )
+            else:
+                raise ValueError(f"Unknown insufficient_valids_behaviour: {insufficient_valids_behaviour}")
         else:
             responses = valid_responses
         return responses[:n]
@@ -383,7 +411,7 @@ class InferenceAPI:
                 params=llm_cache_params,
                 n=n,
                 insufficient_valids_behaviour=insufficient_valids_behaviour,
-                print_prompt_and_response=print_prompt_and_response,
+                print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                 empty_completion_threshold=self.empty_completion_threshold,
             )
 
@@ -424,7 +452,7 @@ class InferenceAPI:
                             model_class(
                                 model_ids,
                                 prompt,
-                                print_prompt_and_response,
+                                self.print_prompt_and_response or print_prompt_and_response,
                                 max_attempts_per_api_call,
                                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                                 **kwargs,
@@ -442,7 +470,7 @@ class InferenceAPI:
                     response = await model_class(
                         model_ids,
                         prompt,
-                        print_prompt_and_response,
+                        self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call,
                         is_valid=(
                             lambda x: (
@@ -458,7 +486,7 @@ class InferenceAPI:
             candidate_responses = model_class(
                 model_ids=model_ids,
                 batch_prompt=prompt,
-                print_prompt_and_response=print_prompt_and_response,
+                print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call=max_attempts_per_api_call,
                 n=num_candidates,
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
@@ -484,7 +512,7 @@ class InferenceAPI:
                         model_ids=model_ids,
                         prompt=prompt,
                         audio_out_dir=audio_out_dir,
-                        print_prompt_and_response=print_prompt_and_response,
+                        print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call=max_attempts_per_api_call,
                         is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                         **kwargs,
@@ -495,7 +523,7 @@ class InferenceAPI:
                 candidate_responses = await model_class(
                     model_ids,
                     prompt,
-                    print_prompt_and_response,
+                    self.print_prompt_and_response or print_prompt_and_response,
                     max_attempts_per_api_call,
                     n=num_candidates,
                     is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),

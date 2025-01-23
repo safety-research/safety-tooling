@@ -28,6 +28,10 @@ async def upload_finetuning_file(
         return None
 
     LOGGER.info(f"Uploading {file_path} to Together...")
+    if not file_path.exists():
+        raise FileNotFoundError(f"File {file_path} does not exist")
+    if file_path.suffix != ".jsonl":
+        raise ValueError(f"File {file_path} must have a .jsonl extension")
     response = client.files.upload(file=str(file_path))
     file_id = response.id
     LOGGER.info(f"Uploaded {file_path} to Together as {file_id}")
@@ -83,50 +87,57 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         learning_rate=cfg.learning_rate,
         lora=cfg.lora,
         suffix=cfg.suffix,
+        lora_r=cfg.lora_r,
+        lora_alpha=cfg.lora_alpha,
+        lora_dropout=cfg.lora_dropout,
     )
     LOGGER.info(f"Started fine-tuning job: {ft_job.id}")
 
-    # Initialize wandb run
-    wrun = wandb.init(
-        project=cfg.wandb_project_name,
-        config=dataclasses.asdict(cfg),
-        tags=cfg.tags,
-    )
-    assert isinstance(wrun, wandb.sdk.wandb_run.Run)
+    wrun = None
+    if cfg.wandb_project_name is not None:
+        # Initialize wandb run
+        wrun = wandb.init(
+            project=cfg.wandb_project_name,
+            config=dataclasses.asdict(cfg),
+            tags=cfg.tags,
+        )
+        assert isinstance(wrun, wandb.sdk.wandb_run.Run)
 
-    wrun.config.update(
-        {
-            "finetune_job_id": ft_job.id,
-            "train_file_id": train_file_id,
-            **({"val_file_id": val_file_id} if val_file_id is not None else {}),
-        }
-    )
+        wrun.config.update(
+            {
+                "finetune_job_id": ft_job.id,
+                "train_file_id": train_file_id,
+                **({"val_file_id": val_file_id} if val_file_id is not None else {}),
+            }
+        )
 
-    # Upload files to wandb
-    upload_file_to_wandb(
-        file_path=cfg.train_file,
-        name=train_file_id,
-        type="together-finetune-training-file",
-        description="Training file for finetuning",
-        wandb_run=wrun,
-    )
-
-    if cfg.val_file is not None:
+        # Upload files to wandb
         upload_file_to_wandb(
-            file_path=cfg.val_file,
-            name=val_file_id,
-            type="together-finetune-validation-file",
-            description="Validation file for finetuning",
+            file_path=cfg.train_file,
+            name=train_file_id,
+            type="together-finetune-training-file",
+            description="Training file for finetuning",
             wandb_run=wrun,
         )
+
+        if cfg.val_file is not None:
+            upload_file_to_wandb(
+                file_path=cfg.val_file,
+                name=val_file_id,
+                type="together-finetune-validation-file",
+                description="Validation file for finetuning",
+                wandb_run=wrun,
+            )
 
     LOGGER.info("Waiting for fine-tuning job to finish...")
     while True:
         status = client.fine_tuning.retrieve(ft_job.id)  # https://docs.together.ai/reference/get_fine-tunes-id
-        wrun.summary.update({"together_job_status": status.status})
+        if wrun is not None:
+            wrun.summary.update({"together_job_status": status.status})
         if status.status == "completed":
             LOGGER.info("Fine-tuning job succeeded.")
-            wrun.summary.update(status.model_dump())
+            if wrun is not None:
+                wrun.summary.update(status.model_dump())
             break
         elif status.status in ["error", "cancelled"]:
             LOGGER.error(f"Fine-tuning job failed: {status.status}")
@@ -134,7 +145,8 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
 
         await asyncio.sleep(10)
 
-    wrun.finish()
+    if wrun is not None:
+        wrun.finish()
     LOGGER.info(f"Fine-tuning job finished with id <ft_id>{ft_job.id}</ft_id>")
 
     if cfg.save_folder is not None:
@@ -165,6 +177,10 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
 @dataclasses.dataclass
 class TogetherFTConfig(FinetuneConfig):
     learning_rate: float = 1e-5
+    lora: bool = False
+    lora_r: int = 8
+    lora_alpha: int = 8
+    lora_dropout: float = 0.0
     suffix: str = ""  # Together suffix to append to the model name
     lora: bool = False
 
