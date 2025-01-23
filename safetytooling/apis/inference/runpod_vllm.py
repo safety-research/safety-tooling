@@ -124,7 +124,6 @@ class VLLMChatModel(InferenceAPIModel):
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
-        
 
         # Extract logprobs from response if available
         logprobs = None
