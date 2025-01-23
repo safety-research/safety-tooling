@@ -11,6 +11,11 @@ from safetytooling.data_models import LLMResponse, Prompt
 from .model import InferenceAPIModel
 
 TOGETHER_MODELS = {
+    "meta-llama/Llama-3.2-1B-Instruct",
+    "meta-llama/Meta-Llama-3-8B-Instruct",
+    "meta-llama/Meta-Llama-3.1-8B-Instruct-Reference",
+    "meta-llama/Meta-Llama-3.1-70B-Instruct-Reference",
+    "meta-llama/Llama-3.3-70B-Instruct-Reference",
     "meta-llama/Meta-Llama-3-8B-Instruct-Turbo",
     "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
     "meta-llama/Meta-Llama-3-70B-Instruct-Turbo",

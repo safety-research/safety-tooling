@@ -8,7 +8,7 @@ class FinetuneConfig:
     model: str  # The model to fine-tune
     val_file: Path | None = None  # Validation data
     n_epochs: int = 1  # Number of epochs to train for
-    batch_size: int = 16
+    batch_size: int | str = 16
     dry_run: bool = False  # Just validate the data, don't launch the job
 
     logging_level: str = "info"

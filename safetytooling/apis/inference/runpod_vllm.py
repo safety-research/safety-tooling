@@ -81,8 +81,8 @@ class VLLMChatModel(InferenceAPIModel):
         (model_id,) = model_ids
 
         model_url = VLLM_MODELS.get(model_id, self.vllm_base_url)
-        if model_id not in VLLM_MODELS:
-            LOGGER.warning(f"Model {model_id} not found in VLLM_MODELS, trying to use on {self.vllm_base_url}")
+        # if model_id not in VLLM_MODELS:
+        # LOGGER.warning(f"Model {model_id} not found in VLLM_MODELS, trying to use on {self.vllm_base_url}")
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
