@@ -12,7 +12,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class BatchInferenceAPI:
-    """A wrapper around batch APIs that automatically manages rate limits and valid responses."""
+    """A wrapper around batch APIs that can do a bunch of model calls at once."""
 
     def __init__(
         self,
@@ -74,66 +74,9 @@ class BatchInferenceAPI:
             log_dir.mkdir(parents=True, exist_ok=True)
 
         if model_id in ANTHROPIC_MODELS:
-            custom_ids = [self._anthropic_batch.get_custom_id(i, prompt) for i, prompt in enumerate(prompts)]
-            set_custom_ids = set(custom_ids)
-
-            requests = self._anthropic_batch.prompts_to_requests(model_id, prompts, **kwargs)
-            batch_response = self._anthropic_batch.create_message_batch(requests=requests)
-            batch_id = batch_response.id
-            print(f"Batch {batch_id} created with {len(prompts)} requests")
-
-            _ = await self._anthropic_batch.poll_message_batch(batch_id)
-            results = self._anthropic_batch.retrieve_message_batch_results(batch_id)
-
-            responses_dict = {}
-            for result in results:
-                if result.result.type == "succeeded":
-                    content = result.result.message.content
-                    # Extract text from content array
-                    text = content[0].text if content else ""
-                    assert result.custom_id in set_custom_ids
-                    responses_dict[result.custom_id] = LLMResponse(
-                        model_id=model_id,
-                        completion=text,
-                        stop_reason=result.result.message.stop_reason,
-                        duration=None,  # Batch does not track individual durations
-                        api_duration=None,
-                        cost=0,
-                        batch_custom_id=result.custom_id,
-                    )
-
-            responses = []
-            for custom_id in custom_ids:
-                responses.append(responses_dict[custom_id] if custom_id in responses_dict else None)
-
+            responses, batch_id = await self._anthropic_batch(model_id, prompts, log_dir=log_dir, **kwargs)
         elif model_id in GPT_CHAT_MODELS:
-            input_file_path = self._openai_batch.prompts_to_file(model_id, prompts, log_dir, **kwargs)
-            batch_file_object = self._openai_batch.client.files.create(
-                file=open(input_file_path, "rb"), purpose="batch"
-            )
-            batch_object = self._openai_batch.create_message_batch(input_file_id=batch_file_object.id)
-            batch_id = batch_object.id
-            print(f"Batch {batch_id} created with {len(prompts)} requests")
-
-            _ = await self._openai_batch.poll_message_batch(batch_id)
-            results = self._openai_batch.retrieve_message_batch_results(batch_object.output_file_id)
-
-            responses = []
-            for result in results:
-                if result["response"]["status_code"] == 200:
-                    body = result["response"]["body"]
-                    choice = body["choices"][0]
-                    responses.append(
-                        LLMResponse(
-                            model_id=model_id,
-                            completion=choice["message"]["content"],
-                            stop_reason=choice["finish_reason"],
-                            duration=None,  # Batch does not track individual durations
-                            api_duration=None,
-                            cost=0,
-                            batch_custom_id=result["custom_id"],
-                        )
-                    )
+            responses, batch_id = await self._openai_batch(model_id, prompts, log_dir=log_dir, **kwargs)
         else:
             raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
 

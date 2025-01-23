@@ -90,6 +90,9 @@ class OpenAIModelBatch:
     ) -> tuple[list[LLMResponse], str]:
         start = time.time()
 
+        custom_ids = [self.get_custom_id(i, prompt) for i, prompt in enumerate(prompts)]
+        set_custom_ids = set(custom_ids)
+
         input_file_path = self.prompts_to_file(model_id, prompts, log_dir, **kwargs)
         batch_file_object = self.client.files.create(file=open(input_file_path, "rb"), purpose="batch")
         batch_object = self.create_message_batch(input_file_id=batch_file_object.id)
@@ -103,22 +106,25 @@ class OpenAIModelBatch:
 
         results = self.retrieve_message_batch_results(batch_object.output_file_id)
 
-        responses = []
+        responses_dict = {}
         for result in results:
             if result["response"]["status_code"] == 200:
                 body = result["response"]["body"]
                 choice = body["choices"][0]
-                responses.append(
-                    LLMResponse(
-                        model_id=model_id,
-                        completion=choice["message"]["content"],
-                        stop_reason=choice["finish_reason"],
-                        duration=None,  # Batch does not track individual durations
-                        api_duration=None,
-                        cost=0,
-                        batch_custom_id=result["custom_id"],
-                    )
+                assert result["custom_id"] in set_custom_ids
+                responses_dict[result["custom_id"]] = LLMResponse(
+                    model_id=model_id,
+                    completion=choice["message"]["content"],
+                    stop_reason=choice["finish_reason"],
+                    duration=None,  # Batch does not track individual durations
+                    api_duration=None,
+                    cost=0,
+                    batch_custom_id=result["custom_id"],
                 )
+
+        responses = []
+        for custom_id in custom_ids:
+            responses.append(responses_dict[custom_id] if custom_id in responses_dict else None)
 
         duration = time.time() - start
         LOGGER.debug(f"Completed batch call in {duration}s")

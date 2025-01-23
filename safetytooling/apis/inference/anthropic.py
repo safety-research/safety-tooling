@@ -236,11 +236,14 @@ class AnthropicModelBatch:
         self,
         model_id: str,
         prompts: list[Prompt],
-        max_tokens: int,
+        max_tokens: int = 4096,
         log_dir: Path | None = None,
         **kwargs,
     ) -> tuple[list[LLMResponse], str]:
         start = time.time()
+
+        custom_ids = [self.get_custom_id(i, prompt) for i, prompt in enumerate(prompts)]
+        set_custom_ids = set(custom_ids)
 
         requests = self.prompts_to_requests(model_id, prompts, max_tokens, **kwargs)
         batch_response = self.create_message_batch(requests=requests)
@@ -250,29 +253,32 @@ class AnthropicModelBatch:
             log_file.parent.mkdir(parents=True, exist_ok=True)
             with open(log_file, "w") as f:
                 json.dump(batch_response.model_dump(mode="json"), f)
-        print(f"Batch {batch_id} created with {len(requests)} requests")
+        print(f"Batch {batch_id} created with {len(prompts)} requests")
 
         _ = await self.poll_message_batch(batch_id)
 
         results = self.retrieve_message_batch_results(batch_id)
 
-        responses = []
+        responses_dict = {}
         for result in results:
             if result.result.type == "succeeded":
                 content = result.result.message.content
                 # Extract text from content array
                 text = content[0].text if content else ""
-                responses.append(
-                    LLMResponse(
-                        model_id=model_id,
-                        completion=text,
-                        stop_reason=result.result.message.stop_reason,
-                        duration=None,  # Batch does not track individual durations
-                        api_duration=None,
-                        cost=0,
-                        batch_custom_id=result.custom_id,
-                    )
+                assert result.custom_id in set_custom_ids
+                responses_dict[result.custom_id] = LLMResponse(
+                    model_id=model_id,
+                    completion=text,
+                    stop_reason=result.result.message.stop_reason,
+                    duration=None,  # Batch does not track individual durations
+                    api_duration=None,
+                    cost=0,
+                    batch_custom_id=result.custom_id,
                 )
+
+        responses = []
+        for custom_id in custom_ids:
+            responses.append(responses_dict[custom_id] if custom_id in responses_dict else None)
 
         duration = time.time() - start
         LOGGER.debug(f"Completed batch call in {duration}s")
