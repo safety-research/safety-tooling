@@ -1,3 +1,6 @@
+import random
+import time
+
 import pytest
 
 from safetytooling.apis.inference.api import InferenceAPI
@@ -8,9 +11,12 @@ from safetytooling.utils import utils
 async def test_api_cache():
     utils.setup_environment()
 
+    random.seed(time.time())
+
+    q = f"What is the meaning of life? {random.randint(0, 1000000)}"
     response1 = await InferenceAPI.get_default_global_api().ask_single_question(
         model_ids="gpt-4o-mini",
-        question="What is the meaning of life?",
+        question=q,
         max_tokens=20,
         temperature=1.2,
     )
@@ -19,7 +25,7 @@ async def test_api_cache():
 
     response2 = await InferenceAPI.get_default_global_api().ask_single_question(
         model_ids="gpt-4o-mini",
-        question="What is the meaning of life?",
+        question=q,
         max_tokens=20,
         temperature=1.2,
     )

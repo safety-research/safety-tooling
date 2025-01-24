@@ -174,6 +174,7 @@ class AnthropicModelBatch:
     def __init__(self, anthropic_api_key: str | None = None):
         if anthropic_api_key:
             self.client = anthropic.Anthropic(api_key=anthropic_api_key)
+            print(f"{anthropic_api_key=}")
         else:
             self.client = anthropic.Anthropic()
 
@@ -236,10 +237,11 @@ class AnthropicModelBatch:
         self,
         model_id: str,
         prompts: list[Prompt],
-        max_tokens: int = 4096,
+        max_tokens: int,
         log_dir: Path | None = None,
         **kwargs,
     ) -> tuple[list[LLMResponse], str]:
+        assert max_tokens is not None, "Anthropic batch API requires max_tokens to be specified"
         start = time.time()
 
         custom_ids = [self.get_custom_id(i, prompt) for i, prompt in enumerate(prompts)]
@@ -255,10 +257,12 @@ class AnthropicModelBatch:
             with open(log_file, "w") as f:
                 json.dump(batch_response.model_dump(mode="json"), f)
         print(f"Batch {batch_id} created with {len(prompts)} requests")
+        print("Track the batch at https://console.anthropic.com/settings/workspaces/default/batches")
 
         _ = await self.poll_message_batch(batch_id)
 
         results = self.retrieve_message_batch_results(batch_id)
+        LOGGER.info(f"{results[0]=}")
 
         responses_dict = {}
         for result in results:
