@@ -16,30 +16,29 @@ class BatchInferenceAPI:
 
     def __init__(
         self,
-        prompt_history_dir: Path | Literal["default"] | None = "default",
+        log_dir: Path | Literal["default"] = "default",
         anthropic_api_key: str | None = None,
         openai_api_key: str | None = None,
     ):
         """Initialize the BatchInferenceAPI.
 
         Args:
-            prompt_history_dir: Directory to store prompt history. Set to None to disable.
-                Set to "default" to use the default directory.
+            log_dir: Directory to store prompts before passing them to the batchapi. Set to "default" to use your prompt_history_dir as log_dir.
             anthropic_api_key: Optional API key for Anthropic. If not provided, will try to load from environment.
             openai_api_key: Optional API key for OpenAI. If not provided, will try to load from environment.
         """
         secrets = load_secrets("SECRETS")
-        if prompt_history_dir == "default":
+        if log_dir == "default":
             if "PROMPT_HISTORY_DIR" in secrets:
-                self.prompt_history_dir = Path(secrets["PROMPT_HISTORY_DIR"])
+                self.log_dir = Path(secrets["PROMPT_HISTORY_DIR"])
             else:
-                self.prompt_history_dir = Path.home() / ".prompt_history"
+                self.log_dir = Path.home() / ".prompt_history"
         else:
-            assert isinstance(prompt_history_dir, Path) or prompt_history_dir is None
-            self.prompt_history_dir = prompt_history_dir
+            assert isinstance(log_dir, Path) or log_dir is None
+            self.log_dir = log_dir
 
         self._anthropic_batch = AnthropicModelBatch(anthropic_api_key=anthropic_api_key)
-        self._openai_batch = OpenAIModelBatch()
+        self._openai_batch = OpenAIModelBatch(openai_api_key=openai_api_key)
 
     async def __call__(
         self,
@@ -64,18 +63,22 @@ class BatchInferenceAPI:
         if not prompts:
             raise ValueError("No prompts provided")
 
-        if max_tokens is not None:
-            kwargs["max_tokens"] = max_tokens
-
         if log_dir is None:
-            log_dir = self.prompt_history_dir
+            log_dir = self.log_dir
 
         if log_dir is not None:
             log_dir.mkdir(parents=True, exist_ok=True)
 
         if model_id in ANTHROPIC_MODELS:
-            responses, batch_id = await self._anthropic_batch(model_id, prompts, log_dir=log_dir, **kwargs)
+            assert max_tokens is not None, "max_tokens must be provided for Anthropic models"
+            responses, batch_id = await self._anthropic_batch(
+                model_id, prompts, log_dir=log_dir, max_tokens=max_tokens, **kwargs
+            )
         elif model_id in GPT_CHAT_MODELS:
+            assert log_dir is not None, "log_dir must be provided for OpenAI models"
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+
             responses, batch_id = await self._openai_batch(model_id, prompts, log_dir=log_dir, **kwargs)
         else:
             raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")

@@ -15,8 +15,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 class OpenAIModelBatch:
-    def __init__(self):
-        self.client = openai.OpenAI()
+    def __init__(self, openai_api_key: str | None = None):
+        if openai_api_key:
+            self.client = openai.OpenAI(api_key=openai_api_key)
+        else:
+            self.client = openai.OpenAI()
 
     def create_message_batch(self, input_file_id: str) -> dict:
         """Create a batch of messages."""

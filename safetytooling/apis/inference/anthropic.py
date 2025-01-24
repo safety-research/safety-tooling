@@ -244,6 +244,7 @@ class AnthropicModelBatch:
 
         custom_ids = [self.get_custom_id(i, prompt) for i, prompt in enumerate(prompts)]
         set_custom_ids = set(custom_ids)
+        assert len(set_custom_ids) == len(custom_ids), "Duplicate custom IDs found"
 
         requests = self.prompts_to_requests(model_id, prompts, max_tokens, **kwargs)
         batch_response = self.create_message_batch(requests=requests)
