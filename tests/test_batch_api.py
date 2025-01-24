@@ -105,3 +105,92 @@ async def test_batch_api_cache(batch_api, tmp_path):
     assert batch_id1 != "cached"  # First request should hit API
     assert batch_id2 == "cached"  # Second request should be cached
     assert batch_id3 == "cached"  # Third request should be cached
+
+
+@pytest.mark.asyncio
+async def test_batch_api_no_cache_flag(batch_api, tmp_path):
+    """Test that BatchInferenceAPI respects no_cache flag."""
+    random.seed(time.time())
+
+    # Create prompts with random numbers to ensure unique cache keys
+    rand_suffix = random.randint(0, 1000000)
+    test_prompts = [
+        Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
+    ]
+
+    # Create a new BatchInferenceAPI instance with no_cache=True
+    no_cache_api = BatchInferenceAPI(
+        prompt_history_dir=None,
+        no_cache=True,
+        anthropic_api_key=os.getenv("ANTHROPIC_BATCH_API_KEY") if os.getenv("ANTHROPIC_BATCH_API_KEY") else None,
+    )
+
+    # First request
+    responses1, batch_id1 = await no_cache_api(
+        model_id="claude-3-5-haiku-20241022",
+        prompts=test_prompts,
+        max_tokens=10,
+        log_dir=tmp_path,
+    )
+
+    # Second request - should hit API again due to no_cache
+    responses2, batch_id2 = await no_cache_api(
+        model_id="claude-3-5-haiku-20241022",
+        prompts=test_prompts,
+        max_tokens=10,
+        log_dir=tmp_path,
+    )
+
+    # Verify batch IDs are not "cached"
+    assert batch_id1 != "cached"
+    assert batch_id2 != "cached"
+    assert batch_id1 != batch_id2  # Different batch IDs for different API calls
+
+
+@pytest.mark.asyncio
+async def test_batch_api_no_cache_env(batch_api, tmp_path):
+    """Test that BatchInferenceAPI respects NO_CACHE environment variable."""
+    random.seed(time.time())
+
+    # Create prompts with random numbers to ensure unique cache keys
+    rand_suffix = random.randint(0, 1000000)
+    test_prompts = [
+        Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
+    ]
+
+    # Set NO_CACHE environment variable
+    old_no_cache = os.getenv("NO_CACHE")
+    os.environ["NO_CACHE"] = "1"
+
+    # Create a new BatchInferenceAPI instance - should respect NO_CACHE env var
+    env_no_cache_api = BatchInferenceAPI(
+        prompt_history_dir=None,
+        anthropic_api_key=os.getenv("ANTHROPIC_BATCH_API_KEY") if os.getenv("ANTHROPIC_BATCH_API_KEY") else None,
+    )
+
+    # First request
+    responses1, batch_id1 = await env_no_cache_api(
+        model_id="claude-3-5-haiku-20241022",
+        prompts=test_prompts,
+        max_tokens=10,
+        log_dir=tmp_path,
+    )
+
+    # Second request - should hit API again due to NO_CACHE env var
+    responses2, batch_id2 = await env_no_cache_api(
+        model_id="claude-3-5-haiku-20241022",
+        prompts=test_prompts,
+        max_tokens=10,
+        log_dir=tmp_path,
+    )
+
+    # Verify batch IDs are not "cached"
+    assert batch_id1 != "cached"
+    assert batch_id2 != "cached"
+    assert batch_id1 != batch_id2  # Different batch IDs for different API calls
+
+    # Clean up
+    if old_no_cache is None:
+        del os.environ["NO_CACHE"]
+    else:
+        os.environ["NO_CACHE"] = old_no_cache
