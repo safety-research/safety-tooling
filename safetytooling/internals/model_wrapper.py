@@ -17,7 +17,7 @@ class ModelConfig:
     """Configuration for model loading and inference"""
 
     torch_dtype: torch.dtype = torch.bfloat16
-    device_map: str = "cuda"
+    device_map: str = "auto"
     attn_implementation: Optional[str] = None
     requires_grad: bool = False
     max_length: int = 1024

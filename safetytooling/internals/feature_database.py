@@ -41,7 +41,11 @@ class Example:
         mask = indices == feature_id
         feature_acts[mask.any(dim=-1)] = acts[mask]
         return feature_acts
-
+    
+    def to_list(self, hook_name: str, feature_id: int) -> List[Tuple[str, float]]:
+        """Get a list of token, activation pairs"""
+        feature_acts = self.get_feature_activation(feature_id, hook_name)
+        return list(zip(self.str_tokens, feature_acts.tolist()))
 
 class FeatureDatabase:
     """Database for storing and querying SAE feature activations across a dataset"""
@@ -224,3 +228,135 @@ class FeatureDatabase:
         # Get top n examples
         top_indices = np.argsort(max_acts)[-n:][::-1]
         return [self.load_example(idx) for idx in top_indices]
+    
+    def get_common_features(self, hook_name: str, k: int = 1000) -> List[int]:
+        """Get the k most commonly activating features across the dataset, ordered by frequency."""
+        if self.feature_data is None:
+            raise ValueError("Database not loaded. Call load_from_disk first.")
+        
+        # Get feature data for this hook
+        data = self.feature_data[hook_name]
+        indices = data[:, :, 8 : 8 + 4 * self.max_k].view(np.int32)
+        acts = data[:, :, 8 + 4 * self.max_k :].view(np.float16)
+        
+        # Find the maximum feature index to determine array size
+        max_feature_id = np.max(indices) + 1
+        
+        # Process in chunks to avoid memory issues
+        chunk_size = 1024
+        feature_counts = np.zeros(max_feature_id, dtype=np.int32)
+        
+        for i in tqdm(range(0, len(indices), chunk_size), desc="Finding common features"):
+            chunk = indices[i:i + chunk_size]
+            # Flatten and count unique features in chunk
+            unique, counts = np.unique(chunk.reshape(-1), return_counts=True)
+            # Add to overall counts
+            feature_counts[unique] += counts
+        
+        # Get top k most common features
+        k = min(k, len(feature_counts))  # Ensure k isn't larger than number of features
+        top_k_indices = np.argsort(feature_counts)[-k:][::-1]
+        return top_k_indices.tolist()  # Return as ordered list instead of set
+
+    def get_feature_quantiles(
+        self, 
+        hook_name: str, 
+        feature_id: int, 
+        n_buckets: int = 8, 
+        n_examples: int = 10
+    ) -> Dict[Tuple[float, float], List[Example]]:
+        """Get quantile-based activation distribution for a feature."""
+        if self.feature_data is None:
+            raise ValueError("Database not loaded. Call load_from_disk first.")
+        
+        # Get feature data
+        data = self.feature_data[hook_name]
+        indices = data[:, :, 8 : 8 + 4 * self.max_k].view(np.int32)
+        acts = data[:, :, 8 + 4 * self.max_k :].view(np.float16)
+        
+        # Get max activation per example for this feature
+        mask = indices == feature_id
+        max_acts = np.max(np.where(mask, acts, 0), axis=(1, 2))
+        
+        # Get non-zero activations
+        nonzero_acts = max_acts[max_acts > 0]
+        if len(nonzero_acts) == 0:
+            return {}  # Return empty dict if feature never activates
+        
+        # Calculate quantile thresholds
+        quantiles = np.linspace(0, 1, n_buckets + 1)
+        thresholds = np.unique(np.quantile(nonzero_acts, quantiles))
+        
+        result = {}
+        for i in range(len(thresholds) - 1):
+            # Get indices of activations within the current quantile range
+            if i == len(thresholds) - 2:  # Last bucket includes upper bound
+                bucket_mask = max_acts >= thresholds[i]
+                upper_bound = thresholds[i + 1]
+            else:
+                bucket_mask = (max_acts >= thresholds[i]) & (max_acts < thresholds[i + 1])
+                upper_bound = thresholds[i + 1]
+            
+            bucket_indices = np.where(bucket_mask)[0]
+            
+            # Randomly select n_examples indices from the bucket
+            if len(bucket_indices) > n_examples:
+                selected_indices = np.random.choice(
+                    bucket_indices, 
+                    size=n_examples, 
+                    replace=False
+                )
+            else:
+                selected_indices = bucket_indices
+            
+            # Load examples for the selected indices
+            bucket_examples = [self.load_example(idx) for idx in selected_indices]
+            result[(float(thresholds[i]), float(upper_bound))] = bucket_examples
+        
+        return result
+
+    def get_feature_display(
+        self,
+        hook_name: str,
+        feature_id: int,
+        n_top_examples: int = 10,
+        n_quantile_buckets: int = 8,
+        n_examples_per_bucket: int = 5
+    ) -> Dict[str, List[List[Tuple[str, float]]]]:
+        """Get a structured display of feature activations across different activation ranges.
+        
+        Args:
+            hook_name: Name of the hook layer
+            feature_id: ID of the feature to analyze
+            n_top_examples: Number of top activating examples to show
+            n_quantile_buckets: Number of quantile buckets to create
+            n_examples_per_bucket: Number of examples to show per bucket
+            
+        Returns:
+            Dictionary with:
+                - "Top Activations": List of token-activation pairs for highest activating examples
+                - "Interval {i}": List of token-activation pairs for each quantile bucket
+        """
+        display_dict = {}
+        
+        # Get top activating examples
+        top_examples = self.get_top_activating_examples(hook_name, feature_id, n=n_top_examples)
+        display_dict["Top Activations"] = [
+            example.to_list(hook_name, feature_id) for example in top_examples
+        ]
+        
+        # Get quantile-based examples
+        quantiles = self.get_feature_quantiles(
+            hook_name, 
+            feature_id, 
+            n_buckets=n_quantile_buckets,
+            n_examples=n_examples_per_bucket
+        )
+        
+        # Add examples from each quantile bucket, in descending order
+        for i, ((lower, upper), examples) in enumerate(sorted(quantiles.items(), reverse=True)):
+            display_dict[f"Interval {i} - ({lower:.2f}, {upper:.2f})"] = [
+                example.to_list(hook_name, feature_id) for example in examples
+            ]
+        
+        return display_dict

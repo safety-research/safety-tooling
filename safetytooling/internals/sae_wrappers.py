@@ -10,6 +10,23 @@ from torch import Tensor, nn
 from .model_wrapper import LanguageModelWrapper, ModelConfig
 
 
+def get_gpu_memory_usage():
+    """Get memory usage for each GPU."""
+    memory_usage = []
+    for i in range(torch.cuda.device_count()):
+        memory_allocated = torch.cuda.memory_allocated(i) / 1024**3  # Convert to GB
+        memory_usage.append(memory_allocated)
+    return memory_usage
+
+
+def get_least_used_device():
+    """Find GPU with lowest memory usage."""
+    memory_usage = get_gpu_memory_usage()
+    if not memory_usage:
+        return "cpu"
+    return f"cuda:{memory_usage.index(min(memory_usage))}"
+
+
 class GenericEncoderDecoder(nn.Module):
     """Basic encoder-decoder module with linear encoder and decoder"""
 
@@ -96,10 +113,25 @@ class EleutherEncoderDecoder(nn.Module):
 class SparseAutoencoderBase:
     """Base class for sparse autoencoders"""
 
-    def __init__(self, hook_name: str, n_features: int, max_k: int):
+    def __init__(self, hook_name: str, n_features: int, max_k: int, device=None):
         self.hook_name = hook_name
         self.n_features = n_features
         self.max_k = max_k
+        self._device = device if device is not None else get_least_used_device()
+
+    @property
+    def device(self):
+        return self._device
+
+    @device.setter
+    def device(self, value):
+        self._device = value
+        # Implement device movement in child classes
+        self._move_to_device(self._device)
+
+    def _move_to_device(self, device):
+        """Move model components to device. Override in child classes."""
+        pass
 
     def reconstruct(self, acts: Tensor) -> Tensor:
         raise NotImplementedError()
@@ -114,9 +146,13 @@ class SparseAutoencoderBase:
 class EleutherSparseAutoencoder(SparseAutoencoderBase):
     """EleutherAI's sparse autoencoder implementation"""
 
-    def __init__(self, encoder: EleutherEncoderDecoder, hook_name: str, max_k: int):
-        super().__init__(hook_name, encoder.d_sae, max_k)
+    def __init__(self, encoder: EleutherEncoderDecoder, hook_name: str, max_k: int, device=None):
+        super().__init__(hook_name, encoder.d_sae, max_k, device)
         self.encoder = encoder
+        self._move_to_device(self.device)
+
+    def _move_to_device(self, device):
+        self.encoder = self.encoder.to(device)
 
     def reconstruct(self, acts: Tensor) -> Tensor:
         pre = self.encoder.encode(acts)
@@ -132,7 +168,9 @@ class EleutherSparseAutoencoder(SparseAutoencoderBase):
         return self.encoder.feature_directions
 
     @staticmethod
-    def load_llama3_sae(layer: int, v2: bool = True, device: str = "cuda") -> "EleutherSparseAutoencoder":
+    def load_llama3_sae(layer: int, v2: bool = True, device: str = None) -> "EleutherSparseAutoencoder":
+        if device is None:
+            device = get_least_used_device()
         repo_id = "EleutherAI/sae-llama-3-8b-32x-v2" if v2 else "EleutherAI/sae-llama-3-8b-32x"
         layer_path = f"layers.{layer}"
 
@@ -155,15 +193,19 @@ class EleutherSparseAutoencoder(SparseAutoencoderBase):
         encoder.W_dec.data = weights["W_dec"]
         encoder.b_dec.data = weights["b_dec"]
 
-        return EleutherSparseAutoencoder(encoder, f"model.layers.{layer}", cfg["k"])
+        return EleutherSparseAutoencoder(encoder, f"model.layers.{layer}", cfg["k"], device)
 
 
 class DeepmindSparseAutoencoder(SparseAutoencoderBase):
     """Deepmind's sparse autoencoder implementation"""
 
-    def __init__(self, encoder: DeepmindEncoderDecoder, hook_name: str, max_k: int):
-        super().__init__(hook_name, encoder.d_sae, max_k)
+    def __init__(self, encoder: DeepmindEncoderDecoder, hook_name: str, max_k: int, device=None):
+        super().__init__(hook_name, encoder.d_sae, max_k, device)
         self.encoder = encoder
+        self._move_to_device(self.device)
+
+    def _move_to_device(self, device):
+        self.encoder = self.encoder.to(device)
 
     def reconstruct(self, acts: Tensor) -> Tensor:
         pre = self.encoder.encode(acts)
@@ -179,9 +221,9 @@ class DeepmindSparseAutoencoder(SparseAutoencoderBase):
         return self.encoder.feature_directions
 
     @staticmethod
-    def load_gemma2_sae(
-        layer: int, l0: float, width: int = 131072, device: str = "cuda"
-    ) -> "DeepmindSparseAutoencoder":
+    def load_gemma2_sae(layer: int, l0: float, width: int = 131072, device: str = None) -> "DeepmindSparseAutoencoder":
+        if device is None:
+            device = get_least_used_device()
         repo_id = "google/gemma-scope-9b-pt-res"
         filename = f"layer_{layer}/width_{width//10**3}k/average_l0_{l0}/params.npz"
 
@@ -198,15 +240,19 @@ class DeepmindSparseAutoencoder(SparseAutoencoderBase):
                 key = "W_" + key[2:]
             setattr(encoder, key, nn.Parameter(torch.tensor(value, device=device, dtype=torch.bfloat16)))
 
-        return DeepmindSparseAutoencoder(encoder, f"model.layers.{layer}", 192)
+        return DeepmindSparseAutoencoder(encoder, f"model.layers.{layer}", 192, device)
 
 
 class GoodfireSparseAutoencoder(SparseAutoencoderBase):
     """Goodfire's sparse autoencoder implementation"""
 
-    def __init__(self, encoder: torch.nn.Module, hook_name: str, max_k: int):
-        super().__init__(hook_name, encoder.d_hidden, max_k)
+    def __init__(self, encoder: torch.nn.Module, hook_name: str, max_k: int, device=None):
+        super().__init__(hook_name, encoder.d_hidden, max_k, device)
         self.encoder = encoder
+        self._move_to_device(self.device)
+
+    def _move_to_device(self, device):
+        self.encoder = self.encoder.to(device)
 
     def reconstruct(self, acts: Tensor) -> Tensor:
         """Reconstruct input activations"""
@@ -226,16 +272,23 @@ class GoodfireSparseAutoencoder(SparseAutoencoderBase):
         """Get feature directions"""
         return self.encoder.decoder_linear.weight.T
 
+    def to(self, device: str) -> "GoodfireSparseAutoencoder":
+        """Move SAE to specified device"""
+        self.device = device  # This will trigger the device setter
+        return self
+
     @staticmethod
     def load_sae(
         repo_id: str,
         layer: int,
         d_model: int,
         expansion_factor: int,
-        device: str = "cuda",
+        device: str = None,
         dtype: torch.dtype = torch.bfloat16,
     ) -> "GoodfireSparseAutoencoder":
         """Load a pretrained SAE from HuggingFace Hub"""
+        if device is None:
+            device = get_least_used_device()
         # Create base encoder
         encoder = torch.nn.Module()
         encoder.d_in = d_model
@@ -256,12 +309,8 @@ class GoodfireSparseAutoencoder(SparseAutoencoderBase):
             encoder=encoder,
             hook_name=f"model.layers.{layer}",
             max_k=192,  # This seems to be standard for Goodfire SAEs
+            device=device,
         )
-
-    def to(self, device: str) -> "GoodfireSparseAutoencoder":
-        """Move SAE to specified device"""
-        self.encoder = self.encoder.to(device)
-        return self
 
 
 class SparseAutoencoderWrapper(LanguageModelWrapper):
@@ -318,7 +367,10 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
             # Process activations for each SAE
             for sae in self.saes:
                 model_acts = self._current_activations[sae.hook_name]
+                # Move activations to SAE's device
+                model_acts = model_acts.to(sae.device)
                 top_indices, top_acts = sae.encode(model_acts.flatten(0, 1))
+                # Move results back to CPU
                 latent_indices = top_indices.reshape(n_batch, n_pos, -1).cpu()
                 latent_acts = top_acts.reshape(n_batch, n_pos, -1).cpu()
                 results[sae.hook_name] = (latent_indices, latent_acts)
