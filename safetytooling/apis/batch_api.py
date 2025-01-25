@@ -120,11 +120,11 @@ class BatchInferenceAPI:
                 else:
                     uncached_prompts.append(prompt)
                     uncached_indices.append(i)
+            print(f"Retrieving {len(cached_responses)}/{len(prompts)} from cache")
         else:
             uncached_prompts = prompts
             uncached_indices = list(range(len(prompts)))
 
-        print(f"Retrieving {len(cached_responses)}/{len(prompts)} from cache")
         # If all prompts are cached, return cached responses
         if not uncached_prompts:
             return cached_responses, "cached"
@@ -154,8 +154,9 @@ class BatchInferenceAPI:
         for idx, response in zip(uncached_indices, responses):
             all_responses[idx] = response
 
-        print(
-            f"{len(cached_responses)}/{len(prompts)} retrieved from cache, {sum(response is None for response in all_responses)}/{len(prompts)} failed, {sum(response is not None for response in all_responses)}/{len(prompts)} succeeded in batch API request {batch_id}"
-        )
+        if use_cache:
+            print(
+                f"{len(cached_responses)}/{len(prompts)} retrieved from cache, {sum(response is None for response in all_responses)}/{len(prompts)} failed, {sum(response is not None for response in all_responses)}/{len(prompts)} succeeded in batch API request {batch_id}"
+            )
 
         return all_responses, batch_id

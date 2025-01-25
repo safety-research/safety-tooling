@@ -174,7 +174,6 @@ class AnthropicModelBatch:
     def __init__(self, anthropic_api_key: str | None = None):
         if anthropic_api_key:
             self.client = anthropic.Anthropic(api_key=anthropic_api_key)
-            print(f"{anthropic_api_key=}")
         else:
             self.client = anthropic.Anthropic()
 
@@ -194,6 +193,7 @@ class AnthropicModelBatch:
             if message_batch.processing_status == "ended":
                 return message_batch
             LOGGER.debug(f"Batch {batch_id} is still processing...")
+            print(f"Batch {batch_id} is still processing...")
             await asyncio.sleep(60)
 
     def list_message_batches(self, limit: int = 20) -> list[dict]:
@@ -257,7 +257,6 @@ class AnthropicModelBatch:
             with open(log_file, "w") as f:
                 json.dump(batch_response.model_dump(mode="json"), f)
         print(f"Batch {batch_id} created with {len(prompts)} requests")
-        print("Track the batch at https://console.anthropic.com/settings/workspaces/default/batches")
 
         _ = await self.poll_message_batch(batch_id)
 
