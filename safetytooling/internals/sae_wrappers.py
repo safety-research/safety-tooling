@@ -393,7 +393,7 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
             Dictionary mapping hook_names to tuples of (indices, activations)
         """
         if batch_size is None:
-            return self.featurize(tokens, masks)
+            return self._featurize(tokens, masks)
 
         minibatches_tokens = tokens.split(batch_size)
         minibatches_masks = masks.split(batch_size) if masks is not None else [None] * len(minibatches_tokens)

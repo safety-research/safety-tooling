@@ -1,591 +1,260 @@
-####################################################################################################
-#
-# This file is a modified version of the original file found at:
-# https://github.com/abhay-sheshadri/sae_experiments/blob/abhayexps/src/visualization.py
-#
-####################################################################################################
+"""Visualization utilities for displaying token activations."""
 
 import html
 import re
 import uuid
+from typing import Dict, List, Tuple
+
+import numpy as np
 
 
-def _interpolate_color(start_color, end_color, factor):
-    """
-    Interpolate between two colors.
-    """
+def _interpolate_color(
+    start_color: Tuple[int, int, int], end_color: Tuple[int, int, int], factor: float
+) -> Tuple[int, int, int]:
+    """Interpolate between two RGB colors."""
     return tuple(int(start + factor * (end - start)) for start, end in zip(start_color, end_color))
 
 
-def _light_mode(html):
+def _generate_highlighted_html(tokens: List[str], activations: List[float], use_orange_highlight: bool = False) -> str:
+    """Generate HTML for text with activation-based highlighting.
 
-    # Define HTML wrapper for light mode display
-    light_mode_wrapper = """
-    <div style="background-color: white; color: black; padding: 20px;">
-        {}
-    </div>
+    Args:
+        tokens: List of text tokens
+        activations: List of activation values for each token
+        use_orange_highlight: Whether to use an orange highlight instead of red or blue
+
+    Returns:
+        HTML string with highlighted tokens and tooltips
     """
+    if len(tokens) != len(activations):
+        raise ValueError("Number of tokens and activations must match")
 
-    # Generate the categorized examples HTML and wrap it in the light mode div
-    return light_mode_wrapper.format(html)
-
-
-def _generate_highlighted_html(tokens, acts, use_orange_highlight=True):
-    """
-    Generates HTML for a single example with highlighted text and activation tooltips.
-    """
-
-    # Make sure there are an equal number of tokens and activations
-    if len(tokens) != len(acts):
-        raise ValueError("The number of tokens and activations must match.")
-
-    # Generate html content
-    html_content = "<style>\n"
-    html_content += """
+    css = """
+    <style>
     .text-content span {
-      position: relative;
-      cursor: help;
+        position: relative;
+        cursor: help;
     }
     .text-content span:hover::after {
-      content: attr(title);
-      position: absolute;
-      bottom: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      background-color: #333;
-      color: white;
-      padding: 5px;
-      border-radius: 3px;
-      font-size: 14px;
-      white-space: nowrap;
+        content: attr(title);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #333;
+        color: white;
+        padding: 5px;
+        border-radius: 3px;
+        font-size: 14px;
+        white-space: nowrap;
     }
+    .text-content {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+    .example {
+        margin-bottom: 10px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 5px;
+    }
+    .example-label {
+        font-weight: bold;
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 2px;
+    }
+    </style>
     """
-    html_content += "</style>\n"
-    html_content += "<div class='text-content'>"
 
-    # Iterate through each token and activation
-    for token, act in zip(tokens, acts):
+    html_content = [css, "<div class='text-content'>"]
 
-        # Format the activation value for display
-        if act is None:
-            act_display = ""
-        else:
-            act_display = f"{act:.2f}"  # Display activation with 2 decimal places
+    for token, act in zip(tokens, activations):
+        act_display = f"{act:.2f}" if act is not None else ""
 
-        # Highlight token if act != 0
-        if act is not None and act != 0:
+        if act not in (None, 0):
+            # Scale activation using sqrt for better visual distribution
+            factor = np.sqrt(abs(act))
 
-            # Normalize activation, max at 1
-            factor = min(abs(act) / 10, 1)
-
-            # Interpolate color
             if use_orange_highlight:
-                light_orange = (255, 237, 160)  # RGB for very light orange
-                dark_orange = (240, 134, 0)  # RGB for dark, saturated orange
-                color = _interpolate_color(light_orange, dark_orange, factor)
+                color = _interpolate_color((255, 237, 160), (240, 134, 0), factor)  # Light to dark orange
             else:
                 if act > 0:
-                    color = _interpolate_color((255, 255, 255), (255, 0, 0), factor)  # White to Red
+                    color = _interpolate_color((255, 255, 255), (255, 0, 0), factor)  # White to red
                 else:
-                    color = _interpolate_color((255, 255, 255), (0, 0, 255), factor)  # White to Blue
-            html_content += f'<span class="highlight" style="background-color: rgb{color};" title="{token}: {act_display}">{html.escape(token)}</span>'
+                    color = _interpolate_color((255, 255, 255), (0, 0, 255), factor)  # White to blue
+
+            html_content.append(
+                f'<span class="highlight" style="background-color: rgb{color};" '
+                f'title="{token}: {act_display}">{html.escape(token)}</span>'
+            )
         else:
-            html_content += f'<span title="{token}: {act_display}">{html.escape(token)}</span>'
-    html_content += "</div>"
-    return html_content
+            html_content.append(f'<span title="{token}: {act_display}">{html.escape(token)}</span>')
+
+    html_content.append("</div>")
+    return "\n".join(html_content)
 
 
-def _generate_categorized_examples(categorized_examples):
-    """
-    Generates complete HTML content for multiple categories of examples.
-    """
-    css = """
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            font-size: 14px;
-            line-height: 1.3;
-            margin: 0;
-            padding: 10px;
-        }
-        .highlight {
-            border-radius: 2px;
-            padding: 0 1px;
-        }
-        .category {
-            margin-bottom: 20px;
-        }
-        .category-label {
-            font-weight: bold;
-            font-size: 16px;
-            color: #333;
-            margin-bottom: 10px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 5px;
-        }
-        .example {
-            margin-bottom: 10px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 5px;
-        }
-        .example-label {
-            font-weight: bold;
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 2px;
-        }
-        .text-content {
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-    </style>
-    """
+def _generate_prompt_centric_html(
+    examples: List[List[Tuple[str, float]]], title: str | None = None, use_orange_highlight: bool = False
+) -> str:
+    """Generate HTML content for the prompt-centric view."""
+    html_parts = []
+    if title:
+        html_parts.append(f"<h2>{title}</h2>")
 
-    # Generate HTML content for the categorized examples
-    html_content = "<div class='examples-container'>"
-
-    #  Iterate through each category and its examples
-    for category, examples in categorized_examples.items():
-
-        # Add a container for the category
-        html_content += f'<div class="category"><div class="category-label"><h3>{html.escape(category)}</h3></div>'
-        for i, (tokens, acts) in enumerate(examples, 1):
-            html_content += f'<div class="example"><div class="example-label">Example {i}:</div>'
-            html_content += _generate_highlighted_html(tokens, acts)
-            html_content += "</div>"
-        html_content += "</div>"
-
-    # Close the examples container
-    html_content += "</div>"
-    full_html = f"<!DOCTYPE html><html><head>{css}</head><body>{html_content}</body></html>"
-    return full_html
-
-
-def _generate_logits_table(negative_logits, positive_logits):
-    """
-    Generate HTML content for a table of negative and positive logits
-    """
-    css = """
-    <style>
-        .logits-container {
-            display: flex;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
-            margin: 20px auto;
-        }
-        .logits-column {
-            flex: 1;
-            margin: 0 5px;
-        }
-        .logits-column h2 {
-            background-color: #f0f0f0;
-            margin: 0;
-            padding: 10px;
-            border-radius: 5px 5px 0 0;
-            font-size: 16px;
-            font-weight: normal;
-        }
-        .logits-list {
-            list-style-type: none;
-            padding: 0;
-            margin: 0;
-        }
-        .logits-list li {
-            display: flex;
-            justify-content: space-between;
-            padding: 5px 10px;
-        }
-        .negative .logits-list li:nth-child(odd) {
-            background-color: #ffe6e6;
-        }
-        .negative .logits-list li:nth-child(even) {
-            background-color: #ffcccc;
-        }
-        .positive .logits-list li:nth-child(odd) {
-            background-color: #e6e6ff;
-        }
-        .positive .logits-list li:nth-child(even) {
-            background-color: #ccccff;
-        }
-        .token {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: rgba(0, 0, 0, 0.1);
-            padding: 2px 4px;
-            border-radius: 3px;
-            color: #333;
-            font-weight: bold;  /* Make token text bold */
-        }
-        .value {
-            font-weight: normal;
-        }
-    </style>
-    """
-    html_content = f"{css}<div class='logits-container'>"
-
-    # Negative logits column
-    html_content += """
-    <div class='logits-column negative'>
-        <h2>NEGATIVE LOGITS</h2>
-        <ul class='logits-list'>
-    """
-    for token, value in negative_logits:
-        html_content += (
-            f"<li><span class='token'>{html.escape(token)}</span><span class='value'>{value:.5f}</span></li>"
+    html_parts.append("<div class='examples-container'>")
+    for i, example in enumerate(examples, 1):
+        tokens, acts = zip(*example)
+        html_parts.extend(
+            [
+                f'<div class="example">',
+                f'<div class="example-label">Example {i}:</div>',
+                _generate_highlighted_html(list(tokens), list(acts), use_orange_highlight),
+                "</div>",
+            ]
         )
-    html_content += "</ul></div>"
-
-    # Positive logits column
-    html_content += """
-    <div class='logits-column positive'>
-        <h2>POSITIVE LOGITS</h2>
-        <ul class='logits-list'>
-    """
-    for token, value in positive_logits:
-        html_content += (
-            f"<li><span class='token'>{html.escape(token)}</span><span class='value'>{value:.5f}</span></li>"
-        )
-    html_content += "</ul></div>"
-
-    html_content += "</div>"
-    return html_content
+    html_parts.append("</div>")
+    return "\n".join(html_parts)
 
 
-def safe_remove_doctype(content):
-
-    # Remove DOCTYPE declaration
-    return re.sub(r"<!DOCTYPE[^>]*>", "", content, flags=re.IGNORECASE)
-
-
-def safe_remove_html_tags(content):
-
-    # Remove opening HTML tag
-    content = re.sub(r"<html[^>]*>", "", content, flags=re.IGNORECASE)
-
-    # Remove closing HTML tag
-    content = re.sub(r"</html\s*>", "", content, flags=re.IGNORECASE)
-    return content
-
-
-def safe_remove_head(content):
-
-    # Safely remove HEAD tags
-    def find_head_end(s, start):
-        depth = 0
-        i = start
-        while i < len(s):
-            if s[i : i + 5].lower() == "<head":
-                depth += 1
-            elif s[i : i + 7].lower() == "</head>":
-                depth -= 1
-                if depth == 0:
-                    return i + 7
-            i += 1
-        return -1
-
-    # Find the start of the HEAD tag
-    head_start = re.search(r"<head\b", content, re.IGNORECASE)
-
-    # If the HEAD tag is found, find the end of the HEAD tag
-    if head_start:
-        head_end = find_head_end(content, head_start.start())
-        if head_end != -1:
-            return content[: head_start.start()] + content[head_end:]
-    return content
-
-
-def safe_remove_body_tags(content):
-
-    # Remove opening BODY tag
-    content = re.sub(r"<body[^>]*>", "", content, flags=re.IGNORECASE)
-
-    # Remove closing BODY tag
-    content = re.sub(r"</body\s*>", "", content, flags=re.IGNORECASE)
-    return content
-
-
-def safe_html_cleanup(content):
-
-    # Safely remove DOCTYPE, HTML, HEAD, and BODY tags
-    content = safe_remove_doctype(content)
-    content = safe_remove_html_tags(content)
-    content = safe_remove_head(content)
-    content = safe_remove_body_tags(content)
-    return content
-
-
-def _combine_html_contents(*html_contents, title="Combined View", nested=False):
-    """
-    Combine multiple HTML contents into a single HTML document with a dropdown to select which content to display.
-    Handles nested content and avoids ID conflicts.
-    """
+def _combine_html_contents(*views: Tuple[str, str], title: str = "Combined View", nested: bool = False) -> str:
+    """Combine multiple HTML contents with a dropdown selector."""
     instance_id = str(uuid.uuid4())[:8]
-    combined_html = ""
+
+    css = """
+    <style>
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    .content-selector {
+        margin-bottom: 20px;
+        padding: 10px;
+        font-size: 16px;
+        width: 100%;
+    }
+    .content {
+        display: none;
+        background-color: white;
+        padding: 20px;
+        border-radius: 5px;
+    }
+    .content.active {
+        display: block !important;
+    }
+    .combined-content {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    </style>
+    """
+
+    # Start with basic structure
+    html_parts = []
     if not nested:
-        combined_html += f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>{title}</title>
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    max-width: 1200px;
-                    margin: 0 auto;
-                    padding: 20px;
-                }}
-                h1 {{
-                    color: #2c3e50;
-                    border-bottom: 2px solid #2c3e50;
-                    padding-bottom: 10px;
-                    font-size: 24px;
-                    margin-top: 10px;
-                    margin-bottom: 15px;
-                }}
-                .content-selector {{
-                    margin-bottom: 20px;
-                    padding: 10px;
-                    font-size: 16px;
-                }}
-                .content {{
-                    display: none;
-                }}
-                .content.active {{
-                    display: block;
-                }}
-            </style>
-        </head>
-        <body>
-        """
+        html_parts.extend(["<!DOCTYPE html>", "<html>", "<head>", css, "</head>", "<body>"])
+    else:
+        html_parts.append(css)
 
-    # Add a dropdown to select which content to display
-    combined_html += f"""
-    <div class="combined-content-{instance_id}">
-        <h2>{title}</h2>
-        <select class="content-selector" onchange="showContent_{instance_id}(this.value)">
-            <option value="">Select a section</option>
-    """
+    # Add container and title
+    html_parts.extend(
+        [
+            f'<div class="combined-content" id="combined-content-{instance_id}">',
+            f"<h2>{title}</h2>",
+            '<select class="content-selector" ' f'onchange="showContent_{instance_id}(this.value)">',
+            '<option value="">Select a section</option>',
+        ]
+    )
 
-    # Add an option for each section
-    for i, (section_title, _) in enumerate(html_contents):
-        combined_html += f'<option value="content_{instance_id}_{i}">{section_title}</option>'
-    combined_html += """
-        </select>
-    """
+    # Add dropdown options
+    for i, (name, _) in enumerate(views):
+        html_parts.append(f'<option value="content-{instance_id}-{i}">{name}</option>')
+    html_parts.append("</select>")
 
-    # Add the content for each section
-    for i, (section_title, content) in enumerate(html_contents):
+    # Add content divs
+    for i, (_, content) in enumerate(views):
+        html_parts.append(f'<div id="content-{instance_id}-{i}" class="content">{content}</div>')
 
-        # Make sure that there are no nested HTML, HEAD, or BODY tags
-
-        # content = re.sub(r'<!DOCTYPE.*?>', '', content, flags=re.DOTALL | re.IGNORECASE)
-
-        # content = re.sub(r'<html.*?>|</html>', '', content, flags=re.DOTALL | re.IGNORECASE)
-
-        # content = re.sub(r'<head.*?>.*?</head>', '', content, flags=re.DOTALL | re.IGNORECASE) # This line randomly hangs
-
-        # content = re.sub(r'<body.*?>|</body>', '', content, flags=re.DOTALL | re.IGNORECASE)
-        content = safe_html_cleanup(content)
-
-        # Add the content with a unique ID
-        combined_html += f"""
-        <div id="content_{instance_id}_{i}" class="content">
-            {content}
-        </div>
-        """
-
-    # Add JavaScript to show the selected content
-    combined_html += f"""
+    # Add JavaScript
+    script = f"""
     <script>
-        function showContent_{instance_id}(id) {{
-            var contents = document.querySelectorAll('.combined-content-{instance_id} .content');
-            for (var i = 0; i < contents.length; i++) {{
-                contents[i].classList.remove('active');
-            }}
-            if (id) {{
-                document.getElementById(id).classList.add('active');
+    function showContent_{instance_id}(id) {{
+        // Hide all content divs
+        var contents = document.querySelectorAll('#combined-content-{instance_id} .content');
+        contents.forEach(function(content) {{
+            content.style.display = 'none';
+        }});
+        
+        // Show selected content
+        if (id) {{
+            var selectedContent = document.getElementById(id);
+            if (selectedContent) {{
+                selectedContent.style.display = 'block';
             }}
         }}
+    }}
+    
+    // Initialize first option
+    document.addEventListener('DOMContentLoaded', function() {{
+        var selector = document.querySelector('#combined-content-{instance_id} .content-selector');
+        if (selector.value) {{
+            showContent_{instance_id}(selector.value);
+        }}
+    }});
     </script>
-    </div>
     """
 
-    # Close the HTML tags if not nested
+    html_parts.extend([script, "</div>"])  # Close combined-content div
+
     if not nested:
-        combined_html += """
-        </body>
-        </html>
-        """
-    return combined_html
+        html_parts.extend(["</body>", "</html>"])
+
+    return "\n".join(html_parts)
 
 
-def feature_centric_view(feature, short=False, extra_prompts=None):
-    if short:
+def prompt_centric_view_generic(
+    token_act_pairs: List[List[Tuple[str, float]]], title: str = "Examples", use_orange_highlight: bool = False
+) -> str:
+    """Generate HTML view for a list of token-activation pairs.
 
-        # Just add the top 5 max activating examples
-        max_activation_examples = feature.get_max_activating(8)
+    Args:
+        token_act_pairs: List of examples, where each example is a list of (token, activation) pairs
+        title: Title for the view
+        use_orange_highlight: Whether to use orange highlighting instead of red/blue
 
-        # Create a dictionary with these top activations
-        display_dict = {"Top Activations": [ex.get_tokens_feature_lists(feature) for ex in max_activation_examples]}
-    else:
-
-        # Get the top 15 examples that maximally activate this feature
-        max_activation_examples = feature.get_max_activating(15)
-
-        # Create a dictionary with these top activations
-        display_dict = {"Top Activations": [ex.get_tokens_feature_lists(feature) for ex in max_activation_examples]}
-
-        # Get 8 quantiles with 5 examples each
-        quantiles = feature.get_quantiles(8, 5)
-
-        # Iterate through the quantiles in reverse order (highest to lowest)
-        for i, (lower, upper) in enumerate(list(quantiles)[::-1]):
-
-            # Get examples for this quantile
-            examples = quantiles[(lower, upper)]
-
-            # Add examples for this quantile to the display dictionary
-
-            # The key is formatted as "Interval {i} - (lower_bound, upper_bound)"
-            display_dict[f"Interval {i} - ({lower:.2f}, {upper:.2f})"] = [
-                ex.get_tokens_feature_lists(feature) for ex in examples
-            ]
-
-    # Generate HTML content for the categorized examples
-    categorized_examples_html = _generate_categorized_examples(display_dict)
-
-    # Generate HTML content for the logits table
-    top_logits, bottom_logits = feature.get_logits(8)
-    logits_table_html = _generate_logits_table(bottom_logits, top_logits)
-
-    # If examples are provided, add their prompt centric views to this viz
-    if extra_prompts:
-        assert isinstance(extra_prompts, dict)
-        prompt_htmls = []
-        for example_id, example in extra_prompts.items():
-            prompt_html = prompt_centric_view_feature(example, feature)
-            prompt_htmls.append((example_id, prompt_html))
-        prompt_html = _combine_html_contents(*prompt_htmls, title="Prompt-Centric Views", nested=True)
-        combined_html = _combine_html_contents(
-            ("Categorized Examples", categorized_examples_html),
-            ("Logits Analysis", logits_table_html),
-            ("Prompt-Centric Views", prompt_html),
-            title=f"Feature-Centric View - Feature {feature.feature_id}, Hook Point {feature.hook_name}",
-        )
-    else:
-        combined_html = _combine_html_contents(
-            ("Categorized Examples", categorized_examples_html),
-            ("Logits Analysis", logits_table_html),
-            title=f"Feature-Centric View - Feature {feature.feature_id}, Hook Point {feature.hook_name}",
-        )
-    return _light_mode(combined_html)
-
-
-def _generate_prompt_centric_html(examples, title, get_tokens_and_acts_func, use_orange_highlight, **func_kwargs):
-    """Generate HTML content for the prompt-centric view"""
-    if title is not None:
-        html_content = f"<h2>{title}</h2>"
-    else:
-        html_content = ""
-
-    html_content += "<div class='examples-container'>"
-    for i, example in enumerate(examples):
-        str_tokens, acts = get_tokens_and_acts_func(example, **func_kwargs)
-        html_content += f'<div class="example"><div class="example-label">Example {i}:</div>'
-        html_content += _generate_highlighted_html(str_tokens, acts, use_orange_highlight)
-        html_content += "</div>"
-    html_content += "</div>"
-    return html_content
-
-
-def _generate_prompt_centric_view(examples, title, get_tokens_and_acts_func, use_orange_highlight, **func_kwargs):
-    """Generate a prompt-centric view with the given examples and function"""
-    if not isinstance(examples, list) and not isinstance(examples, dict):
-        examples = [examples]
-
-    if isinstance(examples, dict):
-        html_contents = []
-        for category, category_examples in examples.items():
-            category_html = _generate_prompt_centric_html(
-                category_examples, None, get_tokens_and_acts_func, use_orange_highlight, **func_kwargs
-            )
-            html_contents.append((category, category_html))
-        return _light_mode(_combine_html_contents(*html_contents, title=title))
-    else:
-        return _light_mode(
-            _generate_prompt_centric_html(
-                examples, title, get_tokens_and_acts_func, use_orange_highlight, **func_kwargs
-            )
-        )
-
-
-def get_tokens_and_acts_for_feature(example, feature):
-    """Get tokens and activations for a feature from an example"""
-    return (
-        example.str_tokens,
-        example.get_feature_activation(feature).tolist(),
-    )
-
-
-def get_tokens_and_acts_for_direction(example, encoder, direction, hook_name):
-    """Get tokens and direction scores from an example"""
-    return example.get_tokens_direction_scores(encoder, direction, hook_name)
-
-
-def get_tokens_and_acts_generic(example):
-    """Get tokens and activations from a generic example tuple"""
-    return example
-
-
-def prompt_centric_view_feature(examples, feature):
-    """Generate prompt-centric view for a feature"""
-    title = f"Prompt-Centric View - Feature {feature.feature_id}, Hook Point {feature.hook_name}"
-    return _generate_prompt_centric_view(
-        examples=examples,
-        title=title,
-        get_tokens_and_acts_func=get_tokens_and_acts_for_feature,
-        use_orange_highlight=True,
-        feature=feature,
-    )
-
-
-def prompt_centric_view_direction(examples, encoder, hook_name, direction):
-    """Generate prompt-centric view for a direction"""
-    title = f"Prompt-Centric View - Hook Point {hook_name}"
-    return _generate_prompt_centric_view(
-        examples=examples,
-        title=title,
-        get_tokens_and_acts_func=get_tokens_and_acts_for_direction,
-        use_orange_highlight=False,
-        encoder=encoder,
-        direction=direction,
-        hook_name=hook_name,
-    )
-
-
-def prompt_centric_view_generic(token_act_pairs, title="Generic Prompt-Centric View"):
-    """Display prompt-centric view for a list of annotated examples"""
+    Returns:
+        HTML string displaying the examples with activation highlighting
+    """
     if not isinstance(token_act_pairs, list) or not all(
         isinstance(example, list) and all(isinstance(item, tuple) for item in example) for example in token_act_pairs
     ):
-        raise ValueError(
-            f"Input should be a list of lists of (token, activation) tuples., is instead {type(token_act_pairs)}"
-        )
+        raise ValueError("Input must be a list of lists of (token, activation) tuples")
 
-    examples = []
-    for example in token_act_pairs:
-        tokens, acts = zip(*example)
-        examples.append((list(tokens), list(acts)))
-
-    return _generate_prompt_centric_view(
-        examples=examples, title=title, get_tokens_and_acts_func=get_tokens_and_acts_generic, use_orange_highlight=False
-    )
+    return _generate_prompt_centric_html(token_act_pairs, title, use_orange_highlight)
 
 
-def prompt_centric_view_generic_dict(token_act_pairs_dict, title="Generic Prompt-Centric View"):
-    # Display prompt-centric view for a list of annotated examples
-    html_contents = []
-    for split_name, token_act_pairs in token_act_pairs_dict.items():
-        html_contents.append((split_name, prompt_centric_view_generic(token_act_pairs, split_name)))
-    return _light_mode(_combine_html_contents(*html_contents, title=title, nested=True))
+def prompt_centric_view_generic_dict(
+    token_act_pairs_dict: Dict[str, List[List[Tuple[str, float]]]],
+    title: str = "Examples",
+    use_orange_highlight: bool = False,
+) -> str:
+    """Generate HTML view for categorized token-activation pairs.
+
+    Args:
+        token_act_pairs_dict: Dictionary mapping category names to lists of examples
+        title: Title for the combined view
+        use_orange_highlight: Whether to use orange highlighting instead of red/blue
+
+    Returns:
+        HTML string with dropdown selector for different categories
+    """
+    views = [
+        (name, _generate_prompt_centric_html(examples, name, use_orange_highlight))
+        for name, examples in token_act_pairs_dict.items()
+    ]
+    return _combine_html_contents(*views, title=title, nested=True)
