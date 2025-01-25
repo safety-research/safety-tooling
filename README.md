@@ -75,9 +75,14 @@ In addition, there is a pre-commit hook that runs the linter and formatter befor
 To enable it, run `make hooks` but this is optional.
 
 ### Testing
-Run tests as a python module using:
+Run tests as a Python module (with 6 parallel workers, and verbose output) using:
 ```bash
-python -m pytest -n 6
+python -m pytest -v -s -n 6
+```
+
+Certain tests are inherently slow, including all tests regarding the batch API. We disable them by default to avoid slowing down the CI pipeline. To run them, use:
+```bash
+SAFETYTOOLING_SLOW_TESTS=True python -m pytest -v -s -n 6
 ```
 
 ### Updating dependencies
@@ -121,6 +126,7 @@ And for Anthropic, to fine out the numbder of threads being used run:
 python -m safetytooling.apis.inference.usage.usage_anthropic
 ```
 
+
 ## Features
 
 - **LLM Inference API:**
@@ -131,6 +137,7 @@ python -m safetytooling.apis.inference.usage.usage_anthropic
             - `REDIS_PASSWORD`: Optional Redis password for authentication
             - Default Redis configuration: localhost:6379, no password
         - The cache implementation is automatically selected based on the `REDIS_CACHE` environment variable.
+        - **No Cache:** Set `NO_CACHE=True` as an environment variable to disable all caching. This is equivalent to setting `use_cache=False` when initialising an InferenceAPI or BatchInferenceAPI object.
     - **Prompt Logging:** For debugging, human-readable `.txt` files are can be output in `$exp_dir/prompt_history` and timestamped for easy reference (off by default). You can also pass `print_prompt_and_response` to the api object to print coloured messages to the terminal.
     - Ability to double the rate limit if you pass a list of models e.g. `["gpt-3.5-turbo", "gpt-3.5-turbo-0613"]`
     - Manages rate limits efficiently for OpenAI bypassing the need for exponential backoff.

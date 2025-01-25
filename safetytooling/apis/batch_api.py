@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -23,6 +24,7 @@ class BatchInferenceAPI:
         use_redis: bool = False,
         anthropic_api_key: str | None = None,
         openai_api_key: str | None = None,
+        no_cache: bool = False,
     ):
         """Initialize the BatchInferenceAPI.
 
@@ -35,8 +37,13 @@ class BatchInferenceAPI:
             use_redis: Whether to use Redis for caching.
             anthropic_api_key: Optional API key for Anthropic. If not provided, will try to load from environment.
             openai_api_key: Optional API key for OpenAI. If not provided, will try to load from environment.
+            no_cache: If True, disable caching regardless of other settings.
         """
         secrets = load_secrets("SECRETS")
+
+        # Check NO_CACHE environment variable
+        self.no_cache = no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
+
         if log_dir == "default":
             if "PROMPT_HISTORY_DIR" in secrets:
                 self.log_dir = Path(secrets["PROMPT_HISTORY_DIR"])
@@ -56,7 +63,7 @@ class BatchInferenceAPI:
             self.cache_dir = cache_dir
 
         self.cache_manager = None
-        if self.cache_dir is not None:
+        if self.cache_dir is not None and not self.no_cache:
             self.cache_manager = get_cache_manager(self.cache_dir, use_redis)
 
         self._anthropic_batch = AnthropicModelBatch(anthropic_api_key=anthropic_api_key)
@@ -77,12 +84,15 @@ class BatchInferenceAPI:
             model_id: The model to call. Must be a Claude or OpenAI model.
             prompts: List of prompts to send to the model.
             log_dir: Directory to store logs. If None, will use prompt_history_dir.
-            use_cache: Whether to use caching.
+            use_cache: Whether to use caching. Ignored if no_cache was set during initialization.
             **kwargs: Additional arguments to pass to the model.
 
         Returns:
             Tuple of (list of responses, batch ID)
         """
+        if self.no_cache:
+            use_cache = False
+
         if not prompts:
             raise ValueError("No prompts provided")
 
@@ -98,8 +108,10 @@ class BatchInferenceAPI:
         uncached_prompts = []
         uncached_indices = []
 
-        # Check cache for each prompt
+        # Check cache for each prompt only if caching is enabled
         if self.cache_manager is not None and use_cache:
+            if "n" in kwargs:
+                assert kwargs["n"] == 1, "n must be 1 for batch inference + cache"
             for i, prompt in enumerate(prompts):
                 cached_result = self.cache_manager.maybe_load_cache(prompt=prompt, params=llm_params)
                 if cached_result is not None:
@@ -112,11 +124,9 @@ class BatchInferenceAPI:
             uncached_prompts = prompts
             uncached_indices = list(range(len(prompts)))
 
+        print(f"Retrieving {len(cached_responses)}/{len(prompts)} from cache")
         # If all prompts are cached, return cached responses
         if not uncached_prompts:
-            print(
-                f"{len(cached_responses)}/{len(cached_responses)} retrieved from cache, {sum(response is None for response in cached_responses)}/{len(cached_responses)} failed in batch API request (no batch API id, all cached)"
-            )
             return cached_responses, "cached"
 
         # Process uncached prompts
@@ -145,7 +155,7 @@ class BatchInferenceAPI:
             all_responses[idx] = response
 
         print(
-            f"{len(cached_responses)}/{len(prompts)} retrieved from cache, {sum(response is None for response in all_responses)}/{len(prompts)} failed in batch API request {batch_id}"
+            f"{len(cached_responses)}/{len(prompts)} retrieved from cache, {sum(response is None for response in all_responses)}/{len(prompts)} failed, {sum(response is not None for response in all_responses)}/{len(prompts)} succeeded in batch API request {batch_id}"
         )
 
         return all_responses, batch_id
