@@ -31,7 +31,11 @@ class OpenAIChatModel(OpenAIModel):
             if self.base_url is None
             else self.base_url + "/v1/chat/completions"
         )
-        api_key = os.environ["OPENAI_API_KEY"]
+        if self.openai_api_key is None:
+            api_key = os.environ["OPENAI_API_KEY"]
+        else:
+            api_key = self.openai_api_key
+
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         data = {
             "model": model_id,

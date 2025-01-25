@@ -83,6 +83,7 @@ class InferenceAPI:
         empty_completion_threshold: int = 0,
         use_gpu_models: bool = False,
         anthropic_api_key: str | None = None,
+        openai_api_key: str | None = None,
         print_prompt_and_response: bool = False,
         use_vllm_if_model_not_found: bool = False,
         vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
@@ -151,12 +152,14 @@ class InferenceAPI:
             frac_rate_limit=self.openai_fraction_rate_limit,
             prompt_history_dir=self.prompt_history_dir,
             base_url=self.openai_base_url,
+            openai_api_key=openai_api_key,
         )
 
         self._openai_chat = OpenAIChatModel(
             frac_rate_limit=self.openai_fraction_rate_limit,
             prompt_history_dir=self.prompt_history_dir,
             base_url=self.openai_base_url,
+            openai_api_key=openai_api_key,
         )
 
         self._openai_moderation = OpenAIModerationModel()
