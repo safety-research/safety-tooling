@@ -1,7 +1,6 @@
 """Visualization utilities for displaying token activations."""
 
 import html
-import re
 import uuid
 from typing import Dict, List, Tuple
 
@@ -16,24 +15,22 @@ def _interpolate_color(
 
 
 def _generate_highlighted_html(tokens: List[str], activations: List[float], use_orange_highlight: bool = False) -> str:
-    """Generate HTML for text with activation-based highlighting.
-
-    Args:
-        tokens: List of text tokens
-        activations: List of activation values for each token
-        use_orange_highlight: Whether to use an orange highlight instead of red or blue
-
-    Returns:
-        HTML string with highlighted tokens and tooltips
-    """
+    """Generate HTML for text with activation-based highlighting."""
     if len(tokens) != len(activations):
         raise ValueError("Number of tokens and activations must match")
 
     css = """
     <style>
+    .text-content {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        background-color: white;
+        color: black;
+    }
     .text-content span {
         position: relative;
         cursor: help;
+        color: black !important;
     }
     .text-content span:hover::after {
         content: attr(title);
@@ -47,21 +44,7 @@ def _generate_highlighted_html(tokens: List[str], activations: List[float], use_
         border-radius: 3px;
         font-size: 14px;
         white-space: nowrap;
-    }
-    .text-content {
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-    }
-    .example {
-        margin-bottom: 10px;
-        border-bottom: 1px solid #eee;
-        padding-bottom: 5px;
-    }
-    .example-label {
-        font-weight: bold;
-        font-size: 12px;
-        color: #666;
-        margin-bottom: 2px;
+        z-index: 1000;
     }
     </style>
     """
@@ -72,23 +55,24 @@ def _generate_highlighted_html(tokens: List[str], activations: List[float], use_
         act_display = f"{act:.2f}" if act is not None else ""
 
         if act not in (None, 0):
-            # Scale activation using sqrt for better visual distribution
             factor = np.sqrt(abs(act))
 
             if use_orange_highlight:
-                color = _interpolate_color((255, 237, 160), (240, 134, 0), factor)  # Light to dark orange
+                color = _interpolate_color((255, 237, 160), (240, 134, 0), factor)
             else:
                 if act > 0:
-                    color = _interpolate_color((255, 255, 255), (255, 0, 0), factor)  # White to red
+                    color = _interpolate_color((255, 255, 255), (255, 200, 200), factor)
                 else:
-                    color = _interpolate_color((255, 255, 255), (0, 0, 255), factor)  # White to blue
+                    color = _interpolate_color((255, 255, 255), (200, 200, 255), factor)
 
             html_content.append(
-                f'<span class="highlight" style="background-color: rgb{color};" '
+                f'<span style="background-color: rgb{color}; color: black !important;" '
                 f'title="{token}: {act_display}">{html.escape(token)}</span>'
             )
         else:
-            html_content.append(f'<span title="{token}: {act_display}">{html.escape(token)}</span>')
+            html_content.append(
+                f'<span style="color: black !important;" ' f'title="{token}: {act_display}">{html.escape(token)}</span>'
+            )
 
     html_content.append("</div>")
     return "\n".join(html_content)
@@ -98,7 +82,21 @@ def _generate_prompt_centric_html(
     examples: List[List[Tuple[str, float]]], title: str | None = None, use_orange_highlight: bool = False
 ) -> str:
     """Generate HTML content for the prompt-centric view."""
-    html_parts = []
+    css = """
+    <style>
+    h2 {
+        color: black;
+    }
+    .example-label {
+        color: black;
+        font-weight: bold;
+        font-size: 12px;
+        margin-bottom: 2px;
+    }
+    </style>
+    """
+
+    html_parts = [css]
     if title:
         html_parts.append(f"<h2>{title}</h2>")
 
@@ -217,7 +215,7 @@ def _combine_html_contents(*views: Tuple[str, str], title: str = "Combined View"
     return "\n".join(html_parts)
 
 
-def prompt_centric_view_generic(
+def highlight_tokens(
     token_act_pairs: List[List[Tuple[str, float]]], title: str = "Examples", use_orange_highlight: bool = False
 ) -> str:
     """Generate HTML view for a list of token-activation pairs.
@@ -235,10 +233,11 @@ def prompt_centric_view_generic(
     ):
         raise ValueError("Input must be a list of lists of (token, activation) tuples")
 
-    return _generate_prompt_centric_html(token_act_pairs, title, use_orange_highlight)
+    html = _generate_prompt_centric_html(token_act_pairs, title, use_orange_highlight)
+    return f'<div style="background-color: white; padding: 20px; border-radius: 8px;">{html}</div>'
 
 
-def prompt_centric_view_generic_dict(
+def highlight_tokens_dict(
     token_act_pairs_dict: Dict[str, List[List[Tuple[str, float]]]],
     title: str = "Examples",
     use_orange_highlight: bool = False,
@@ -257,4 +256,5 @@ def prompt_centric_view_generic_dict(
         (name, _generate_prompt_centric_html(examples, name, use_orange_highlight))
         for name, examples in token_act_pairs_dict.items()
     ]
-    return _combine_html_contents(*views, title=title, nested=True)
+    html = _combine_html_contents(*views, title=title, nested=True)
+    return f'<div style="background-color: white; padding: 20px; border-radius: 8px;">{html}</div>'
