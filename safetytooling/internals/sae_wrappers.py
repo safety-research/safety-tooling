@@ -1,7 +1,10 @@
 import json
+import os
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 import torch
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
@@ -110,6 +113,34 @@ class EleutherEncoderDecoder(nn.Module):
         return self.W_dec
 
 
+class GoodfireEncoderDecoder(nn.Module):
+    """Goodfire's encoder-decoder implementation"""
+
+    def __init__(self, d_in: int, d_sae: int, device="cpu", dtype=None):
+        super().__init__()
+        self.d_in = d_in
+        self.d_sae = d_sae
+
+        # Initialize encoder and decoder components
+        self.encoder_linear = nn.Linear(d_in, d_sae, device=device, dtype=dtype)
+        self.decoder_linear = nn.Linear(d_sae, d_in, device=device, dtype=dtype)
+
+    def encode(self, x: Tensor) -> Tensor:
+        """Encode input using ReLU activation"""
+        return torch.relu(self.encoder_linear(x))
+
+    def decode(self, indices: Tensor, values: Tensor) -> Tensor:
+        """Decode from sparse representation"""
+        features = torch.zeros((indices.shape[0], self.d_sae), device=values.device, dtype=values.dtype)
+        features.scatter_(1, indices, values)
+        return self.decoder_linear(features)
+
+    @property
+    def feature_directions(self) -> Tensor:
+        """Get feature directions from decoder weights"""
+        return self.decoder_linear.weight.T
+
+
 class SparseAutoencoderBase:
     """Base class for sparse autoencoders"""
 
@@ -140,6 +171,9 @@ class SparseAutoencoderBase:
         raise NotImplementedError()
 
     def get_codebook(self) -> Tensor:
+        raise NotImplementedError()
+
+    def get_feature_description(self, idx: int) -> str:
         raise NotImplementedError()
 
 
@@ -221,10 +255,16 @@ class DeepmindSparseAutoencoder(SparseAutoencoderBase):
         return self.encoder.feature_directions
 
     @staticmethod
-    def load_gemma2_sae(layer: int, l0: float, width: int = 131072, device: str = None) -> "DeepmindSparseAutoencoder":
+    def load_gemma2_sae(
+        layer: int, l0: float, width: int = 131072, instruction_trained=False, device: str = None
+    ) -> "DeepmindSparseAutoencoder":
         if device is None:
             device = get_least_used_device()
-        repo_id = "google/gemma-scope-9b-pt-res"
+
+        if instruction_trained:
+            repo_id = "google/gemma-scope-9b-it-res"
+        else:
+            repo_id = "google/gemma-scope-9b-pt-res"
         filename = f"layer_{layer}/width_{width//10**3}k/average_l0_{l0}/params.npz"
 
         # Load weights from npz
@@ -246,71 +286,120 @@ class DeepmindSparseAutoencoder(SparseAutoencoderBase):
 class GoodfireSparseAutoencoder(SparseAutoencoderBase):
     """Goodfire's sparse autoencoder implementation"""
 
-    def __init__(self, encoder: torch.nn.Module, hook_name: str, max_k: int, device=None):
-        super().__init__(hook_name, encoder.d_hidden, max_k, device)
+    def __init__(self, model_name: str, encoder: GoodfireEncoderDecoder, hook_name: str, max_k: int, device=None):
+        super().__init__(hook_name, encoder.d_sae, max_k, device)
         self.encoder = encoder
         self._move_to_device(self.device)
+        self.explanations = self._load_explanations(model_name)
+
+    def _load_explanations(self, model_name: str) -> pd.DataFrame:
+        """Load explanations from Goodfire API.
+
+        Args:
+            model_name: Name of the model to load explanations for
+
+        Returns:
+            DataFrame containing feature explanations
+        """
+        if model_name == "Llama-3.1-8B-Instruct":
+            file_name = "goodfire_8b.csv"
+        elif model_name == "Llama-3.3-70B-Instruct":
+            file_name = "goodfire_70b.csv"
+        else:
+            raise ValueError(f"Model {model_name} not supported")
+
+        # Get the absolute path to the file
+        file_path = Path(os.path.dirname(__file__)) / "feature_annotations" / file_name
+
+        # Load and return the CSV file
+        if file_path.exists():
+            return pd.read_csv(file_path)
+        else:
+            raise FileNotFoundError(f"Feature annotations file not found at {file_path}")
 
     def _move_to_device(self, device):
+        """Move encoder to specified device"""
         self.encoder = self.encoder.to(device)
 
     def reconstruct(self, acts: Tensor) -> Tensor:
-        """Reconstruct input activations"""
-        features = self.encoder.encode(acts)
-        values, indices = features.topk(self.max_k, sorted=False)
-        sparse_features = torch.zeros_like(features)
-        sparse_features.scatter_(1, indices, values)
-        return self.encoder.decode(sparse_features)
+        """Reconstruct input from activations"""
+        pre = self.encoder.encode(acts)
+        values, indices = pre.topk(self.max_k, sorted=False)
+        return self.encoder.decode(indices.long(), values)
 
     def encode(self, acts: Tensor) -> Tuple[Tensor, Tensor]:
-        """Get top-k feature activations"""
-        features = self.encoder.encode(acts)
-        values, indices = features.topk(self.max_k, sorted=False)
-        return indices, values
+        """Encode input to sparse representation"""
+        pre = self.encoder.encode(acts)
+        values, indices = pre.topk(self.max_k, sorted=False)
+        return indices.long(), values
 
     def get_codebook(self) -> Tensor:
         """Get feature directions"""
-        return self.encoder.decoder_linear.weight.T
+        return self.encoder.feature_directions
 
-    def to(self, device: str) -> "GoodfireSparseAutoencoder":
-        """Move SAE to specified device"""
-        self.device = device  # This will trigger the device setter
-        return self
+    def get_feature_description(self, feature_id: int) -> str:
+        """Get the description for a feature.
+
+        Args:
+            feature_id: Index of the feature
+
+        Returns:
+            Description of the feature
+        """
+        if self.explanations is None:
+            return f"Feature {feature_id}"
+
+        try:
+            # Find the row where feature_id matches
+            row = self.explanations[self.explanations["feature_id"] == feature_id]
+            if not row.empty:
+                return row.iloc[0]["feature_label"]
+            return f"Feature {feature_id}"
+        except (KeyError, IndexError):
+            return f"Feature {feature_id}"
 
     @staticmethod
-    def load_sae(
-        repo_id: str,
-        layer: int,
-        d_model: int,
-        expansion_factor: int,
-        device: str = None,
-        dtype: torch.dtype = torch.bfloat16,
+    def load_llama3_sae(
+        model_name: str, layer: int, max_k: int = 192, device: Optional[str] = None
     ) -> "GoodfireSparseAutoencoder":
-        """Load a pretrained SAE from HuggingFace Hub"""
+        """Load a Goodfire SAE for Llama 3 models
+
+        Args:
+            model_name: Name of the Llama model
+            layer: Layer number for the SAE
+            expansion_factor: Expansion factor for SAE dimensions
+            device: Device to load the model on
+        """
         if device is None:
             device = get_least_used_device()
-        # Create base encoder
-        encoder = torch.nn.Module()
-        encoder.d_in = d_model
-        encoder.d_hidden = d_model * expansion_factor
-        encoder.encoder_linear = torch.nn.Linear(d_model, encoder.d_hidden)
-        encoder.decoder_linear = torch.nn.Linear(encoder.d_hidden, d_model)
-        encoder.to(device=device, dtype=dtype)
+
+        # Format SAE name following Goodfire's convention
+        model_short_name = model_name.split("/")[-1]
+        sae_name = f"{model_short_name}-SAE-l{layer}"
+
+        # Download weights from HuggingFace
+        file_path = hf_hub_download(repo_id=f"Goodfire/{sae_name}", filename=f"{sae_name}.pth", repo_type="model")
+
+        # Load state dict
+        state_dict = torch.load(file_path, map_location=device)
+
+        # Infer dimensions from state dict
+        encoder_weight = state_dict["encoder_linear.weight"]
+        d_in = encoder_weight.shape[1]
+        d_sae = encoder_weight.shape[0]
+
+        # Initialize encoder
+        encoder = GoodfireEncoderDecoder(
+            d_in=d_in,
+            d_sae=d_sae,
+            device=device,
+            dtype=torch.bfloat16,
+        )
 
         # Load weights
-        weights = torch.load(
-            hf_hub_download(repo_id=repo_id, filename=f"{repo_id.split('/')[-1]}.pth"),
-            map_location=device,
-        )
-        encoder.load_state_dict(weights)
+        encoder.load_state_dict(state_dict)
 
-        # Create SAE wrapper
-        return GoodfireSparseAutoencoder(
-            encoder=encoder,
-            hook_name=f"model.layers.{layer}",
-            max_k=192,  # This seems to be standard for Goodfire SAEs
-            device=device,
-        )
+        return GoodfireSparseAutoencoder(model_name, encoder, f"model.layers.{layer}", max_k, device)
 
 
 class SparseAutoencoderWrapper(LanguageModelWrapper):
@@ -372,7 +461,9 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
                 top_indices, top_acts = sae.encode(model_acts.flatten(0, 1))
                 # Move results back to CPU
                 latent_indices = top_indices.reshape(n_batch, n_pos, -1).cpu()
-                latent_acts = top_acts.reshape(n_batch, n_pos, -1).cpu()
+                latent_acts = (
+                    top_acts.reshape(n_batch, n_pos, -1).cpu().to(torch.float16)
+                )  # Convert to float16 to preserve compatibility with other models)
                 results[sae.hook_name] = (latent_indices, latent_acts)
 
         return results
@@ -484,3 +575,139 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
             )
 
         return results
+
+    def get_feature_description(self, hook_name: str, feature_id: int) -> str:
+        """Get the description for a feature.
+
+        Args:
+            hook_name: Name of the hook
+            feature_id: Index of the feature
+        """
+        for sae in self.saes:
+            if sae.hook_name == hook_name:
+                return sae.get_feature_description(feature_id)
+        raise ValueError(f"Hook name {hook_name} not found")
+
+
+def load_eleuther_llama3_sae_wrapped(
+    layers: List[int],
+    v2: bool = True,
+    model_name: str = "meta-llama/Meta-Llama-3-8B-Instruct",
+    config: Optional[ModelConfig] = None,
+) -> SparseAutoencoderWrapper:
+    """Load EleutherAI's Llama3 SAEs and wrap them with a model.
+
+    Args:
+        layers: List of layer numbers to load SAEs for
+        v2: Whether to use v2 SAEs (default True)
+        model_name: Name of the Llama model to load (default: Meta-Llama-3-8B-Instruct)
+        config: Optional model configuration. If None, uses default config with SDPA and bfloat16
+
+    Returns:
+        Wrapped model with loaded SAEs
+    """
+    # Load SAEs
+    saes = [EleutherSparseAutoencoder.load_llama3_sae(layer=layer, v2=v2) for layer in layers]
+
+    # Create default config if none provided
+    if config is None:
+        config = ModelConfig(
+            attn_implementation="sdpa",
+            torch_dtype=torch.bfloat16,
+        )
+
+    # Create and return wrapped model
+    return SparseAutoencoderWrapper(model_name=model_name, saes=saes, config=config)
+
+
+def load_deepmind_gemma2_sae_wrapped(
+    layers: List[int],
+    l0s: List[int],
+    width: int = 131072,
+    model_name: str = "google/gemma-2b-it",
+    instruction_trained: bool = True,
+    config: Optional[ModelConfig] = None,
+) -> SparseAutoencoderWrapper:
+    """Load Deepmind's Gemma2 SAEs and wrap them with a model.
+
+    Args:
+        layers: List of layer numbers to load SAEs for
+        l0: L0 parameter for the SAEs (default: 128)
+        width: Width of the SAEs (default: 131072)
+        model_name: Name of the Gemma model to load (default: google/gemma-2b-it)
+        instruction_trained: Whether to use instruction-tuned SAEs (default: True)
+        config: Optional model configuration. If None, uses default config with bfloat16
+
+    Returns:
+        Wrapped model with loaded SAEs
+    """
+    # Load SAEs
+    saes = [
+        DeepmindSparseAutoencoder.load_gemma2_sae(
+            layer=layer, l0=l0, width=width, instruction_trained=instruction_trained
+        )
+        for layer, l0 in zip(layers, l0s)
+    ]
+
+    # Create default config if none provided
+    if config is None:
+        config = ModelConfig(
+            torch_dtype=torch.bfloat16,
+        )
+
+    # Create and return wrapped model
+    return SparseAutoencoderWrapper(model_name=model_name, saes=saes, config=config)
+
+
+def load_goodfire_llama3_8b_sae_wrapped(
+    model_name: str = "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    config: Optional[ModelConfig] = None,
+) -> SparseAutoencoderWrapper:
+    """Load Goodfire's Llama3 8B SAE and wrap it with a model.
+
+    Args:
+        model_name: Name of the Llama model to load (default: Meta-Llama-3.1-8B-Instruct)
+        config: Optional model configuration. If None, uses default config with SDPA and bfloat16
+
+    Returns:
+        Wrapped model with loaded SAE
+    """
+    # Load SAE for layer 19
+    saes = [GoodfireSparseAutoencoder.load_llama3_sae(model_name="Llama-3.1-8B-Instruct", layer=19, max_k=192)]
+
+    # Create default config if none provided
+    if config is None:
+        config = ModelConfig(
+            attn_implementation="sdpa",
+            torch_dtype=torch.bfloat16,
+        )
+
+    # Create and return wrapped model
+    return SparseAutoencoderWrapper(model_name=model_name, saes=saes, config=config)
+
+
+def load_goodfire_llama3_70b_sae_wrapped(
+    model_name: str = "meta-llama/Llama-3.3-70B-Instruct",
+    config: Optional[ModelConfig] = None,
+) -> SparseAutoencoderWrapper:
+    """Load Goodfire's Llama3 70B SAE and wrap it with a model.
+
+    Args:
+        model_name: Name of the Llama model to load (default: Llama-3.3-70B-Instruct)
+        config: Optional model configuration. If None, uses default config with SDPA and bfloat16
+
+    Returns:
+        Wrapped model with loaded SAE
+    """
+    # Load SAE for layer 50
+    saes = [GoodfireSparseAutoencoder.load_llama3_sae(model_name="Llama-3.3-70B-Instruct", layer=50, max_k=192)]
+
+    # Create default config if none provided
+    if config is None:
+        config = ModelConfig(
+            attn_implementation="sdpa",
+            torch_dtype=torch.bfloat16,
+        )
+
+    # Create and return wrapped model
+    return SparseAutoencoderWrapper(model_name=model_name, saes=saes, config=config)

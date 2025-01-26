@@ -9,7 +9,8 @@ from huggingface_hub import list_repo_files
 from peft import AutoPeftModelForCausalLM
 from torch import Tensor, nn
 from tqdm.auto import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
+from transformers import (AutoModelForCausalLM, AutoTokenizer, PreTrainedModel,
+                          PreTrainedTokenizer)
 
 
 @dataclass
