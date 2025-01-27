@@ -2,7 +2,7 @@
 
 import html
 import uuid
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 
@@ -51,7 +51,7 @@ def _generate_highlighted_html(tokens: List[str], activations: List[float], use_
 
     html_content = [css, "<div class='text-content'>"]
 
-    for token, act in zip(tokens, activations):
+    for i, (token, act) in enumerate(zip(tokens, activations)):
         act_display = f"{act:.2f}" if act is not None else ""
 
         if act not in (None, 0):
@@ -67,11 +67,12 @@ def _generate_highlighted_html(tokens: List[str], activations: List[float], use_
 
             html_content.append(
                 f'<span style="background-color: rgb{color}; color: black !important;" '
-                f'title="{token}: {act_display}">{html.escape(token)}</span>'
+                f'title="[{i}] {token}: {act_display}">{html.escape(token)}</span>'
             )
         else:
             html_content.append(
-                f'<span style="color: black !important;" ' f'title="{token}: {act_display}">{html.escape(token)}</span>'
+                f'<span style="color: black !important;" '
+                f'title="[{i}] {token}: {act_display}">{html.escape(token)}</span>'
             )
 
     html_content.append("</div>")
@@ -238,23 +239,36 @@ def highlight_tokens(
 
 
 def highlight_tokens_dict(
-    token_act_pairs_dict: Dict[str, List[List[Tuple[str, float]]]],
+    token_act_pairs_dict: Dict[str, Union[List[List[Tuple[str, float]]], Dict]],
     title: str = "Examples",
     use_orange_highlight: bool = False,
 ) -> str:
-    """Generate HTML view for categorized token-activation pairs.
+    """Generate HTML view for nested token-activation pairs.
 
     Args:
-        token_act_pairs_dict: Dictionary mapping category names to lists of examples
+        token_act_pairs_dict: Nested dictionary structure where leaves are lists of examples
         title: Title for the combined view
         use_orange_highlight: Whether to use orange highlighting instead of red/blue
 
     Returns:
-        HTML string with dropdown selector for different categories
+        HTML string with nested dropdown selectors for categories
     """
-    views = [
-        (name, _generate_prompt_centric_html(examples, name, use_orange_highlight))
-        for name, examples in token_act_pairs_dict.items()
-    ]
+
+    def process_dict(d: Dict, current_title: str) -> List[Tuple[str, str]]:
+        views = []
+        for name, content in d.items():
+            if isinstance(content, list):
+                # Base case: content is a list of examples
+                html_content = _generate_prompt_centric_html(content, name, use_orange_highlight)
+                views.append((name, html_content))
+            else:
+                # Recursive case: content is another dictionary
+                nested_views = process_dict(content, name)
+                nested_html = _combine_html_contents(*nested_views, title=name, nested=True)
+                views.append((name, nested_html))
+        return views
+
+    # Process the entire dictionary structure
+    views = process_dict(token_act_pairs_dict, title)
     html = _combine_html_contents(*views, title=title, nested=True)
     return f'<div style="background-color: white; padding: 20px; border-radius: 8px;">{html}</div>'

@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -11,6 +11,7 @@ from safetensors.torch import load_file
 from torch import Tensor, nn
 
 from .model_wrapper import LanguageModelWrapper, ModelConfig
+from .utils import process_data
 
 
 def get_gpu_memory_usage():
@@ -173,8 +174,29 @@ class SparseAutoencoderBase:
     def get_codebook(self) -> Tensor:
         raise NotImplementedError()
 
-    def get_feature_description(self, idx: int) -> str:
-        raise NotImplementedError()
+    def get_feature_description(self, feature_id: int) -> str:
+        """Get the description for a feature.
+
+        Args:
+            feature_id: Index of the feature
+
+        Returns:
+            Description of the feature
+        """
+        if not hasattr(self, "explanations"):
+            return f"Feature {feature_id}"
+
+        if self.explanations is None:
+            return f"Feature {feature_id}"
+
+        try:
+            # Find the row where feature_id matches
+            row = self.explanations[self.explanations["feature_id"] == feature_id]
+            if not row.empty:
+                return f"{row.iloc[0]['feature_label']} (Feature {feature_id})"
+            return f"Feature {feature_id}"
+        except (KeyError, IndexError):
+            return f"Feature {feature_id}"
 
 
 class EleutherSparseAutoencoder(SparseAutoencoderBase):
@@ -337,27 +359,6 @@ class GoodfireSparseAutoencoder(SparseAutoencoderBase):
         """Get feature directions"""
         return self.encoder.feature_directions
 
-    def get_feature_description(self, feature_id: int) -> str:
-        """Get the description for a feature.
-
-        Args:
-            feature_id: Index of the feature
-
-        Returns:
-            Description of the feature
-        """
-        if self.explanations is None:
-            return f"Feature {feature_id}"
-
-        try:
-            # Find the row where feature_id matches
-            row = self.explanations[self.explanations["feature_id"] == feature_id]
-            if not row.empty:
-                return row.iloc[0]["feature_label"]
-            return f"Feature {feature_id}"
-        except (KeyError, IndexError):
-            return f"Feature {feature_id}"
-
     @staticmethod
     def load_llama3_sae(
         model_name: str, layer: int, max_k: int = 192, device: Optional[str] = None
@@ -422,6 +423,9 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
 
         def create_activation_hook(hook_name: str) -> callable:
             def hook_fn(output: Tensor) -> Tensor:
+                if self.config.requires_grad:
+                    output.requires_grad_(True)
+                    output.retain_grad()
                 self._current_activations[hook_name] = output
                 return output
 
@@ -430,7 +434,6 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
         for sae in self.saes:
             self.add_hook(sae.hook_name, create_activation_hook(sae.hook_name))
 
-    @torch.inference_mode()
     def _featurize(self, tokens: torch.Tensor, masks: Optional[torch.Tensor] = None) -> dict:
         """
         Returns a dictionary with hook_name as key and a tuple of two B x P x k tensors of feature activations as value.
@@ -446,29 +449,27 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
         n_batch, n_pos = tokens.shape
         results = {}
 
-        with torch.no_grad():
-            # Forward pass through model to get activations
-            _ = self.model(
-                input_ids=tokens.to(self.model.device),
-                attention_mask=masks.to(self.model.device) if masks is not None else None,
-            )
+        # Forward pass through model to get activations
+        _ = self.model(
+            input_ids=tokens.to(self.model.device),
+            attention_mask=masks.to(self.model.device) if masks is not None else None,
+        )
 
-            # Process activations for each SAE
-            for sae in self.saes:
-                model_acts = self._current_activations[sae.hook_name]
-                # Move activations to SAE's device
-                model_acts = model_acts.to(sae.device)
-                top_indices, top_acts = sae.encode(model_acts.flatten(0, 1))
-                # Move results back to CPU
-                latent_indices = top_indices.reshape(n_batch, n_pos, -1).cpu()
-                latent_acts = (
-                    top_acts.reshape(n_batch, n_pos, -1).cpu().to(torch.float16)
-                )  # Convert to float16 to preserve compatibility with other models)
-                results[sae.hook_name] = (latent_indices, latent_acts)
+        # Process activations for each SAE
+        for sae in self.saes:
+            model_acts = self._current_activations[sae.hook_name]
+            # Move activations to SAE's device
+            model_acts = model_acts.to(sae.device)
+            top_indices, top_acts = sae.encode(model_acts.flatten(0, 1))
+            # Move results back to CPU
+            latent_indices = top_indices.reshape(n_batch, n_pos, -1).cpu()
+            latent_acts = (
+                top_acts.reshape(n_batch, n_pos, -1).cpu().to(torch.float16)
+            )  # Convert to float16 to preserve compatibility with other models)
+            results[sae.hook_name] = (latent_indices, latent_acts)
 
         return results
 
-    @torch.inference_mode()
     def _batched_featurize(
         self, tokens: torch.Tensor, masks: Optional[torch.Tensor] = None, batch_size: Optional[int] = None
     ) -> dict:
@@ -508,7 +509,9 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
 
         return final_results
 
-    def featurize_text(self, text: str, batch_size: Optional[int] = None, max_length: int = 512) -> List[dict]:
+    def featurize_text(
+        self, text: Union[str, List[str]], batch_size: Optional[int] = None, max_length: int = 512
+    ) -> List[dict]:
         """
         Tokenize and featurize the input text.
 
@@ -539,10 +542,11 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
         attention_mask = tokens["attention_mask"]
 
         # Get features from model
-        if batch_size is None:
-            features = self._featurize(input_ids, attention_mask)
-        else:
-            features = self._batched_featurize(input_ids, attention_mask, batch_size)
+        with torch.inference_mode():
+            if batch_size is None:
+                features = self._featurize(input_ids, attention_mask)
+            else:
+                features = self._batched_featurize(input_ids, attention_mask, batch_size)
 
         # Convert to list of per-example dictionaries
         results = []
@@ -576,6 +580,230 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
 
         return results
 
+    def _featribute(
+        self, tokens: torch.Tensor, target_mask: torch.Tensor, masks: Optional[torch.Tensor] = None
+    ) -> dict:
+        """Compute gradients of logits with respect to feature directions.
+
+        Args:
+            tokens: Input tokens tensor of shape [batch_size, seq_len]
+            target_mask: Boolean tensor of shape [batch_size, seq_len, vocab_size] indicating which
+                logits to compute gradients for
+            masks: Optional boolean tensor of shape [batch_size, seq_len] indicating which positions
+                to consider. If None, uses attention_mask from tokens.
+
+        Returns:
+            Dictionary mapping hook_names to tuples of:
+                - indices: Tensor of shape [batch_size, seq_len, top_k] with indices of top activating features
+                - acts: Tensor of shape [batch_size, seq_len, top_k] with activation values
+                - grads: Tensor of shape [batch_size, seq_len, top_k] with directional derivatives
+        """
+        n_batch, n_pos = tokens.shape
+        results = {}
+
+        model_output = self.model(
+            input_ids=tokens.to(self.model.device),
+            attention_mask=masks.to(self.model.device) if masks is not None else None,
+        )
+        logits = model_output.logits  # [batch_size, seq_len, vocab_size]
+
+        # Sum the target logits to get the "loss"
+        loss = logits[target_mask].sum()
+
+        # Get list of activation tensors to compute gradients for
+        activation_tensors = []
+        for sae in self.saes:
+            if sae.hook_name in self._current_activations:
+                activation_tensors.append(self._current_activations[sae.hook_name])
+
+        # Compute gradients
+        loss.backward(retain_graph=False)
+        act_grads = [tensor.grad.detach() for tensor in activation_tensors]
+
+        # Process each SAE with its corresponding gradients
+        for sae, model_acts, act_grad in zip(self.saes, activation_tensors, act_grads):
+            # Move tensors to SAE's device
+            model_acts = model_acts.to(sae.device)
+            act_grad = act_grad.to(sae.device)
+
+            # Get feature activations
+            flattened_acts = model_acts.reshape(-1, model_acts.size(-1))  # [batch_size * seq_len, d_model]
+            top_indices, top_acts = sae.encode(flattened_acts)  # [batch_size * seq_len, top_k]
+            top_indices = top_indices.reshape(n_batch, n_pos, -1)  # [batch_size, seq_len, top_k]
+            top_acts = top_acts.reshape(n_batch, n_pos, -1)  # [batch_size, seq_len, top_k]
+
+            # Get decoder directions and compute gradients
+            decoder_directions = sae.get_codebook()  # [n_features, d_model]
+            flat_grads = act_grad.reshape(-1, act_grad.size(-1))
+
+            selected_directions = decoder_directions[top_indices.reshape(-1)]
+            feat_directions = selected_directions.reshape(-1, top_indices.size(-1), selected_directions.size(-1))
+
+            # Project gradients onto feature directions
+            # This gives us ∂L/∂a · Di for each feature i
+            top_grads = torch.bmm(feat_directions, flat_grads.unsqueeze(-1)).squeeze(-1).reshape(n_batch, n_pos, -1)
+
+            # Scale by activations and store results
+            results[sae.hook_name] = (
+                top_indices.cpu(),
+                top_acts.cpu().to(torch.float16),
+                (top_grads * top_acts).cpu().to(torch.float16),
+            )
+
+        return results
+
+    def _batched_featribute(
+        self,
+        tokens: torch.Tensor,
+        target_mask: torch.Tensor,
+        masks: Optional[torch.Tensor] = None,
+        batch_size: Optional[int] = None,
+    ) -> dict:
+        """Batched version of featribute with robust batch handling.
+
+        Args:
+            tokens: Input tokens tensor
+            target_mask: Boolean tensor indicating which logits to compute gradients for
+            masks: Optional attention mask tensor
+            batch_size: Size of batches to process. If None, uses full input size.
+
+        Returns:
+            Dictionary mapping hook_names to tuples of (indices, activations, gradients)
+        """
+        if batch_size is None:
+            return self._featribute(tokens, target_mask, masks)
+
+        # Initialize results dictionary
+        results = {sae.hook_name: ([], [], []) for sae in self.saes}
+
+        # Calculate number of full batches and remainder
+        n_samples = tokens.size(0)
+        n_full_batches = n_samples // batch_size
+        remainder = n_samples % batch_size
+
+        # Process full batches
+        for i in range(n_full_batches):
+            start_idx = i * batch_size
+            end_idx = start_idx + batch_size
+
+            batch_tokens = tokens[start_idx:end_idx]
+            batch_target_mask = target_mask[start_idx:end_idx]
+            batch_masks = masks[start_idx:end_idx] if masks is not None else None
+
+            batch_results = self._featribute(batch_tokens, batch_target_mask, batch_masks)
+
+            # Accumulate results
+            for hook_name, (indices, acts, grads) in batch_results.items():
+                results[hook_name][0].append(indices)
+                results[hook_name][1].append(acts)
+                results[hook_name][2].append(grads)
+
+        # Process remainder batch if it exists
+        if remainder > 0:
+            start_idx = n_full_batches * batch_size
+            batch_tokens = tokens[start_idx:]
+            batch_target_mask = target_mask[start_idx:]
+            batch_masks = masks[start_idx:] if masks is not None else None
+
+            batch_results = self._featribute(batch_tokens, batch_target_mask, batch_masks)
+
+            # Accumulate remainder results
+            for hook_name, (indices, acts, grads) in batch_results.items():
+                results[hook_name][0].append(indices)
+                results[hook_name][1].append(acts)
+                results[hook_name][2].append(grads)
+
+        # Concatenate results for each SAE
+        final_results = {}
+        for hook_name, (indices_list, acts_list, grads_list) in results.items():
+            final_results[hook_name] = (
+                torch.cat(indices_list, dim=0),
+                torch.cat(acts_list, dim=0),
+                torch.cat(grads_list, dim=0),
+            )
+
+        return final_results
+
+    def featribute_text(
+        self,
+        text: Union[str, List[str]],
+        target_text: Union[str, List[str]],
+        batch_size: Optional[int] = None,
+        max_length: int = 512,
+        top_k_features: int = 20,
+    ) -> List[dict]:
+        """Tokenize and compute feature attributions for how input text influences target text prediction.
+
+        Args:
+            text: Input text or list of texts to analyze
+            target_text: Target text or list of texts to compute attributions for.
+            batch_size: Optional batch size for processing
+            max_length: Maximum sequence length (default: 512)
+            top_k_features: Number of top features to return per position (default: 20)
+
+        Returns:
+            List of dictionaries, one per example, containing:
+            - input_tokens: List of input token strings
+            - target_tokens: List of target token strings
+            - attributions: Dictionary mapping hook_names to attribution info:
+                - feature_indices: Top-k feature indices [seq_len, top_k]
+                - feature_acts: Feature activation values [seq_len, top_k]
+                - feature_grads: Feature gradient values [seq_len, top_k]
+                - descriptions: Feature descriptions [seq_len, top_k]
+        """
+        max_length = min(self.tokenizer.model_max_length, max_length)
+
+        # Handle single string input
+        if isinstance(text, str):
+            text = [text]
+        if isinstance(target_text, str):
+            target_text = [target_text]
+
+        # Tokenize inputs
+        input_ids, prompt_mask, target_mask = process_data(prompts=text, targets=target_text, tokenizer=self.tokenizer)
+        attention_mask = torch.logical_or(prompt_mask, target_mask)
+
+        # Compute feature attributions
+        if batch_size is None:
+            features = self._featribute(input_ids, target_mask, attention_mask)
+        else:
+            features = self._batched_featribute(input_ids, target_mask, attention_mask, batch_size)
+
+        # Convert to list of per-example dictionaries
+        results = []
+        batch_size = input_ids.shape[0]
+
+        for i in range(batch_size):
+            # Use attention mask to get valid token positions
+            valid_positions = attention_mask[i].bool()
+
+            # Get token IDs for this example (removing padding)
+            token_ids = input_ids[i][valid_positions].tolist()
+
+            # Get string representations of tokens (removing padding)
+            str_tokens = [self.tokenizer.decode([tid]) for tid in token_ids]
+
+            # Get features for this example (removing padding)
+            example_indices = {}
+            example_acts = {}
+            example_grads = {}
+            for hook_name, (indices, acts, grads) in features.items():
+                example_indices[hook_name] = indices[i][valid_positions]  # Only keep non-padding positions
+                example_acts[hook_name] = acts[i][valid_positions]  # Only keep non-padding positions
+                example_grads[hook_name] = grads[i][valid_positions]  # Only keep non-padding positions
+
+            results.append(
+                {
+                    "token_ids": token_ids,
+                    "str_tokens": str_tokens,
+                    "top_indices": example_indices,
+                    "top_acts": example_acts,
+                    "top_grads": example_grads,
+                }
+            )
+
+        return results
+
     def get_feature_description(self, hook_name: str, feature_id: int) -> str:
         """Get the description for a feature.
 
@@ -587,6 +815,87 @@ class SparseAutoencoderWrapper(LanguageModelWrapper):
             if sae.hook_name == hook_name:
                 return sae.get_feature_description(feature_id)
         raise ValueError(f"Hook name {hook_name} not found")
+
+    def get_transcript_analysis(
+        self,
+        transcript: str,
+        max_length: int = 512,
+        top_k_features: int = 10,
+        focus_token_indices: Optional[List[int]] = None,
+    ) -> Dict[str, Dict[str, List[Tuple[str, float]]]]:
+        """Analyze a transcript and return top activating features with highlighted text.
+
+        Args:
+            transcript: Text to analyze
+            max_length: Maximum sequence length to process
+            top_k_features: Number of top activating features to return per layer
+            focus_token_indices: Optional list of token indices. If provided, features will be
+                sorted based on their maximum activation across these tokens only.
+
+        Returns:
+            Dictionary mapping hook_names to dictionaries of {feature_desc: token_acts},
+            where token_acts is a list of (token, activation) pairs
+        """
+        # Get feature activations
+        results = self.featurize_text(transcript, max_length=max_length)[0]
+
+        # Skip BOS token if present
+        if results["str_tokens"][0] == self.tokenizer.bos_token:
+            str_tokens = results["str_tokens"][1:]
+            token_offset = 1
+        else:
+            str_tokens = results["str_tokens"]
+            token_offset = 0
+
+        # Adjust focus indices if we skipped BOS token
+        if focus_token_indices is not None:
+            focus_token_indices = [i - token_offset for i in focus_token_indices if i >= token_offset]
+
+        # Process each SAE layer
+        analysis = {}
+        for sae in self.saes:
+            hook_name = sae.hook_name  # Get the hook name from the SAE object
+
+            # Get indices and activations for this layer
+            indices = results["top_indices"][hook_name][token_offset:]  # [seq_len, top_k]
+            acts = results["top_acts"][hook_name][token_offset:]  # [seq_len, top_k]
+
+            # Create a feature activation matrix [n_features, seq_len]
+            n_features = sae.n_features  # Get n_features for this specific SAE
+            feature_acts = torch.zeros((n_features, len(indices)), dtype=acts.dtype)
+
+            # Use scatter to fill in activations
+            flat_indices = indices.view(-1)  # Flatten indices
+            flat_acts = acts.view(-1)  # Flatten activations
+            pos_indices = torch.arange(len(indices)).repeat_interleave(indices.size(1))
+            feature_acts[flat_indices, pos_indices] = flat_acts
+
+            # Get max activation per feature
+            if focus_token_indices is not None:
+                # Only consider activations at specified token positions
+                max_acts_per_feature, _ = feature_acts[:, focus_token_indices].max(dim=1)  # [n_features]
+            else:
+                # Consider all token positions
+                max_acts_per_feature, _ = feature_acts.max(dim=1)  # [n_features]
+
+            # Get top k features
+            top_k_values, top_k_indices = max_acts_per_feature.topk(min(top_k_features, n_features))
+
+            # For each top feature, get token-level activations
+            feature_dict = {}
+            for feature_id, max_act in zip(top_k_indices.tolist(), top_k_values.tolist()):
+                # Get activations for this feature across all tokens
+                token_acts = [
+                    (str_token, feature_acts[feature_id, pos].item()) for pos, str_token in enumerate(str_tokens)
+                ]
+
+                # Get feature description and use as key
+                feature_desc = self.get_feature_description(hook_name, feature_id)
+                feature_dict[feature_desc] = [token_acts]
+
+            analysis[hook_name] = feature_dict
+
+        return analysis
 
 
 def load_eleuther_llama3_sae_wrapped(

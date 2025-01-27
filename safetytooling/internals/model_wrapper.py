@@ -9,8 +9,7 @@ from huggingface_hub import list_repo_files
 from peft import AutoPeftModelForCausalLM
 from torch import Tensor, nn
 from tqdm.auto import tqdm
-from transformers import (AutoModelForCausalLM, AutoTokenizer, PreTrainedModel,
-                          PreTrainedTokenizer)
+from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
 
 
 @dataclass
@@ -20,7 +19,7 @@ class ModelConfig:
     torch_dtype: torch.dtype = torch.bfloat16
     device_map: str = "auto"
     attn_implementation: Optional[str] = None
-    requires_grad: bool = False
+    requires_grad: bool = True
     max_length: int = 1024
 
     def get_attn_implementation(self, model_name: str) -> str:

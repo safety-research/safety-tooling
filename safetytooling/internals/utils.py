@@ -1,6 +1,8 @@
-from typing import Literal
+from typing import List, Literal, Tuple
 
 import torch
+from tqdm import tqdm
+from transformers import PreTrainedTokenizer
 
 
 def squeeze_positions(
@@ -117,3 +119,56 @@ def normalize_last_dim(tensor: torch.Tensor) -> torch.Tensor:
     # We add a small epsilon to avoid division by zero
     normalized_tensor = tensor / (norm + 1e-8)
     return normalized_tensor
+
+
+def process_data(
+    prompts: List[str],
+    targets: List[str],
+    tokenizer: PreTrainedTokenizer,
+    batch_size: int | None = None,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Process prompts and targets into batched tensor format for model input.
+
+    Args:
+        prompts: List of input prompt strings to be encoded
+        targets: List of target completion strings to be encoded
+        tokenizer: Tokenizer to convert text to token IDs
+        batch_size: Optional batch size, defaults to length of prompts if None
+
+    Returns:
+        Tuple containing:
+        - adv_tokens: Tensor of token IDs for combined prompts and targets (batch_size, max_length)
+        - prompt_mask: Boolean mask indicating prompt token positions (batch_size, max_length)
+        - target_mask: Boolean mask indicating target token positions (batch_size, max_length)
+    """
+    # Tokenize all prompts and targets without special tokens
+    tokenized_prompts = [tokenizer.encode(prompt, add_special_tokens=False) for prompt in prompts]
+    tokenized_targets = [tokenizer.encode(target, add_special_tokens=False) for target in targets]
+
+    # Use full dataset size if batch_size not specified
+    if batch_size is None:
+        batch_size = len(prompts)
+
+    # Calculate maximum sequence length across all prompt-target pairs
+    max_length = max(len(tokenized_prompts[i] + tokenized_targets[i]) for i in range(batch_size))
+
+    # Initialize tensors for tokens and masks
+    adv_tokens = torch.zeros((batch_size, max_length), dtype=torch.long)
+    adv_tokens.fill_(tokenizer.pad_token_id)  # Pad with tokenizer's pad token
+    prompt_mask = torch.zeros((batch_size, max_length), dtype=torch.bool)
+    target_mask = torch.zeros((batch_size, max_length), dtype=torch.bool)
+
+    # Process each example in the batch
+    for i in tqdm(range(batch_size), desc="Tokenizing"):
+        # Combine prompt and target tokens
+        combined = tokenized_prompts[i] + tokenized_targets[i]
+
+        # Fill in the combined tokens
+        adv_tokens[i, : len(combined)] = torch.tensor(combined)
+
+        # Create masks for prompt and target positions
+        prompt_mask[i, : len(tokenized_prompts[i])] = True
+        target_mask[i, len(tokenized_prompts[i]) : len(combined)] = True
+
+    return adv_tokens, prompt_mask, target_mask
