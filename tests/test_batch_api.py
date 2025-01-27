@@ -68,7 +68,7 @@ async def test_batch_api_cache(batch_api, tmp_path):
     """Test that BatchInferenceAPI properly caches responses."""
     random.seed(time.time())
 
-    # Create prompts with random numbers to ensure unique cache keys
+    # Create 3 test prompts with random numbers to ensure unique cache keys
     rand_suffix = random.randint(0, 1000000)
     test_prompts = [
         Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
@@ -112,7 +112,7 @@ async def test_batch_api_no_cache_flag(batch_api, tmp_path):
     """Test that BatchInferenceAPI respects no_cache flag."""
     random.seed(time.time())
 
-    # Create prompts with random numbers to ensure unique cache keys
+    # Create 3 test prompts with random numbers to ensure unique cache keys
     rand_suffix = random.randint(0, 1000000)
     test_prompts = [
         Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
@@ -152,7 +152,7 @@ async def test_batch_api_no_cache_env(batch_api, tmp_path):
     """Test that BatchInferenceAPI respects NO_CACHE environment variable."""
     random.seed(time.time())
 
-    # Create prompts with random numbers to ensure unique cache keys
+    # Create 3 test prompts with random numbers to ensure unique cache keys
     rand_suffix = random.randint(0, 1000000)
     test_prompts = [
         Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
@@ -194,3 +194,40 @@ async def test_batch_api_no_cache_env(batch_api, tmp_path):
         del os.environ["NO_CACHE"]
     else:
         os.environ["NO_CACHE"] = old_no_cache
+
+
+@pytest.mark.asyncio
+async def test_batch_api_chunking(batch_api, tmp_path):
+    """Test that BatchInferenceAPI properly handles chunking."""
+    random.seed(time.time())
+
+    # Create a new BatchInferenceAPI instance with chunk_size=2
+    chunked_api = BatchInferenceAPI(
+        prompt_history_dir=None,
+        chunk=2,
+        anthropic_api_key=os.getenv("ANTHROPIC_BATCH_API_KEY") if os.getenv("ANTHROPIC_BATCH_API_KEY") else None,
+    )
+
+    # Create 5 test prompts with random numbers to ensure unique cache keys
+    rand_suffix = random.randint(0, 1000000)
+    test_prompts = [
+        Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
+    ]
+
+    # Run with chunking
+    responses, batch_id = await chunked_api(
+        model_id="claude-3-5-haiku-20241022",
+        prompts=test_prompts,
+        max_tokens=10,
+        log_dir=tmp_path,
+    )
+
+    # Verify we got responses for all prompts
+    assert len(responses) == len(test_prompts)
+    assert all(response is not None for response in responses)
+    assert all(response.model_id == "claude-3-5-haiku-20241022" for response in responses)
+    assert all(response.batch_custom_id is not None for response in responses)
+
+    # Verify that we got multiple batch IDs (since it was chunked)
+    batch_ids = batch_id.split(",")
+    assert len(batch_ids) == 2  # With 3 prompts and chunk_size=2, we expect 2 batches

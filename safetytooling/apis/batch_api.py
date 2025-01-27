@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -25,6 +26,7 @@ class BatchInferenceAPI:
         anthropic_api_key: str | None = None,
         openai_api_key: str | None = None,
         no_cache: bool = False,
+        chunk: int | None = None,
     ):
         """Initialize the BatchInferenceAPI.
 
@@ -38,6 +40,7 @@ class BatchInferenceAPI:
             anthropic_api_key: Optional API key for Anthropic. If not provided, will try to load from environment.
             openai_api_key: Optional API key for OpenAI. If not provided, will try to load from environment.
             no_cache: If True, disable caching regardless of other settings.
+            chunk: Maximum number of prompts to send in a single batch. If None, send all prompts in one batch.
         """
         secrets = load_secrets("SECRETS")
 
@@ -68,6 +71,7 @@ class BatchInferenceAPI:
 
         self._anthropic_batch = AnthropicModelBatch(anthropic_api_key=anthropic_api_key)
         self._openai_batch = OpenAIModelBatch(openai_api_key=openai_api_key)
+        self.chunk = chunk
 
     async def __call__(
         self,
@@ -85,6 +89,7 @@ class BatchInferenceAPI:
             prompts: List of prompts to send to the model.
             log_dir: Directory to store logs. If None, will use prompt_history_dir.
             use_cache: Whether to use caching. Ignored if no_cache was set during initialization.
+            max_tokens: Maximum number of tokens to generate.
             **kwargs: Additional arguments to pass to the model.
 
         Returns:
@@ -129,34 +134,84 @@ class BatchInferenceAPI:
         if not uncached_prompts:
             return cached_responses, "cached"
 
-        # Process uncached prompts
-        if model_id in ANTHROPIC_MODELS:
-            responses, batch_id = await self._anthropic_batch(
-                model_id, uncached_prompts, max_tokens=max_tokens, **kwargs
-            )
-        elif model_id in GPT_CHAT_MODELS:
-            responses, batch_id = await self._openai_batch(
-                model_id, uncached_prompts, log_dir, max_tokens=max_tokens, **kwargs
-            )
+        # Process uncached prompts in chunks if specified
+        if self.chunk is not None and len(uncached_prompts) > self.chunk:
+            all_responses = []
+            all_batch_ids = []
+
+            if model_id not in ANTHROPIC_MODELS and model_id not in GPT_CHAT_MODELS:
+                raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
+
+            chunks = [uncached_prompts[i : i + self.chunk] for i in range(0, len(uncached_prompts), self.chunk)]
+
+            async def process_chunk(chunk_prompts):
+                if model_id in ANTHROPIC_MODELS:
+                    return await self._anthropic_batch(
+                        model_id=model_id, prompts=chunk_prompts, max_tokens=max_tokens, **kwargs
+                    )
+                else:
+                    return await self._openai_batch(
+                        model_id=model_id, prompts=chunk_prompts, log_dir=log_dir, max_tokens=max_tokens, **kwargs
+                    )
+
+            results = await asyncio.gather(*[process_chunk(chunk) for chunk in chunks])
+
+            for chunk_prompts, (responses, batch_id) in zip(chunks, results):
+                all_responses.extend(responses)
+                all_batch_ids.append(batch_id)
+
+                # Save responses to cache
+                if self.cache_manager is not None and use_cache:
+                    for prompt, response in zip(chunk_prompts, responses):
+                        if response is not None:
+                            self.cache_manager.save_cache(prompt=prompt, params=llm_params, responses=[response])
+
+            # Merge cached and new responses
+            final_responses = [None] * len(prompts)
+            for cached_response, idx in zip(cached_responses, cached_indices):
+                final_responses[idx] = cached_response
+            for idx, response in zip(uncached_indices, all_responses):
+                final_responses[idx] = response
+
+            if use_cache:
+                print(
+                    f"{len(cached_responses)}/{len(prompts)} retrieved from cache, "
+                    f"{sum(response is None for response in final_responses)}/{len(prompts)} failed, "
+                    f"{sum(response is not None for response in final_responses)}/{len(prompts)} succeeded in batch API requests {all_batch_ids}"
+                )
+
+            return final_responses, ",".join(all_batch_ids)
         else:
-            raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
+            # Process all uncached prompts in a single batch
+            if model_id in ANTHROPIC_MODELS:
+                responses, batch_id = await self._anthropic_batch(
+                    model_id=model_id, prompts=uncached_prompts, max_tokens=max_tokens, **kwargs
+                )
+            elif model_id in GPT_CHAT_MODELS:
+                responses, batch_id = await self._openai_batch(
+                    model_id=model_id, prompts=uncached_prompts, log_dir=log_dir, max_tokens=max_tokens, **kwargs
+                )
+            else:
+                raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
 
-        # Save responses to cache
-        if self.cache_manager is not None and use_cache:
-            for prompt, response in zip(uncached_prompts, responses):
-                if response is not None:
-                    self.cache_manager.save_cache(prompt=prompt, params=llm_params, responses=[response])
+            # Save responses to cache
+            if self.cache_manager is not None and use_cache:
+                for prompt, response in zip(uncached_prompts, responses):
+                    if response is not None:
+                        self.cache_manager.save_cache(prompt=prompt, params=llm_params, responses=[response])
 
-        # Merge cached and new responses
-        all_responses = [None] * len(prompts)
-        for cached_response, idx in zip(cached_responses, cached_indices):
-            all_responses[idx] = cached_response
-        for idx, response in zip(uncached_indices, responses):
-            all_responses[idx] = response
+            # Merge cached and new responses
+            final_responses = [None] * len(prompts)
+            for cached_response, idx in zip(cached_responses, cached_indices):
+                final_responses[idx] = cached_response
+            for idx, response in zip(uncached_indices, responses):
+                final_responses[idx] = response
 
-        if use_cache:
-            print(
-                f"{len(cached_responses)}/{len(prompts)} retrieved from cache, {sum(response is None for response in all_responses)}/{len(prompts)} failed, {sum(response is not None for response in all_responses)}/{len(prompts)} succeeded in batch API request {batch_id}"
-            )
+            if use_cache:
+                print(
+                    f"{len(cached_responses)}/{len(prompts)} retrieved from cache, "
+                    f"{sum(response is None for response in final_responses)}/{len(prompts)} failed, "
+                    f"{sum(response is not None for response in final_responses)}/{len(prompts)} succeeded in batch API request {batch_id}"
+                )
 
-        return all_responses, batch_id
+            return final_responses, batch_id
