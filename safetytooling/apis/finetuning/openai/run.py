@@ -71,11 +71,11 @@ async def queue_finetune(
     if client is None:
         client = openai.AsyncClient()
 
-    # try every 60 seconds for 10 hours (in case you run overnight)
+    # try every 60 seconds for 20 hours (in case you run overnight)
     async for attempt in AsyncRetrying(
         retry=retry_if_exception_type((APIConnectionError, RateLimitError)),
         stop=stop_after_attempt(600),
-        wait=wait_fixed(60),
+        wait=wait_fixed(120),
     ):
         with attempt:
             LOGGER.info("Attempting to start fine-tuning job...")

@@ -151,13 +151,15 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
     LOGGER.info(f"Fine-tuning job finished with id <ft_id>{ft_job.id}</ft_id>")
 
     if cfg.save_folder is not None:
-        output_name = ft_job.output_name
-        assert output_name is not None, "Output name is None"
-        output_name = output_name.replace("/", "_")
+        assert ft_job.output_name is not None, "Output name is None"
+        ft_job.output_name = ft_job.output_name.replace("/", "|")
+
         if cfg.save_folder.endswith("/"):
-            cfg.save_folder += f"{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{output_name}"
+            cfg.save_folder += f"{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.output_name}"
         else:
-            cfg.save_folder += f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{output_name}"
+            cfg.save_folder += (
+                f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.output_name}"
+            )
 
         os.makedirs(cfg.save_folder, exist_ok=True)
         if cfg.save_model:

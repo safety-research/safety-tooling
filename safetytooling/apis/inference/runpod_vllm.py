@@ -39,6 +39,7 @@ class VLLMChatModel(InferenceAPIModel):
             "max_tokens": "max_tokens",
             "top_p": "top_p",
             "stream": "stream",
+            "logprobs": "logprobs",
         }
 
         self.stop_reason_map = {
@@ -122,6 +123,17 @@ class VLLMChatModel(InferenceAPIModel):
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
 
+        # Extract logprobs from response if available
+        logprobs = None
+        if response_data["choices"][0].get("logprobs", {}).get("content"):
+            logprobs = []
+            content_logprobs = response_data["choices"][0]["logprobs"]["content"]
+            for token_info in content_logprobs:
+                if "token" in token_info and "logprob" in token_info:
+                    logprobs.append({token_info["token"]: token_info["logprob"]})
+        else:
+            LOGGER.warning(f"No logprobs found in response for {model_id} under choices[0]['logprobs']['content']")
+
         response = LLMResponse(
             model_id=model_id,
             completion=response_data["choices"][0]["message"]["content"],
@@ -130,7 +142,7 @@ class VLLMChatModel(InferenceAPIModel):
             ),
             duration=duration,
             api_duration=api_duration,
-            logprobs=None,
+            logprobs=logprobs,
             cost=0,
         )
         responses = [response]
