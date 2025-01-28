@@ -30,7 +30,7 @@ class LLMParams(HashableBaseModel):
         # Currently we send a pydantic.BaseModel class type in this param, which is not serializable.
         # Caching will be agnostic to the value of this field
         # Remove exlude=True once you figure out how to serialise pydantic.BaseModel class types
-        exclude=True
+        exclude=True,
     )
     model_config = pydantic.ConfigDict(extra="forbid")
 

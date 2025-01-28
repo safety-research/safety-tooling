@@ -102,11 +102,15 @@ class OpenAIChatModel(OpenAIModel):
         api_start = time.time()
 
         # Choose between parse and create based on response format
-        if ('response_format' in params and 
-            isinstance(params['response_format'], type) and 
-            issubclass(params['response_format'], pydantic.BaseModel)):
+        if (
+            "response_format" in params
+            and isinstance(params["response_format"], type)
+            and issubclass(params["response_format"], pydantic.BaseModel)
+        ):
             api_func = self.aclient.beta.chat.completions.parse
-            LOGGER.info(f"Using parse API because response_format: {params['response_format']} is of type {type(params['response_format'])}")
+            LOGGER.info(
+                f"Using parse API because response_format: {params['response_format']} is of type {type(params['response_format'])}"
+            )
         else:
             api_func = self.aclient.chat.completions.create
         api_response: openai.types.chat.ChatCompletion = await api_func(
