@@ -29,7 +29,8 @@ _GPT_4_MODELS = (
     "o1-mini-2024-09-12",
     "o1-preview",
     "o1-preview-2024-09-12",
-    # Models older than 2024-12-17 do not support structured outputs
+    # THese o1 models support structured outputs https://platform.openai.com/docs/guides/structured-outputs#supported-models
+    "o1",
     "o1-2024-12-17",
     "gpt-4o-mini",
     "gpt-4o-mini-2024-07-18",

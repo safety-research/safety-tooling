@@ -17,8 +17,8 @@ class LLMParams(HashableBaseModel):
     n: int = 1
     num_candidates_per_completion: int = 1
     insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry"
-    max_tokens: int | None = None  # For o1 models this is converted to max_completion_tokens in the API layer
-    max_completion_tokens: int | None = None  # Used by o1 models
+    max_tokens: int | None = None  # For OpenAI models this is converted to max_completion_tokens in the API layer
+    max_completion_tokens: int | None = None  # Used by OpenAI models
     logprobs: int | None = None
     seed: int | None = None
     return_logprobs: bool = False  # ?

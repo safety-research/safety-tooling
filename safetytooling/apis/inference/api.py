@@ -369,7 +369,9 @@ class InferenceAPI:
                 Passing in multiple models could speed up the response time if one of the models is overloaded.
             prompt: The prompt to send to the model(s). Type should be Prompt.
             audio_out_dir : The directory where any audio output from the model (relevant for speech-to-speech models) should be saved
-            max_tokens: The maximum number of tokens to request from the API. For o1 models this is used as max_completion_tokens.
+            max_tokens: The maximum number of tokens to request from the API (argument added to
+                standardize the Anthropic and OpenAI APIs. For OpenAI this is renamed to max_completion_tokens before
+                being passed to the API).
             print_prompt_and_response: Whether to print the prompt and response to stdout.
             n: The number of completions to request.
             max_attempts_per_api_call: Passed to the underlying API call. If the API call fails (e.g. because the
@@ -402,15 +404,15 @@ class InferenceAPI:
         # standardize max_tokens argument
         model_class = model_classes[0]
 
-        if isinstance(model_class, AnthropicChatModel):
-            max_tokens = max_tokens if max_tokens is not None else 2000
-            kwargs["max_tokens"] = max_tokens
-        elif max_tokens is not None:
-            if any(model_id.startswith("o1") for model_id in model_ids):
-                # o1 models use max_completion_tokens instead of max_tokens
+        if max_tokens is not None:
+            if isinstance(model_class, OpenAIChatModel):
+                # OpenAI chat models use max_completion_tokens instead of max_tokens
                 kwargs["max_completion_tokens"] = max_tokens
             else:
                 kwargs["max_tokens"] = max_tokens
+        elif isinstance(model_class, AnthropicChatModel):
+            # Default non-null value for Anthropic chat models
+            kwargs["max_tokens"] = 2000
 
         num_candidates = num_candidates_per_completion * n
 
