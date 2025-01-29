@@ -47,8 +47,8 @@ class VLLMChatModel(InferenceAPIModel):
             "stop": StopReason.STOP_SEQUENCE.value,
         }
 
-    async def query(self, model_url: str, payload: dict, session: aiohttp.ClientSession) -> dict:
-        async with session.post(model_url, headers=self.headers, json=payload) as response:
+    async def query(self, model_url: str, payload: dict, session: aiohttp.ClientSession, timeout: int = 300) -> dict:
+        async with session.post(model_url, headers=self.headers, json=payload, timeout=timeout) as response:
             if response.status != 200:
                 error_text = await response.text()
                 raise RuntimeError(f"API Error: Status {response.status}, {error_text}")
