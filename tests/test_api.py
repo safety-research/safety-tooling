@@ -1,7 +1,7 @@
 """Basic tests for the api."""
 
-import pytest
 import pydantic
+import pytest
 
 from safetytooling.apis.inference.api import InferenceAPI
 from safetytooling.utils import utils
