@@ -188,13 +188,17 @@ class AnthropicModelBatch:
     async def poll_message_batch(self, batch_id: str) -> dict:
         """Poll a message batch until it is completed."""
         message_batch = None
+        minutes_elapsed = 0
         while True:
             message_batch = self.retrieve_message_batch(batch_id)
             if message_batch.processing_status == "ended":
                 return message_batch
-            LOGGER.debug(f"Batch {batch_id} is still processing...")
-            print(f"Batch {batch_id} is still processing...")
-            await asyncio.sleep(60)
+            if minutes_elapsed % 60 == 59:
+                LOGGER.debug(f"Batch {batch_id} is still processing... ({minutes_elapsed} minutes elapsed)")
+                print(f"Batch {batch_id} is still processing... ({minutes_elapsed} minutes elapsed)")
+            await asyncio.sleep(60)  # Sleep for 1 minute
+            minutes_elapsed += 1
+
 
     def list_message_batches(self, limit: int = 20) -> list[dict]:
         """List all message batches in the workspace."""
