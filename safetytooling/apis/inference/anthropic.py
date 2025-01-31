@@ -199,7 +199,6 @@ class AnthropicModelBatch:
             await asyncio.sleep(60)  # Sleep for 1 minute
             minutes_elapsed += 1
 
-
     def list_message_batches(self, limit: int = 20) -> list[dict]:
         """List all message batches in the workspace."""
         return [batch for batch in self.client.messages.batches.list(limit=limit)]
