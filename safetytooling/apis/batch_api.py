@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
+
 from safetytooling.apis.inference.anthropic import ANTHROPIC_MODELS, AnthropicModelBatch
 from safetytooling.apis.inference.cache_manager import get_cache_manager
 from safetytooling.apis.inference.openai.batch_api import OpenAIModelBatch
@@ -12,6 +14,9 @@ from safetytooling.data_models import LLMParams, LLMResponse, Prompt
 from safetytooling.utils.utils import load_secrets
 
 LOGGER = logging.getLogger(__name__)
+
+
+load_dotenv()
 
 
 class BatchInferenceAPI:
@@ -65,9 +70,11 @@ class BatchInferenceAPI:
             assert isinstance(cache_dir, Path) or cache_dir is None
             self.cache_dir = cache_dir
 
+        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         self.cache_manager = None
         if self.cache_dir is not None and not self.no_cache:
-            self.cache_manager = get_cache_manager(self.cache_dir, use_redis)
+            self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
+            print(f"{self.cache_manager=}")
 
         self._anthropic_batch = AnthropicModelBatch(anthropic_api_key=anthropic_api_key)
         self._openai_batch = OpenAIModelBatch(openai_api_key=openai_api_key)
