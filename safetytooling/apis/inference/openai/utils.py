@@ -58,7 +58,13 @@ _GPT_3_MODELS = (
     "gpt-3.5-turbo-16k",
     "gpt-3.5-turbo-16k-0613",
 )
-GPT_CHAT_MODELS = set(_GPT_4_MODELS + _GPT_3_MODELS)
+
+_O3_MODELS = (
+    "o3-mini",
+    "o3-mini-2025-01-31",
+)
+
+GPT_CHAT_MODELS = set(_GPT_4_MODELS + _GPT_3_MODELS + _O3_MODELS)
 OAI_FINETUNE_MODELS = (
     "gpt-3.5-turbo-1106",
     "gpt-3.5-turbo-0613",
@@ -78,10 +84,14 @@ def count_tokens(text: str) -> int:
 def get_max_context_length(model_id: str) -> int:
     match model_id:
         case (
-            "o1-mini"
+            "o1"
+            | "o1-2024-12-17"
+            | "o1-mini"
             | "o1-mini-2024-09-12"
             | "o1-preview"
             | "o1-preview-2024-09-12"
+            | "o3-mini"
+            | "o3-mini-2025-01-31"
             | "gpt-4o"
             | "gpt-4o-2024-05-13"
             | "gpt-4o-2024-08-06"
@@ -130,7 +140,14 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     if "ft:gpt-3.5-turbo" in model_id:
         return 2_000_000, 10_000
     match model_id:
-        case "o1-mini" | "o1-mini-2024-09-12" | "gpt-4o-mini" | "gpt-4o-mini-2024-07-18":
+        case (
+            "o1-mini"
+            | "o1-mini-2024-09-12"
+            | "gpt-4o-mini"
+            | "gpt-4o-mini-2024-07-18"
+            | "o3-mini"
+            | "o3-mini-2025-01-31"
+        ):
             return 150_000_000, 30_000
         case (
             "o1-preview"
@@ -170,14 +187,13 @@ def price_per_token(model_id: str) -> tuple[float, float]:
     Returns the (input token, output token) price for the given model id.
     """
 
-    # Prices not listed yet
-    if model_id in (
-        "o1-mini",
-        "o1-mini-2024-09-12",
-        "o1-preview",
-        "o1-preview-2024-09-12",
-        "o1-2024-12-17",
-    ):
+    if model_id in ("o1", "o1-2024-12-17"):
+        prices = 15, 60
+    elif model_id in ("o3-mini", "o3-mini-2025-01-31"):
+        prices = 1.10, 4.40
+    elif model_id in ("o1-mini", "o1-mini-2024-09-12"):
+        prices = 1.10, 4.40
+    elif model_id in ("o1-preview", "o1-preview-2024-09-12"):
         prices = 0, 0
     elif model_id in (
         "gpt-4o-mini",
@@ -286,6 +302,19 @@ def get_equivalent_model_ids(model_id: str) -> tuple[str, ...]:
     gpt_4o_mini_models = ("gpt-4o-mini", "gpt-4o-mini-2024-07-18")
     if model_id in gpt_4o_mini_models:
         return gpt_4o_mini_models
+
+    # O1 and O3 models
+    o1_models = ("o1", "o1-2024-12-17")
+    if model_id in o1_models:
+        return o1_models
+    o3_mini_models = ("o3-mini", "o3-mini-2025-01-31")
+    if model_id in o3_mini_models:
+        return o3_mini_models
+
+    # Claude models
+    claude_3_5_sonnet_models = ("claude-3-5-sonnet", "claude-3-5-sonnet-20241022")
+    if model_id in claude_3_5_sonnet_models:
+        return claude_3_5_sonnet_models
 
     # https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo
     gpt_4_models = ("gpt-4", "gpt-4-0613")
