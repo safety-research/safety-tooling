@@ -13,6 +13,7 @@ from typing import Awaitable, Callable, Literal
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from dotenv import load_dotenv
 from tqdm.auto import tqdm
 from typing_extensions import Self
 
@@ -48,6 +49,8 @@ from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
+
+load_dotenv()
 
 LOGGER = logging.getLogger(__name__)
 
@@ -147,7 +150,8 @@ class InferenceAPI:
         self.cache_manager: BaseCacheManager | None = None
         self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         if self.cache_dir is not None:
-            self.cache_manager = get_cache_manager(self.cache_dir, use_redis)
+            self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
+            print(f"{self.cache_manager=}")
 
         self._openai_completion = OpenAICompletionModel(
             frac_rate_limit=self.openai_fraction_rate_limit,

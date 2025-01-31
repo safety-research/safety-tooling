@@ -5,6 +5,7 @@ from typing import List, Tuple, Union
 
 import filelock
 import redis
+from dotenv import load_dotenv
 
 from safetytooling.data_models import (
     BatchPrompt,
@@ -20,6 +21,7 @@ from safetytooling.data_models import (
 from safetytooling.data_models.hashable import deterministic_hash
 from safetytooling.utils.utils import load_json, save_json
 
+load_dotenv()
 LOGGER = logging.getLogger(__name__)
 
 REDIS_CONFIG_DEFAULT = {
@@ -506,7 +508,7 @@ class RedisCacheManager(BaseCacheManager):
 
 def get_cache_manager(cache_dir: Path, use_redis: bool = False, num_bins: int = 20) -> BaseCacheManager:
     """Factory function to get the appropriate cache manager based on environment variable."""
+    print(f"{cache_dir=}, {use_redis=}, {num_bins=}")
     if use_redis:
-        print("Using Redis cache:", use_redis)
         return RedisCacheManager(cache_dir, num_bins)
     return FileBasedCacheManager(cache_dir, num_bins)
