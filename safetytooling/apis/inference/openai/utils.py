@@ -25,11 +25,12 @@ VISION_MODELS = (
 )
 
 _GPT_4_MODELS = (
+    "o3-mini",
+    "o3-mini-2025-01-31",
     "o1-mini",
     "o1-mini-2024-09-12",
     "o1-preview",
     "o1-preview-2024-09-12",
-    # THese o1 models support structured outputs https://platform.openai.com/docs/guides/structured-outputs#supported-models
     "o1",
     "o1-2024-12-17",
     "gpt-4o-mini",
@@ -59,12 +60,9 @@ _GPT_3_MODELS = (
     "gpt-3.5-turbo-16k-0613",
 )
 
-_O3_MODELS = (
-    "o3-mini",
-    "o3-mini-2025-01-31",
-)
 
-GPT_CHAT_MODELS = set(_GPT_4_MODELS + _GPT_3_MODELS + _O3_MODELS)
+GPT_CHAT_MODELS = set(_GPT_4_MODELS + _GPT_3_MODELS)
+
 OAI_FINETUNE_MODELS = (
     "gpt-3.5-turbo-1106",
     "gpt-3.5-turbo-0613",
