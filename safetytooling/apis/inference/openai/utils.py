@@ -32,6 +32,7 @@ _GPT_4_MODELS = (
     # THese o1 models support structured outputs https://platform.openai.com/docs/guides/structured-outputs#supported-models
     "o1",
     "o1-2024-12-17",
+    "o3-mini",
     "gpt-4o-mini",
     "gpt-4o-mini-2024-07-18",
     "gpt-4o",
@@ -77,6 +78,8 @@ def count_tokens(text: str) -> int:
 
 def get_max_context_length(model_id: str) -> int:
     match model_id:
+        case "o1" | "o1-2024-12-17" | "o3-mini":
+            return 200_000
         case (
             "o1-mini"
             | "o1-mini-2024-09-12"
@@ -130,7 +133,7 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     if "ft:gpt-3.5-turbo" in model_id:
         return 2_000_000, 10_000
     match model_id:
-        case "o1-mini" | "o1-mini-2024-09-12" | "gpt-4o-mini" | "gpt-4o-mini-2024-07-18":
+        case "o3-mini" | "o1-mini" | "o1-mini-2024-09-12" | "gpt-4o-mini" | "gpt-4o-mini-2024-07-18":
             return 150_000_000, 30_000
         case (
             "o1-preview"
@@ -177,6 +180,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         "o1-preview",
         "o1-preview-2024-09-12",
         "o1-2024-12-17",
+        "o3-mini",
     ):
         prices = 0, 0
     elif model_id in (
