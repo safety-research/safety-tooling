@@ -140,7 +140,14 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     match model_id:
         case "o1" | "o1-2024-12-17":
             return 30_000_000, 1_000
-        case "o1-mini" | "o1-mini-2024-09-12" | "gpt-4o-mini" | "gpt-4o-mini-2024-07-18" | "o3-mini" | "o3-mini-2025-01-31":
+        case (
+            "o1-mini"
+            | "o1-mini-2024-09-12"
+            | "gpt-4o-mini"
+            | "gpt-4o-mini-2024-07-18"
+            | "o3-mini"
+            | "o3-mini-2025-01-31"
+        ):
             return 150_000_000, 30_000
         case (
             "o1-preview"
