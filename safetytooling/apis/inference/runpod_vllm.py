@@ -105,10 +105,12 @@ class VLLMChatModel(InferenceAPIModel):
                     api_duration = time.time() - api_start
 
                     if not response_data.get("choices"):
+                        LOGGER.error(f"Invalid response format: {response_data}")
                         raise RuntimeError(f"Invalid response format: {response_data}")
 
                     completion = response_data["choices"][0]["message"]["content"]
                     if not is_valid(completion):
+                        LOGGER.error(f"Invalid response according to is_valid: {completion}")
                         raise RuntimeError(f"Invalid response according to is_valid: {completion}")
 
             except Exception as e:
@@ -118,16 +120,21 @@ class VLLMChatModel(InferenceAPIModel):
             else:
                 break
         else:
+            LOGGER.error(f"Failed to get a response from the API after {max_attempts} attempts.")
             raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
 
+        if response_data is None or response_data.get("choices", None) is None:
+            LOGGER.error(f"Invalid response format: {response_data}")
+            raise RuntimeError(f"Invalid response format: {response_data}")
+
         # Extract logprobs from response if available
-        logprobs = None
-        if response_data["choices"][0].get("logprobs", {}).get("content"):
+        logprobs = response_data["choices"][0].get("logprobs", None)
+        if logprobs is not None and logprobs.get("content", None) is not None:
             logprobs = []
-            content_logprobs = response_data["choices"][0]["logprobs"]["content"]
+            content_logprobs = logprobs["content"]
             for token_info in content_logprobs:
                 if "token" in token_info and "logprob" in token_info:
                     logprobs.append({token_info["token"]: token_info["logprob"]})
