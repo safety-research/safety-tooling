@@ -73,6 +73,13 @@ def count_tokens(text: str) -> int:
 
 
 def get_max_context_length(model_id: str) -> int:
+    if "ft:gpt-4o-mini" in model_id:
+        return 128_000
+    elif "ft:gpt-3.5-turbo" in model_id:
+        return 16_384
+    elif "ft:gpt-4o" in model_id:
+        return 128_000
+
     match model_id:
         case (
             "o1-mini"
@@ -125,7 +132,12 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     Returns the (tokens per min, request per min) for the given model id.
     """
     if "ft:gpt-3.5-turbo" in model_id:
-        return 2_000_000, 10_000
+        return 50_000_000, 10_000
+    elif "ft:gpt-4o-mini" in model_id:
+        return 150_000_000, 30_000
+    elif "ft:gpt-4o" in model_id:
+        return 30_000_000, 10_000
+
     match model_id:
         case "o1-mini" | "o1-mini-2024-09-12" | "gpt-4o-mini" | "gpt-4o-mini-2024-07-18":
             return 150_000_000, 30_000
@@ -242,6 +254,13 @@ def finetune_price_per_token(model_id: str) -> float | None:
     https://platform.openai.com/docs/guides/fine-tuning/what-models-can-be-fine-tuned
     for details.
     """
+    if "ft:gpt-4o-mini" in model_id:
+        return 0.003
+    elif "ft:gpt-4o" in model_id:
+        return 0.025
+    elif "ft:gpt-3.5-turbo" in model_id:
+        return 0.008
+
     match model_id:
         case "gpt-3.5-turbo-1106" | "gpt-3.5-turbo-0613" | "gpt-3.5-turbo":
             return 0.008

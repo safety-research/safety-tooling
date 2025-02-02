@@ -170,8 +170,12 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
             LOGGER.info("Model saved.")
         if cfg.save_config:
             save_config_path = cfg.save_folder + "/train_config.json"
+            ft_job_dict = ft_job.model_dump()
+            ft_job_dict["lora_r"] = cfg.lora_r
+            ft_job_dict["lora_alpha"] = cfg.lora_alpha
+            ft_job_dict["lora_dropout"] = cfg.lora_dropout
             with open(save_config_path, "w") as f:
-                json.dump(ft_job.model_dump(), f)
+                json.dump(ft_job_dict, f, indent=2)
             LOGGER.info("Config saved.")
 
     return ft_job

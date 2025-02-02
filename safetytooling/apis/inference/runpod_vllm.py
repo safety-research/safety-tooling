@@ -125,14 +125,15 @@ class VLLMChatModel(InferenceAPIModel):
 
         # Extract logprobs from response if available
         logprobs = None
-        if response_data["choices"][0].get("logprobs", {}).get("content"):
-            logprobs = []
-            content_logprobs = response_data["choices"][0]["logprobs"]["content"]
-            for token_info in content_logprobs:
-                if "token" in token_info and "logprob" in token_info:
-                    logprobs.append({token_info["token"]: token_info["logprob"]})
-        else:
-            LOGGER.warning(f"No logprobs found in response for {model_id} under choices[0]['logprobs']['content']")
+        if response_data["choices"][0].get("logprobs", {}):
+            if response_data["choices"][0]["logprobs"].get("content"):
+                logprobs = []
+                content_logprobs = response_data["choices"][0]["logprobs"]["content"]
+                for token_info in content_logprobs:
+                    if "token" in token_info and "logprob" in token_info:
+                        logprobs.append({token_info["token"]: token_info["logprob"]})
+        # else:
+        #     LOGGER.warning(f"No logprobs found in response for {model_id} under choices[0]['logprobs']['content']")
 
         response = LLMResponse(
             model_id=model_id,
