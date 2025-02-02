@@ -309,11 +309,6 @@ def get_equivalent_model_ids(model_id: str) -> tuple[str, ...]:
     if model_id in o3_mini_models:
         return o3_mini_models
 
-    # Claude models
-    claude_3_5_sonnet_models = ("claude-3-5-sonnet", "claude-3-5-sonnet-20241022")
-    if model_id in claude_3_5_sonnet_models:
-        return claude_3_5_sonnet_models
-
     # https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo
     gpt_4_models = ("gpt-4", "gpt-4-0613")
     if model_id in gpt_4_models:
