@@ -29,6 +29,9 @@ _GPT_4_MODELS = (
     "o1-mini-2024-09-12",
     "o1-preview",
     "o1-preview-2024-09-12",
+    # THese o1 models support structured outputs https://platform.openai.com/docs/guides/structured-outputs#supported-models
+    "o1",
+    "o1-2024-12-17",
     "gpt-4o-mini",
     "gpt-4o-mini-2024-07-18",
     "gpt-4o",
@@ -185,6 +188,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         "o1-mini-2024-09-12",
         "o1-preview",
         "o1-preview-2024-09-12",
+        "o1-2024-12-17",
     ):
         prices = 0, 0
     elif model_id in (
