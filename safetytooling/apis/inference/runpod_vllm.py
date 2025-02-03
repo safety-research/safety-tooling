@@ -51,7 +51,11 @@ class VLLMChatModel(InferenceAPIModel):
         async with session.post(model_url, headers=self.headers, json=payload, timeout=timeout) as response:
             if response.status != 200:
                 error_text = await response.text()
-                raise RuntimeError(f"API Error: Status {response.status}, {error_text}")
+                if "<!DOCTYPE html>" in str(error_text) and "<title>" in str(error_text):
+                    reason = str(error_text).split("<title>")[1].split("</title>")[0]
+                else:
+                    reason = " ".join(str(error_text).split()[:20])
+                raise RuntimeError(f"API Error: Status {response.status}, {reason}")
             return await response.json()
 
     async def run_query(self, model_url: str, messages: list, params: dict) -> dict:
