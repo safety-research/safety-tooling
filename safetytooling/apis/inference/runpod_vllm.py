@@ -64,8 +64,13 @@ class VLLMChatModel(InferenceAPIModel):
         async with aiohttp.ClientSession() as session:
             response = await self.query(model_url, payload, session)
             if "error" in response:
-                LOGGER.error(response)
-                raise RuntimeError(f"API Error: {response['error']}")
+                if "<!DOCTYPE html>" in str(response) and "<title>" in str(response):
+                    reason = str(response).split("<title>")[1].split("</title>")[0]
+                else:
+                    reason = " ".join(str(response).split()[:20])
+                print(f"API Error: {reason}")
+                LOGGER.error(f"API Error: {reason}")
+                raise RuntimeError(f"API Error: {reason}")
             return response
 
     async def __call__(
