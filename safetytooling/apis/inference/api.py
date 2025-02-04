@@ -88,6 +88,7 @@ class InferenceAPI:
         use_vllm_if_model_not_found: bool = False,
         vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
         no_cache: bool = False,
+        oai_embedding_batch_size: int = 2048,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -165,7 +166,7 @@ class InferenceAPI:
 
         self._openai_moderation = OpenAIModerationModel()
 
-        self._openai_embedding = OpenAIEmbeddingModel()
+        self._openai_embedding = OpenAIEmbeddingModel(batch_size=oai_embedding_batch_size)
         self._openai_s2s = OpenAIS2SModel()
 
         self._anthropic_chat = AnthropicChatModel(

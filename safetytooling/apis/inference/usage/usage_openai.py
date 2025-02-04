@@ -71,6 +71,10 @@ class Config:
             "gpt-3.5-turbo-0125",
             "gpt-3.5-turbo-1106",
             "gpt-4-1106-preview",
+            "o1",
+            "o1-2024-12-17",
+            "o3-mini",
+            "o3-mini-2025-01-31",
         ]
     )
     openai_tags: list[str] = dataclasses.field(default_factory=lambda: ["OPENAI_API_KEY1", "OPENAI_API_KEY2"])
