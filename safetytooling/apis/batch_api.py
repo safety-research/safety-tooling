@@ -143,6 +143,8 @@ class BatchInferenceAPI:
 
         # Process uncached prompts in chunks if specified
         if self.chunk is not None and len(uncached_prompts) > self.chunk:
+            print(f"Processing {len(uncached_prompts)} uncached prompts in chunks of {self.chunk}")
+
             all_responses = []
             all_batch_ids = []
 
@@ -153,8 +155,13 @@ class BatchInferenceAPI:
 
             async def process_chunk(chunk_prompts):
                 if model_id in ANTHROPIC_MODELS:
+                    # Anthropic batch will raise if we pass in seeds. This is apparently different behavior than the non-batch API.
+                    print(f"kwargs: {kwargs}")
                     return await self._anthropic_batch(
-                        model_id=model_id, prompts=chunk_prompts, max_tokens=max_tokens, **kwargs
+                        model_id=model_id,
+                        prompts=chunk_prompts,
+                        max_tokens=max_tokens,
+                        **{k: v for k, v in kwargs.items() if k != "seed"},
                     )
                 else:
                     return await self._openai_batch(
@@ -191,8 +198,13 @@ class BatchInferenceAPI:
         else:
             # Process all uncached prompts in a single batch
             if model_id in ANTHROPIC_MODELS:
+                # Anthropic batch will raise if we pass in seeds. This is apparently different behavior than the non-batch API.
+                print(f"Batch kwargs: {kwargs}")
                 responses, batch_id = await self._anthropic_batch(
-                    model_id=model_id, prompts=uncached_prompts, max_tokens=max_tokens, **kwargs
+                    model_id=model_id,
+                    prompts=uncached_prompts,
+                    max_tokens=max_tokens,
+                    **{k: v for k, v in kwargs.items() if k != "seed"},
                 )
             elif model_id in GPT_CHAT_MODELS:
                 responses, batch_id = await self._openai_batch(
@@ -201,7 +213,7 @@ class BatchInferenceAPI:
             else:
                 raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
 
-            # Save responses to cache
+            print(f"Saving cache: {self.cache_manager is not None and use_cache}")
             if self.cache_manager is not None and use_cache:
                 for prompt, response in zip(uncached_prompts, responses):
                     if response is not None:
