@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import logging
 import time
 from pathlib import Path
@@ -7,6 +8,7 @@ from traceback import format_exc
 import aiohttp
 
 from safetytooling.data_models import LLMResponse, Prompt, StopReason
+from safetytooling.utils import math_utils
 
 from .model import InferenceAPIModel
 
@@ -77,6 +79,22 @@ class VLLMChatModel(InferenceAPIModel):
                 raise RuntimeError(f"API Error: {reason}")
             return response
 
+    @staticmethod
+    def convert_top_logprobs(data: dict) -> list[dict]:
+        # convert OpenAI chat version of logprobs response to completion version
+        top_logprobs = []
+
+        for item in data["content"]:
+            # <|end|> is known to be duplicated on gpt-4-turbo-2024-04-09
+            # See experiments/sample-notebooks/api-tests/logprob-dup-tokens.ipynb for details
+            possibly_duplicated_top_logprobs = collections.defaultdict(list)
+            for top_logprob in item["top_logprobs"]:
+                possibly_duplicated_top_logprobs[top_logprob["token"]].append(top_logprob["logprob"])
+
+            top_logprobs.append({k: math_utils.logsumexp(vs) for k, vs in possibly_duplicated_top_logprobs.items()})
+
+        return top_logprobs
+
     async def __call__(
         self,
         model_ids: tuple[str, ...],
@@ -105,6 +123,10 @@ class VLLMChatModel(InferenceAPIModel):
                     api_start = time.time()
                     params = {self.kwarg_change_name[k]: v for k, v in kwargs.items() if k in self.kwarg_change_name}
                     params["model"] = model_id
+
+                    if "logprobs" in params:
+                        params["top_logprobs"] = params["logprobs"]
+                        params["logprobs"] = True
 
                     response_data = await self.run_query(
                         model_url,
@@ -139,29 +161,18 @@ class VLLMChatModel(InferenceAPIModel):
             LOGGER.error(f"Invalid response format: {response_data}")
             raise RuntimeError(f"Invalid response format: {response_data}")
 
-        # Extract logprobs from response if available
-        logprobs = response_data["choices"][0].get("logprobs", None)
-        if logprobs is not None and logprobs.get("content", None) is not None:
-            logprobs = []
-            content_logprobs = logprobs["content"]
-            for token_info in content_logprobs:
-                if "token" in token_info and "logprob" in token_info:
-                    logprobs.append({token_info["token"]: token_info["logprob"]})
-        else:
-            LOGGER.warning(f"No logprobs found in response for {model_id} under choices[0]['logprobs']['content']")
-
-        response = LLMResponse(
-            model_id=model_id,
-            completion=response_data["choices"][0]["message"]["content"],
-            stop_reason=self.stop_reason_map.get(
-                response_data["choices"][0].get("finish_reason", "unknown"), StopReason.UNKNOWN.value
-            ),
-            duration=duration,
-            api_duration=api_duration,
-            logprobs=logprobs,
-            cost=0,
-        )
-        responses = [response]
+        responses = [
+            LLMResponse(
+                model_id=model_id,
+                completion=choice["message"]["content"],
+                stop_reason=choice["finish_reason"],
+                api_duration=api_duration,
+                duration=duration,
+                cost=0,
+                logprobs=self.convert_top_logprobs(choice["logprobs"]) if choice.get("logprobs") is not None else None,
+            )
+            for choice in response_data["choices"]
+        ]
 
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:

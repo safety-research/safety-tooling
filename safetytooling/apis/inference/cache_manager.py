@@ -119,7 +119,7 @@ class FileBasedCacheManager(BaseCacheManager):
             return None
 
         if (cache_file not in self.in_memory_cache) or (prompt_hash not in self.in_memory_cache[cache_file]):
-            LOGGER.info(f"Cache miss, loading from disk: {cache_file=}, {prompt_hash=}")
+            LOGGER.info(f"Cache miss, loading from disk: {cache_file=}, {prompt_hash=}, {params}")
             with filelock.FileLock(str(cache_file) + ".lock"):
                 self.in_memory_cache[cache_file] = load_json(cache_file)
 
