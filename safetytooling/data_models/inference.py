@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Union
+from typing import Any, Literal, Union
 
 import openai
 import pydantic
@@ -17,13 +17,21 @@ class LLMParams(HashableBaseModel):
     n: int = 1
     num_candidates_per_completion: int = 1
     insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry"
-    max_tokens: int | None = None
+    max_tokens: int | None = None  # For OpenAI models this is converted to max_completion_tokens in the API layer
+    max_completion_tokens: int | None = None  # Used by OpenAI models
     logprobs: int | None = None
     seed: int | None = None
     return_logprobs: bool = False  # ?
     top_k_logprobs: int | None = None  # ?
     logit_bias: dict[int, float] | None = None
-
+    response_format: Any = pydantic.Field(
+        default=None,
+        # TODO: Stopgap.
+        # Currently we send a pydantic.BaseModel class type in this param, which is not serializable.
+        # Caching will be agnostic to the value of this field
+        # Remove exlude=True once you figure out how to serialise pydantic.BaseModel class types
+        exclude=True,
+    )
     model_config = pydantic.ConfigDict(extra="forbid")
 
 

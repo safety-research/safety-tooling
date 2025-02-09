@@ -14,6 +14,37 @@ from safetytooling.utils.utils import load_secrets
 LOGGER = logging.getLogger(__name__)
 
 
+def chunk_prompts_for_anthropic(prompts: list[Prompt], chunk_size: int = 100_000) -> list[list[Prompt]]:
+    # Calculate size per prompt in MB
+    sizes = [len(str(prompt).encode("utf-8")) / (1024 * 1024) for prompt in prompts]
+
+    chunks = []
+    current_chunk = []
+    current_size = 0
+    current_count = 0
+
+    for prompt, size in zip(prompts, sizes):
+        # Check if adding this prompt would exceed either limit
+        if (
+            current_size + size > 250 or current_count + 1 > chunk_size
+        ):  # 256 MB is the max size for Anthropic, but 250 MB is a safe limit
+            if current_chunk:
+                chunks.append(current_chunk)
+            print(f"Chunked prompts for Anthropic: {len(current_chunk)} prompts, {current_size} MB")
+            current_chunk = [prompt]
+            current_size = size
+            current_count = 1
+        else:
+            current_chunk.append(prompt)
+            current_size += size
+            current_count += 1
+
+    if current_chunk:
+        chunks.append(current_chunk)
+    print(f"Total chunks: {len(chunks)}")
+    return chunks
+
+
 class BatchInferenceAPI:
     """A wrapper around batch APIs that can do a bunch of model calls at once."""
 
@@ -26,7 +57,6 @@ class BatchInferenceAPI:
         anthropic_api_key: str | None = None,
         openai_api_key: str | None = None,
         no_cache: bool = False,
-        chunk: int | None = None,
     ):
         """Initialize the BatchInferenceAPI.
 
@@ -71,7 +101,6 @@ class BatchInferenceAPI:
 
         self._anthropic_batch = AnthropicModelBatch(anthropic_api_key=anthropic_api_key)
         self._openai_batch = OpenAIModelBatch(openai_api_key=openai_api_key)
-        self.chunk = chunk
 
     async def __call__(
         self,
@@ -80,6 +109,7 @@ class BatchInferenceAPI:
         log_dir: Path | None = None,
         use_cache: bool = True,
         max_tokens: int | None = None,
+        chunk: int | None = None,
         **kwargs,
     ) -> tuple[list[LLMResponse], str]:
         """Make batch API requests for the specified model and prompts.
@@ -107,6 +137,9 @@ class BatchInferenceAPI:
         if log_dir is not None:
             log_dir.mkdir(parents=True, exist_ok=True)
 
+        if model_id in ANTHROPIC_MODELS:
+            assert max_tokens is not None, "max_tokens must be provided for Anthropic models"
+
         llm_params = LLMParams(model=model_id, **kwargs)
         cached_responses = []
         cached_indices = []
@@ -133,26 +166,35 @@ class BatchInferenceAPI:
         # If all prompts are cached, return cached responses
         if not uncached_prompts:
             return cached_responses, "cached"
-
-        # Process uncached prompts in chunks if specified
-        if self.chunk is not None and len(uncached_prompts) > self.chunk:
-            all_responses = []
-            all_batch_ids = []
-
-            if model_id not in ANTHROPIC_MODELS and model_id not in GPT_CHAT_MODELS:
+        if chunk is None:
+            if model_id in ANTHROPIC_MODELS:
+                chunk = 100_000
+            elif model_id in GPT_CHAT_MODELS:
+                chunk = 50_000
+            else:
                 raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
 
-            chunks = [uncached_prompts[i : i + self.chunk] for i in range(0, len(uncached_prompts), self.chunk)]
+        if model_id in ANTHROPIC_MODELS:
+            chunks = chunk_prompts_for_anthropic(uncached_prompts, chunk_size=chunk)
+        else:
+            chunks = [uncached_prompts[i : i + chunk] for i in range(0, len(uncached_prompts), chunk)]
+
+        # Process uncached prompts in chunks if specified
+        if len(chunks) > 1:
+            all_responses = []
+            all_batch_ids = []
 
             async def process_chunk(chunk_prompts):
                 if model_id in ANTHROPIC_MODELS:
                     return await self._anthropic_batch(
                         model_id=model_id, prompts=chunk_prompts, max_tokens=max_tokens, **kwargs
                     )
-                else:
+                elif model_id in GPT_CHAT_MODELS:
                     return await self._openai_batch(
                         model_id=model_id, prompts=chunk_prompts, log_dir=log_dir, max_tokens=max_tokens, **kwargs
                     )
+                else:
+                    raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
 
             results = await asyncio.gather(*[process_chunk(chunk) for chunk in chunks])
 

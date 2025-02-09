@@ -88,6 +88,7 @@ class InferenceAPI:
         use_vllm_if_model_not_found: bool = False,
         vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
         no_cache: bool = False,
+        oai_embedding_batch_size: int = 2048,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -165,7 +166,7 @@ class InferenceAPI:
 
         self._openai_moderation = OpenAIModerationModel()
 
-        self._openai_embedding = OpenAIEmbeddingModel()
+        self._openai_embedding = OpenAIEmbeddingModel(batch_size=oai_embedding_batch_size)
         self._openai_s2s = OpenAIS2SModel()
 
         self._anthropic_chat = AnthropicChatModel(
@@ -370,7 +371,8 @@ class InferenceAPI:
             prompt: The prompt to send to the model(s). Type should be Prompt.
             audio_out_dir : The directory where any audio output from the model (relevant for speech-to-speech models) should be saved
             max_tokens: The maximum number of tokens to request from the API (argument added to
-                standardize the Anthropic and OpenAI APIs, which have different names for this).
+                standardize the Anthropic and OpenAI APIs. For OpenAI this is renamed to max_completion_tokens before
+                being passed to the API).
             print_prompt_and_response: Whether to print the prompt and response to stdout.
             n: The number of completions to request.
             max_attempts_per_api_call: Passed to the underlying API call. If the API call fails (e.g. because the
@@ -403,12 +405,15 @@ class InferenceAPI:
         # standardize max_tokens argument
         model_class = model_classes[0]
 
-        if isinstance(model_class, AnthropicChatModel):
-            max_tokens = max_tokens if max_tokens is not None else 2000
-            kwargs["max_tokens"] = max_tokens
-        else:
-            if max_tokens is not None:
+        if max_tokens is not None:
+            if isinstance(model_class, OpenAIChatModel):
+                # OpenAI chat models use max_completion_tokens instead of max_tokens
+                kwargs["max_completion_tokens"] = max_tokens
+            else:
                 kwargs["max_tokens"] = max_tokens
+        elif isinstance(model_class, AnthropicChatModel):
+            # Default non-null value for Anthropic chat models
+            kwargs["max_tokens"] = 2000
 
         num_candidates = num_candidates_per_completion * n
 

@@ -9,6 +9,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -71,24 +72,47 @@ async def queue_finetune(
     if client is None:
         client = openai.AsyncClient()
 
-    # try every 60 seconds for 10 hours (in case you run overnight)
+    # try every 60 seconds for 20 hours (in case you run overnight)
     async for attempt in AsyncRetrying(
         retry=retry_if_exception_type((APIConnectionError, RateLimitError)),
         stop=stop_after_attempt(600),
-        wait=wait_fixed(60),
+        wait=wait_fixed(120),
     ):
         with attempt:
             LOGGER.info("Attempting to start fine-tuning job...")
-            ft_job = await client.fine_tuning.jobs.create(
-                model=cfg.model,
-                training_file=train_file_id,
-                hyperparameters={
-                    "n_epochs": cfg.n_epochs,
-                    "learning_rate_multiplier": cfg.learning_rate_multiplier,
-                    "batch_size": cfg.batch_size,
-                },
-                validation_file=val_file_id,
-            )
+            if cfg.method == "supervised":
+                ft_job = await client.fine_tuning.jobs.create(
+                    model=cfg.model,
+                    training_file=train_file_id,
+                    method={
+                        "type": "supervised",
+                        "supervised": {
+                            "hyperparameters": {
+                                "n_epochs": cfg.n_epochs,
+                                "learning_rate_multiplier": cfg.learning_rate_multiplier,
+                                "batch_size": cfg.batch_size,
+                            }
+                        },
+                    },
+                    validation_file=val_file_id,
+                )
+            elif cfg.method == "dpo":
+                ft_job = await client.fine_tuning.jobs.create(
+                    model=cfg.model,
+                    training_file=train_file_id,
+                    method={
+                        "type": "dpo",
+                        "dpo": {
+                            "hyperparameters": {
+                                "n_epochs": cfg.n_epochs,
+                                "learning_rate_multiplier": cfg.learning_rate_multiplier,
+                                "batch_size": cfg.batch_size,
+                                "beta": cfg.beta,
+                            }
+                        },
+                    },
+                    validation_file=val_file_id,
+                )
 
     return ft_job
 
@@ -120,10 +144,7 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
 
     LOGGER.info("Checking training data")
     train_cost_est = openai_check_finetuning_data(
-        dataset_path=cfg.train_file,
-        model_id=cfg.model,
-        n_epochs=cfg.n_epochs,
-        verbose=verbose,
+        dataset_path=cfg.train_file, model_id=cfg.model, n_epochs=cfg.n_epochs, verbose=verbose, method=cfg.method
     )
     if verbose:
         train_cost_est.log_cost_summary()
@@ -135,6 +156,7 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
             n_epochs=cfg.n_epochs,
             is_validation=True,
             verbose=verbose,
+            method=cfg.method,
         )
         if verbose:
             val_cost_est.log_cost_summary()
@@ -291,6 +313,8 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
 class OpenAIFTConfig(FinetuneConfig):
     learning_rate_multiplier: float | str = "auto"
     batch_size: int | str = "auto"
+    beta: float | str = "auto"  # for dpo
+    method: Literal["supervised", "dpo"] = "supervised"
 
 
 if __name__ == "__main__":

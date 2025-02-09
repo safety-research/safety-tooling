@@ -4,11 +4,12 @@ import dataclasses
 import logging
 import pathlib
 import random
+from typing import Literal
 
 import tiktoken
 
 import safetytooling.apis.inference.openai.utils
-from safetytooling.data_models import Prompt
+from safetytooling.data_models import ChatMessage, MessageRole, Prompt
 from safetytooling.utils import utils
 
 logger = logging.getLogger(__name__)
@@ -73,12 +74,34 @@ def openai_check_finetuning_data(
     n_epochs: int = 1,
     is_validation: bool = False,
     verbose: bool = False,
+    method: Literal["supervised", "dpo"] = "supervised",
 ) -> FTDatasetCostEstimate:
     """
     is_validation: Whether the file is contains validation data.
                    If False, the file contains training data.
     """
-    prompts = [Prompt.model_validate(x) for x in utils.load_jsonl(dataset_path)]
+    if method == "supervised":
+        prompts = [Prompt.model_validate(x) for x in utils.load_jsonl(dataset_path)]
+    elif method == "dpo":
+        preferred_prompts = [
+            Prompt(
+                messages=[
+                    ChatMessage(role=MessageRole.user, content=x["input"]["messages"][0]["content"]),
+                    ChatMessage(role=MessageRole.assistant, content=x["preferred_output"][0]["content"]),
+                ]
+            )
+            for x in utils.load_jsonl(dataset_path)
+        ]
+        non_preferred_prompts = [
+            Prompt(
+                messages=[
+                    ChatMessage(role=MessageRole.user, content=x["input"]["messages"][0]["content"]),
+                    ChatMessage(role=MessageRole.assistant, content=x["non_preferred_output"][0]["content"]),
+                ]
+            )
+            for x in utils.load_jsonl(dataset_path)
+        ]
+        prompts = preferred_prompts + non_preferred_prompts
 
     if verbose:
         logger.info("")

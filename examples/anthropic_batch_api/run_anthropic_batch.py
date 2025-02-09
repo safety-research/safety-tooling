@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 class ExperimentConfig(ExperimentConfigBase):
     """Get responses to requests."""
 
-    model_ids: tuple[str, ...] = ("claude-3-5-sonnet-20240620",)
+    model_ids: tuple[str, ...] = ("claude-3-5-sonnet-20241022",)
     batch: bool = True
     num_repeats: int = 10
     limit_dataset: int | None = None

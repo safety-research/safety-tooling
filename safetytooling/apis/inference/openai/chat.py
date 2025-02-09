@@ -6,6 +6,7 @@ import time
 import openai
 import openai.types
 import openai.types.chat
+import pydantic
 import requests
 from tenacity import retry, stop_after_attempt, wait_fixed
 
@@ -99,7 +100,20 @@ class OpenAIChatModel(OpenAIModel):
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
         api_start = time.time()
-        api_response: openai.types.chat.ChatCompletion = await self.aclient.chat.completions.create(
+
+        # Choose between parse and create based on response format
+        if (
+            "response_format" in params
+            and isinstance(params["response_format"], type)
+            and issubclass(params["response_format"], pydantic.BaseModel)
+        ):
+            api_func = self.aclient.beta.chat.completions.parse
+            LOGGER.info(
+                f"Using parse API because response_format: {params['response_format']} is of type {type(params['response_format'])}"
+            )
+        else:
+            api_func = self.aclient.chat.completions.create
+        api_response: openai.types.chat.ChatCompletion = await api_func(
             messages=prompt.openai_format(),
             model=model_id,
             **params,

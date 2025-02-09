@@ -1,5 +1,6 @@
 """Basic tests for the api."""
 
+import pydantic
 import pytest
 
 from safetytooling.apis.inference.api import InferenceAPI
@@ -57,3 +58,28 @@ async def test_claude_3_with_system_prompt():
     assert len(resp) == 2
     assert isinstance(resp[0], str)
     assert isinstance(resp[1], str)
+
+
+@pytest.mark.asyncio
+async def test_gpt4o_mini_2024_07_18_with_response_format():
+    utils.setup_environment()
+
+    class CustomResponse(pydantic.BaseModel):
+        answer: str
+        confidence: float
+
+    resp = await InferenceAPI.get_default_global_api().ask_single_question(
+        model_ids="gpt-4o-mini-2024-07-18",
+        question="What is the meaning of life? Format your response as a JSON object with fields: answer (string) and confidence (float between 0 and 1).",
+        max_tokens=100,
+        n=2,
+        response_format=CustomResponse,
+    )
+    assert isinstance(resp, list)
+    assert len(resp) == 2
+    assert isinstance(resp[0], str)
+    assert isinstance(resp[1], str)
+
+    # Verify responses can be parsed into CustomResponse objects
+    CustomResponse.model_validate_json(resp[0])
+    CustomResponse.model_validate_json(resp[1])

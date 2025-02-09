@@ -25,10 +25,14 @@ VISION_MODELS = (
 )
 
 _GPT_4_MODELS = (
+    "o3-mini",
+    "o3-mini-2025-01-31",
     "o1-mini",
     "o1-mini-2024-09-12",
     "o1-preview",
     "o1-preview-2024-09-12",
+    "o1",
+    "o1-2024-12-17",
     "gpt-4o-mini",
     "gpt-4o-mini-2024-07-18",
     "gpt-4o",
@@ -55,7 +59,10 @@ _GPT_3_MODELS = (
     "gpt-3.5-turbo-16k",
     "gpt-3.5-turbo-16k-0613",
 )
+
+
 GPT_CHAT_MODELS = set(_GPT_4_MODELS + _GPT_3_MODELS)
+
 OAI_FINETUNE_MODELS = (
     "gpt-3.5-turbo-1106",
     "gpt-3.5-turbo-0613",
@@ -73,7 +80,16 @@ def count_tokens(text: str) -> int:
 
 
 def get_max_context_length(model_id: str) -> int:
+    if "ft:gpt-4o-mini" in model_id:
+        return 128_000
+    elif "ft:gpt-3.5-turbo" in model_id:
+        return 16_384
+    elif "ft:gpt-4o" in model_id:
+        return 128_000
+
     match model_id:
+        case "o1" | "o1-2024-12-17" | "o3-mini" | "o3-mini-2025-01-31":
+            return 200_000
         case (
             "o1-mini"
             | "o1-mini-2024-09-12"
@@ -123,11 +139,26 @@ def get_max_context_length(model_id: str) -> int:
 def get_rate_limit(model_id: str) -> tuple[int, int]:
     """
     Returns the (tokens per min, request per min) for the given model id.
+    # go to: https://platform.openai.com/settings/organization/limits
     """
     if "ft:gpt-3.5-turbo" in model_id:
-        return 2_000_000, 10_000
+        return 50_000_000, 10_000
+    elif "ft:gpt-4o-mini" in model_id:
+        return 150_000_000, 30_000
+    elif "ft:gpt-4o" in model_id:
+        return 30_000_000, 10_000
+
     match model_id:
-        case "o1-mini" | "o1-mini-2024-09-12" | "gpt-4o-mini" | "gpt-4o-mini-2024-07-18":
+        case "o1" | "o1-2024-12-17":
+            return 30_000_000, 1_000
+        case (
+            "o1-mini"
+            | "o1-mini-2024-09-12"
+            | "gpt-4o-mini"
+            | "gpt-4o-mini-2024-07-18"
+            | "o3-mini"
+            | "o3-mini-2025-01-31"
+        ):
             return 150_000_000, 30_000
         case (
             "o1-preview"
@@ -165,16 +196,21 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
 def price_per_token(model_id: str) -> tuple[float, float]:
     """
     Returns the (input token, output token) price for the given model id.
+    Go to: https://platform.openai.com/docs/pricing
     """
 
     # Prices not listed yet
     if model_id in (
-        "o1-mini",
-        "o1-mini-2024-09-12",
+        "o1",
+        "o1-2024-12-17",
         "o1-preview",
         "o1-preview-2024-09-12",
     ):
-        prices = 0, 0
+        prices = 15, 60
+    elif model_id in ("o3-mini", "o3-mini-2025-01-31"):
+        prices = 1.10, 4.40
+    elif model_id in ("o1-mini", "o1-mini-2024-09-12"):
+        prices = 1.10, 4.40
     elif model_id in (
         "gpt-4o-mini",
         "gpt-4o-mini-2024-07-18",
@@ -186,7 +222,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         "gpt-4o-2024-05-13",
         "gpt-4o-2024-08-06",
     ):
-        prices = 5, 15
+        prices = 2.5, 10
     elif model_id in (
         "gpt-4-turbo",
         "gpt-4-turbo-2024-04-09",
@@ -242,6 +278,13 @@ def finetune_price_per_token(model_id: str) -> float | None:
     https://platform.openai.com/docs/guides/fine-tuning/what-models-can-be-fine-tuned
     for details.
     """
+    if "ft:gpt-4o-mini" in model_id:
+        return 0.003
+    elif "ft:gpt-4o" in model_id:
+        return 0.025
+    elif "ft:gpt-3.5-turbo" in model_id:
+        return 0.008
+
     match model_id:
         case "gpt-3.5-turbo-1106" | "gpt-3.5-turbo-0613" | "gpt-3.5-turbo":
             return 0.008
@@ -261,6 +304,20 @@ def get_equivalent_model_ids(model_id: str) -> tuple[str, ...]:
     """
     Updated 2024-04-25 by Tony. This should be periodically updated.
     """
+
+    # https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo#o1
+    o1_models = ("o1", "o1-2024-12-17")
+    if model_id in o1_models:
+        return o1_models
+    o1_mini_models = ("o1-mini", "o1-mini-2024-09-12")
+    if model_id in o1_mini_models:
+        return o1_mini_models
+    o1_preview_models = ("o1-preview", "o1-preview-2024-09-12")
+    if model_id in o1_preview_models:
+        return o1_preview_models
+    o3_mini_models = ("o3-mini", "o3-mini-2025-01-31")
+    if model_id in o3_mini_models:
+        return o3_mini_models
 
     # https://platform.openai.com/docs/models/gpt-3-5
     gpt_3_5_turbo_models = ("gpt-3.5-turbo", "gpt-3.5-turbo-0125")

@@ -15,10 +15,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 class OpenAIEmbeddingModel:
-    def __init__(self):
+    def __init__(self, batch_size: int = 2048):
         # TODO: Actually implement a proper rate limit
         self.num_threads = 1
-        self.batch_size = 2048  # Max batch size for embedding endpoint
+        self.batch_size = batch_size  # Max batch size for embedding endpoint
 
         self.aclient = openai.AsyncClient()
         self.available_requests = asyncio.BoundedSemaphore(self.num_threads)
@@ -54,7 +54,8 @@ class OpenAIEmbeddingModel:
                     tokens=total_tokens,
                     cost=price_per_token(response.model)[0] * total_tokens,
                 )
-
+            except openai.BadRequestError as e:
+                raise e
             except Exception as e:
                 error_info = (
                     f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {traceback.format_exc()}"
