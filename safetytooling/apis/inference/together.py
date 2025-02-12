@@ -1,12 +1,15 @@
 import asyncio
+import collections
 import logging
 import time
 from pathlib import Path
 from traceback import format_exc
 
 from together import AsyncTogether
+from together.types import ChatCompletionResponse
 
 from safetytooling.data_models import LLMResponse, Prompt
+from safetytooling.utils import math_utils
 
 from .model import InferenceAPIModel
 
@@ -48,6 +51,22 @@ class TogetherChatModel(InferenceAPIModel):
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
         self.allowed_kwargs = {"temperature", "max_tokens", "logprobs"}
 
+    @staticmethod
+    def convert_top_logprobs(data: ChatCompletionResponse) -> list[dict]:
+        # convert OpenAI chat version of logprobs response to completion version
+        top_logprobs = []
+
+        for item in data.content:
+            # <|end|> is known to be duplicated on gpt-4-turbo-2024-04-09
+            # See experiments/sample-notebooks/api-tests/logprob-dup-tokens.ipynb for details
+            possibly_duplicated_top_logprobs = collections.defaultdict(list)
+            for top_logprob in item.top_logprobs:
+                possibly_duplicated_top_logprobs[top_logprob.token].append(top_logprob.logprob)
+
+            top_logprobs.append({k: math_utils.logsumexp(vs) for k, vs in possibly_duplicated_top_logprobs.items()})
+
+        return top_logprobs
+
     async def __call__(
         self,
         model_ids: tuple[str, ...],
@@ -68,7 +87,7 @@ class TogetherChatModel(InferenceAPIModel):
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
         LOGGER.debug(f"Making {model_id} call")
-        response = None
+        response_data = None
         duration = None
 
         error_list = []
@@ -78,14 +97,18 @@ class TogetherChatModel(InferenceAPIModel):
                     api_start = time.time()
 
                     filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
-                    response = await self.aclient.chat.completions.create(
+                    if "logprobs" in filtered_kwargs:
+                        filtered_kwargs["top_logprobs"] = filtered_kwargs["logprobs"]
+                        filtered_kwargs["logprobs"] = True
+
+                    response_data = await self.aclient.chat.completions.create(
                         messages=prompt.openai_format(),
                         model=model_id,
                         **filtered_kwargs,
                     )
                     api_duration = time.time() - api_start
-                    if not is_valid(response):
-                        raise RuntimeError(f"Invalid response according to is_valid {response}")
+                    if not is_valid(response_data):
+                        raise RuntimeError(f"Invalid response according to is_valid {response_data}")
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
@@ -98,27 +121,21 @@ class TogetherChatModel(InferenceAPIModel):
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
 
-        if response.choices[0].logprobs is not None:
-            logprobs = []
-            for token, logprob in zip(response.choices[0].logprobs.tokens, response.choices[0].logprobs.token_logprobs):
-                logprobs.append({token: logprob})
-        else:
-            logprobs = None
-
-        assert len(response.choices) == 1, f"Expected 1 choice, got {len(response.choices)}"
-        response = LLMResponse(
-            model_id=model_id,
-            completion=response.choices[0].message.content,
-            stop_reason=response.choices[0].finish_reason.value,
-            duration=duration,
-            logprobs=logprobs,
-            api_duration=api_duration,
-            cost=0,
-        )
-        duration = time.time() - start
-        LOGGER.debug(f"Completed call to {model_id} in {duration}s")
-
-        responses = [response]
+        if response_data is None:
+            raise RuntimeError("No response data received")
+        assert len(response_data.choices) == 1, f"Expected 1 choice, got {len(response_data.choices)}"
+        responses = [
+            LLMResponse(
+                model_id=model_id,
+                completion=choice.message.content,
+                stop_reason=choice.finish_reason,
+                api_duration=api_duration,
+                duration=duration,
+                cost=0,
+                logprobs=self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None,
+            )
+            for choice in response_data.choices
+        ]
 
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:
