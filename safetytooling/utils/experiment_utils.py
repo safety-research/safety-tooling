@@ -116,8 +116,8 @@ class ExperimentConfigBase:
         if self.log_to_file:
             (self.output_dir / "logs").mkdir(parents=True, exist_ok=True)
             logfile = self.output_dir / "logs" / f"{log_file_prefix}-{self.datetime_str}.log"
-            print(f"Logging to {logfile}")
-            print(f"You can tail the log file with: tail -f {logfile.resolve()}")
+            print(f"\nLogging to {logfile}")
+            print(f"You can tail the log file with: tail -f {logfile.resolve()}\n")
         else:
             logfile = None
 
