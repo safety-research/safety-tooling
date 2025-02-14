@@ -296,7 +296,7 @@ def append_jsonl(
 
 def get_datetime_str() -> str:
     """Returns a UTC datetime string in the format YYYY-MM-DD-HH-MM-SSZ"""
-    return datetime.datetime.now().astimezone(datetime.timezone.utc).strftime("%Y-%m-%d-%H-%M-%SZ")
+    return datetime.datetime.now().astimezone(datetime.timezone.utc).strftime("%Y-%m-%d-%H-%M-%S-%fZ")
 
 
 def hash_str(s: str) -> str:
