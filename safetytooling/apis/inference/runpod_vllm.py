@@ -42,6 +42,7 @@ class VLLMChatModel(InferenceAPIModel):
             "top_p": "top_p",
             "stream": "stream",
             "logprobs": "logprobs",
+            "n": "n",
         }
 
         self.stop_reason_map = {
@@ -139,10 +140,9 @@ class VLLMChatModel(InferenceAPIModel):
                         LOGGER.error(f"Invalid response format: {response_data}")
                         raise RuntimeError(f"Invalid response format: {response_data}")
 
-                    completion = response_data["choices"][0]["message"]["content"]
-                    if not is_valid(completion):
-                        LOGGER.error(f"Invalid response according to is_valid: {completion}")
-                        raise RuntimeError(f"Invalid response according to is_valid: {completion}")
+                    if not all(is_valid(choice["message"]["content"]) for choice in response_data["choices"]):
+                        LOGGER.error(f"Invalid responses according to is_valid {response_data}")
+                        raise RuntimeError(f"Invalid responses according to is_valid {responses}")
 
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
