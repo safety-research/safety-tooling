@@ -142,7 +142,7 @@ class VLLMChatModel(InferenceAPIModel):
 
                     if not all(is_valid(choice["message"]["content"]) for choice in response_data["choices"]):
                         LOGGER.error(f"Invalid responses according to is_valid {response_data}")
-                        raise RuntimeError(f"Invalid responses according to is_valid {responses}")
+                        raise RuntimeError(f"Invalid responses according to is_valid {response_data}")
 
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
