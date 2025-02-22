@@ -52,18 +52,14 @@ class TogetherChatModel(InferenceAPIModel):
         self.allowed_kwargs = {"temperature", "max_tokens", "logprobs", "n"}
 
     @staticmethod
-    def convert_top_logprobs(data: ChatCompletionResponse) -> list[dict]:
-        # convert OpenAI chat version of logprobs response to completion version
+    def convert_top_logprobs(data) -> list[dict]:
+        # convert TogetherAI chat version of logprobs response to match OpenAI completion version
+        # note that TogetherAI only supports one logprob per token
+
         top_logprobs = []
 
-        for item in data.content:
-            # <|end|> is known to be duplicated on gpt-4-turbo-2024-04-09
-            # See experiments/sample-notebooks/api-tests/logprob-dup-tokens.ipynb for details
-            possibly_duplicated_top_logprobs = collections.defaultdict(list)
-            for top_logprob in item.top_logprobs:
-                possibly_duplicated_top_logprobs[top_logprob.token].append(top_logprob.logprob)
-
-            top_logprobs.append({k: math_utils.logsumexp(vs) for k, vs in possibly_duplicated_top_logprobs.items()})
+        for token, logprob in zip(data.tokens, data.token_logprobs):
+            top_logprobs.append({token: logprob})
 
         return top_logprobs
 
