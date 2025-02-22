@@ -49,7 +49,7 @@ class TogetherChatModel(InferenceAPIModel):
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "logprobs"}
+        self.allowed_kwargs = {"temperature", "max_tokens", "logprobs", "n"}
 
     @staticmethod
     def convert_top_logprobs(data: ChatCompletionResponse) -> list[dict]:
@@ -123,7 +123,11 @@ class TogetherChatModel(InferenceAPIModel):
 
         if response_data is None:
             raise RuntimeError("No response data received")
-        assert len(response_data.choices) == 1, f"Expected 1 choice, got {len(response_data.choices)}"
+
+        assert len(response_data.choices) == kwargs.get(
+            "n", 1
+        ), f"Expected {kwargs.get('n', 1)} choices, got {len(response_data.choices)}"
+
         responses = [
             LLMResponse(
                 model_id=model_id,
