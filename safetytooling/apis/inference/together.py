@@ -1,15 +1,12 @@
 import asyncio
-import collections
 import logging
 import time
 from pathlib import Path
 from traceback import format_exc
 
 from together import AsyncTogether
-from together.types import ChatCompletionResponse
 
 from safetytooling.data_models import LLMResponse, Prompt
-from safetytooling.utils import math_utils
 
 from .model import InferenceAPIModel
 
