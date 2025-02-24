@@ -98,6 +98,7 @@ def get_max_context_length(model_id: str) -> int:
             | "gpt-4o"
             | "gpt-4o-2024-05-13"
             | "gpt-4o-2024-08-06"
+            | "gpt-4o-2024-11-20"
             | "gpt-4o-mini"
             | "gpt-4o-mini-2024-07-18"
             | "gpt-4-turbo"
@@ -221,6 +222,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         "gpt-4o",
         "gpt-4o-2024-05-13",
         "gpt-4o-2024-08-06",
+        "gpt-4o-2024-11-20",
     ):
         prices = 2.5, 10
     elif model_id in (
