@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -79,8 +78,8 @@ class BatchInferenceAPI:
         """
         secrets = load_secrets("SECRETS")
 
-        # Check NO_CACHE environment variable
-        self.no_cache = no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
+        # Check NO_CACHE in secrets
+        self.no_cache = no_cache or secrets.get("NO_CACHE", "false").lower() == "true"
 
         if log_dir == "default":
             if "PROMPT_HISTORY_DIR" in secrets:
@@ -100,7 +99,8 @@ class BatchInferenceAPI:
             assert isinstance(cache_dir, Path) or cache_dir is None
             self.cache_dir = cache_dir
 
-        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
+        # Check REDIS_CACHE in secrets
+        self.use_redis = use_redis or secrets.get("REDIS_CACHE", "false").lower() == "true"
         self.cache_manager = None
         if self.cache_dir is not None and not self.no_cache:
             self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)

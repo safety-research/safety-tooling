@@ -1,4 +1,3 @@
-import os
 import random
 import time
 
@@ -64,40 +63,3 @@ async def test_no_cache_flag():
 
     # Cost should increase since caching is disabled
     assert api.running_cost > cost
-
-
-@pytest.mark.asyncio
-async def test_no_cache_env():
-    utils.setup_environment()
-
-    # Test with NO_CACHE environment variable
-    old_no_cache = os.getenv("NO_CACHE")
-    os.environ["NO_CACHE"] = "True"
-    api = InferenceAPI()
-
-    random.seed(time.time())
-    q = f"What is the meaning of life? {random.randint(0, 1000000)}"
-    _ = await api.ask_single_question(
-        model_ids="gpt-4o-mini-2024-07-18",
-        question=q,
-        max_tokens=20,
-        temperature=1.2,
-    )
-
-    cost = api.running_cost
-
-    _ = await api.ask_single_question(
-        model_ids="gpt-4o-mini-2024-07-18",
-        question=q,
-        max_tokens=20,
-        temperature=1.2,
-    )
-
-    # Cost should increase since caching is disabled
-    assert api.running_cost > cost
-
-    # Clean up
-    if old_no_cache is None:
-        del os.environ["NO_CACHE"]
-    else:
-        os.environ["NO_CACHE"] = old_no_cache

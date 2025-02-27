@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 from typing import List, Tuple, Union
 
@@ -19,10 +18,13 @@ from safetytooling.data_models import (
     TaggedModeration,
 )
 from safetytooling.data_models.hashable import deterministic_hash
-from safetytooling.utils.utils import load_json, save_json
+from safetytooling.utils.utils import load_json, load_secrets, save_json
 
 load_dotenv()
 LOGGER = logging.getLogger(__name__)
+
+# Load secrets for Redis configuration
+secrets = load_secrets("SECRETS")
 
 REDIS_CONFIG_DEFAULT = {
     "host": "localhost",
@@ -31,8 +33,8 @@ REDIS_CONFIG_DEFAULT = {
     "decode_responses": False,  # We want bytes for our use case
 }
 
-if os.getenv("REDIS_PASSWORD"):
-    REDIS_CONFIG_DEFAULT["password"] = os.getenv("REDIS_PASSWORD")
+if "REDIS_PASSWORD" in secrets:
+    REDIS_CONFIG_DEFAULT["password"] = secrets["REDIS_PASSWORD"]
 
 
 class BaseCacheManager:

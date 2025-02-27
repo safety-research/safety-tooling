@@ -57,6 +57,8 @@ def setup_environment(
     assert "OPENAI_API_KEY" in os.environ, "OPENAI_API_KEY not found in environment"
     assert "ANTHROPIC_API_KEY" in os.environ, "ANTHROPIC_API_KEY not found in environment"
 
+    if "ANTHROPIC_BATCH_API_KEY" in secrets:
+        os.environ["ANTHROPIC_BATCH_API_KEY"] = secrets["ANTHROPIC_BATCH_API_KEY"]
     if "SCALE_BASE_URL" in secrets:
         os.environ["SCALE_BASE_URL"] = secrets["SCALE_BASE_URL"]
     if "RUNPOD_API_KEY" in secrets:
@@ -80,6 +82,14 @@ def setup_environment(
         os.environ["GRAYSWAN_API_KEY"] = secrets["GRAYSWAN_API_KEY"]
     if "TOGETHER_API_KEY" in secrets:
         os.environ["TOGETHER_API_KEY"] = secrets["TOGETHER_API_KEY"]
+
+    # non-secret configs that we set in the SECRETS file too
+    if "NO_CACHE" in secrets:
+        os.environ["NO_CACHE"] = secrets["NO_CACHE"]
+    if "REDIS_CACHE" in secrets:
+        os.environ["REDIS_CACHE"] = secrets["REDIS_CACHE"]
+    if "REDIS_PASSWORD" in secrets:
+        os.environ["REDIS_PASSWORD"] = secrets["REDIS_PASSWORD"]
 
 
 def setup_logging(logging_level):

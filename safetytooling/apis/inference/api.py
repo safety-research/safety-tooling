@@ -149,7 +149,7 @@ class InferenceAPI:
             self.cache_dir = cache_dir
 
         self.cache_manager: BaseCacheManager | None = None
-        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
+        self.use_redis = use_redis or secrets.get("REDIS_CACHE", "false").lower() == "true"
         if self.cache_dir is not None:
             self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
             print(f"{self.cache_manager=}")
@@ -235,8 +235,8 @@ class InferenceAPI:
         self.model_timings = {}
         self.model_wait_times = {}
 
-        # Check NO_CACHE environment variable
-        self.no_cache = no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
+        # Check NO_CACHE in secrets
+        self.no_cache = no_cache or secrets.get("NO_CACHE", "false").lower() == "true"
 
     def semaphore_method_decorator(func):
         # unused but could be useful to debug if openai jamming comes back

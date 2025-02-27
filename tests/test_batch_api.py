@@ -7,6 +7,7 @@ import pytest
 from safetytooling.apis.batch_api import BatchInferenceAPI
 from safetytooling.data_models import ChatMessage, MessageRole, Prompt
 from safetytooling.utils import utils
+from safetytooling.utils.utils import load_secrets
 
 # Skip all tests in this module if SAFETYTOOLING_SLOW_TESTS is not set
 pytestmark = pytest.mark.skipif(
@@ -20,9 +21,10 @@ utils.setup_environment()
 
 @pytest.fixture
 def batch_api():
+    secrets = load_secrets("SECRETS")
     return BatchInferenceAPI(
         prompt_history_dir=None,
-        anthropic_api_key=os.getenv("ANTHROPIC_BATCH_API_KEY") if os.getenv("ANTHROPIC_BATCH_API_KEY") else None,
+        anthropic_api_key=secrets.get("ANTHROPIC_BATCH_API_KEY"),
     )
 
 
@@ -119,10 +121,11 @@ async def test_batch_api_no_cache_flag(batch_api, tmp_path):
     ]
 
     # Create a new BatchInferenceAPI instance with no_cache=True
+    secrets = load_secrets("SECRETS")
     no_cache_api = BatchInferenceAPI(
         prompt_history_dir=None,
         no_cache=True,
-        anthropic_api_key=os.getenv("ANTHROPIC_BATCH_API_KEY") if os.getenv("ANTHROPIC_BATCH_API_KEY") else None,
+        anthropic_api_key=secrets.get("ANTHROPIC_BATCH_API_KEY"),
     )
 
     # First request
@@ -147,54 +150,6 @@ async def test_batch_api_no_cache_flag(batch_api, tmp_path):
     assert batch_id1 != batch_id2  # Different batch IDs for different API calls
 
 
-@pytest.mark.asyncio
-async def test_batch_api_no_cache_env(batch_api, tmp_path):
-    """Test that BatchInferenceAPI respects NO_CACHE environment variable."""
-    random.seed(time.time())
-
-    # Create 3 test prompts with random numbers to ensure unique cache keys
-    rand_suffix = random.randint(0, 1000000)
-    test_prompts = [
-        Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
-    ]
-
-    # Set NO_CACHE environment variable
-    old_no_cache = os.getenv("NO_CACHE")
-    os.environ["NO_CACHE"] = "1"
-
-    # Create a new BatchInferenceAPI instance - should respect NO_CACHE env var
-    env_no_cache_api = BatchInferenceAPI(
-        prompt_history_dir=None,
-        anthropic_api_key=os.getenv("ANTHROPIC_BATCH_API_KEY") if os.getenv("ANTHROPIC_BATCH_API_KEY") else None,
-    )
-
-    # First request
-    responses1, batch_id1 = await env_no_cache_api(
-        model_id="claude-3-5-haiku-20241022",
-        prompts=test_prompts,
-        max_tokens=10,
-        log_dir=tmp_path,
-    )
-
-    # Second request - should hit API again due to NO_CACHE env var
-    responses2, batch_id2 = await env_no_cache_api(
-        model_id="claude-3-5-haiku-20241022",
-        prompts=test_prompts,
-        max_tokens=10,
-        log_dir=tmp_path,
-    )
-
-    # Verify batch IDs are not "cached"
-    assert batch_id1 != "cached"
-    assert batch_id2 != "cached"
-    assert batch_id1 != batch_id2  # Different batch IDs for different API calls
-
-    # Clean up
-    if old_no_cache is None:
-        del os.environ["NO_CACHE"]
-    else:
-        os.environ["NO_CACHE"] = old_no_cache
-
 
 @pytest.mark.asyncio
 async def test_batch_api_chunking(batch_api, tmp_path):
@@ -202,9 +157,10 @@ async def test_batch_api_chunking(batch_api, tmp_path):
     random.seed(time.time())
 
     # Create a new BatchInferenceAPI instance without chunk parameter
+    secrets = load_secrets("SECRETS")
     chunked_api = BatchInferenceAPI(
         prompt_history_dir=None,
-        anthropic_api_key=os.getenv("ANTHROPIC_BATCH_API_KEY") if os.getenv("ANTHROPIC_BATCH_API_KEY") else None,
+        anthropic_api_key=secrets.get("ANTHROPIC_BATCH_API_KEY"),
     )
 
     # Create 5 test prompts with random numbers to ensure unique cache keys
