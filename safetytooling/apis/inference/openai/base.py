@@ -157,7 +157,7 @@ class OpenAIModel(InferenceAPIModel):
                 # Make the API call outside the lock
                 return await asyncio.wait_for(
                     self._make_api_call(prompt, model_id, start, **kwargs),
-                    timeout=300,
+                    timeout=1200,
                 )
 
         model_ids = tuple(
