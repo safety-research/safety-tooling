@@ -40,6 +40,8 @@ class ExperimentConfigBase:
     anthropic_num_threads: int = 40
     gray_swan_num_threads: int = 40
     huggingface_num_threads: int = 100
+    together_num_threads: int = 40
+    vllm_num_threads: int = 8
     use_vllm_if_model_not_found: bool = False
     vllm_base_url: str = "http://localhost:8000/v1/chat/completions"
     openai_tag: str = "OPENAI_API_KEY1"
@@ -88,8 +90,10 @@ class ExperimentConfigBase:
                 gemini_recitation_rate_check_volume=self.gemini_recitation_rate_check_volume,
                 gemini_recitation_rate_threshold=self.gemini_recitation_rate_threshold,
                 anthropic_num_threads=self.anthropic_num_threads,
+                together_num_threads=self.together_num_threads,
                 gray_swan_num_threads=self.gray_swan_num_threads,
                 huggingface_num_threads=self.huggingface_num_threads,
+                vllm_num_threads=self.vllm_num_threads,
                 cache_dir=self.cache_dir,
                 prompt_history_dir=self.prompt_history_dir,
                 use_redis=self.use_redis,

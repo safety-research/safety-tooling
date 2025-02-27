@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import logging
 import time
 from pathlib import Path
@@ -7,6 +8,7 @@ from traceback import format_exc
 import aiohttp
 
 from safetytooling.data_models import LLMResponse, Prompt, StopReason
+from safetytooling.utils import math_utils
 
 from .model import InferenceAPIModel
 
@@ -40,6 +42,7 @@ class VLLMChatModel(InferenceAPIModel):
             "top_p": "top_p",
             "stream": "stream",
             "logprobs": "logprobs",
+            "n": "n",
         }
 
         self.stop_reason_map = {
@@ -47,11 +50,15 @@ class VLLMChatModel(InferenceAPIModel):
             "stop": StopReason.STOP_SEQUENCE.value,
         }
 
-    async def query(self, model_url: str, payload: dict, session: aiohttp.ClientSession) -> dict:
-        async with session.post(model_url, headers=self.headers, json=payload) as response:
+    async def query(self, model_url: str, payload: dict, session: aiohttp.ClientSession, timeout: int = 1000) -> dict:
+        async with session.post(model_url, headers=self.headers, json=payload, timeout=timeout) as response:
             if response.status != 200:
                 error_text = await response.text()
-                raise RuntimeError(f"API Error: Status {response.status}, {error_text}")
+                if "<!DOCTYPE html>" in str(error_text) and "<title>" in str(error_text):
+                    reason = str(error_text).split("<title>")[1].split("</title>")[0]
+                else:
+                    reason = " ".join(str(error_text).split()[:20])
+                raise RuntimeError(f"API Error: Status {response.status}, {reason}")
             return await response.json()
 
     async def run_query(self, model_url: str, messages: list, params: dict) -> dict:
@@ -64,9 +71,30 @@ class VLLMChatModel(InferenceAPIModel):
         async with aiohttp.ClientSession() as session:
             response = await self.query(model_url, payload, session)
             if "error" in response:
-                LOGGER.error(response)
-                raise RuntimeError(f"API Error: {response['error']}")
+                if "<!DOCTYPE html>" in str(response) and "<title>" in str(response):
+                    reason = str(response).split("<title>")[1].split("</title>")[0]
+                else:
+                    reason = " ".join(str(response).split()[:20])
+                print(f"API Error: {reason}")
+                LOGGER.error(f"API Error: {reason}")
+                raise RuntimeError(f"API Error: {reason}")
             return response
+
+    @staticmethod
+    def convert_top_logprobs(data: dict) -> list[dict]:
+        # convert OpenAI chat version of logprobs response to completion version
+        top_logprobs = []
+
+        for item in data["content"]:
+            # <|end|> is known to be duplicated on gpt-4-turbo-2024-04-09
+            # See experiments/sample-notebooks/api-tests/logprob-dup-tokens.ipynb for details
+            possibly_duplicated_top_logprobs = collections.defaultdict(list)
+            for top_logprob in item["top_logprobs"]:
+                possibly_duplicated_top_logprobs[top_logprob["token"]].append(top_logprob["logprob"])
+
+            top_logprobs.append({k: math_utils.logsumexp(vs) for k, vs in possibly_duplicated_top_logprobs.items()})
+
+        return top_logprobs
 
     async def __call__(
         self,
@@ -97,6 +125,10 @@ class VLLMChatModel(InferenceAPIModel):
                     params = {self.kwarg_change_name[k]: v for k, v in kwargs.items() if k in self.kwarg_change_name}
                     params["model"] = model_id
 
+                    if "logprobs" in params:
+                        params["top_logprobs"] = params["logprobs"]
+                        params["logprobs"] = True
+
                     response_data = await self.run_query(
                         model_url,
                         prompt.openai_format(),
@@ -105,11 +137,12 @@ class VLLMChatModel(InferenceAPIModel):
                     api_duration = time.time() - api_start
 
                     if not response_data.get("choices"):
+                        LOGGER.error(f"Invalid response format: {response_data}")
                         raise RuntimeError(f"Invalid response format: {response_data}")
 
-                    completion = response_data["choices"][0]["message"]["content"]
-                    if not is_valid(completion):
-                        raise RuntimeError(f"Invalid response according to is_valid: {completion}")
+                    if not all(is_valid(choice["message"]["content"]) for choice in response_data["choices"]):
+                        LOGGER.error(f"Invalid responses according to is_valid {response_data}")
+                        raise RuntimeError(f"Invalid responses according to is_valid {response_data}")
 
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
@@ -118,34 +151,28 @@ class VLLMChatModel(InferenceAPIModel):
             else:
                 break
         else:
+            LOGGER.error(f"Failed to get a response from the API after {max_attempts} attempts.")
             raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
 
-        # Extract logprobs from response if available
-        logprobs = None
-        if response_data["choices"][0].get("logprobs", {}).get("content"):
-            logprobs = []
-            content_logprobs = response_data["choices"][0]["logprobs"]["content"]
-            for token_info in content_logprobs:
-                if "token" in token_info and "logprob" in token_info:
-                    logprobs.append({token_info["token"]: token_info["logprob"]})
-        else:
-            LOGGER.warning(f"No logprobs found in response for {model_id} under choices[0]['logprobs']['content']")
+        if response_data is None or response_data.get("choices", None) is None:
+            LOGGER.error(f"Invalid response format: {response_data}")
+            raise RuntimeError(f"Invalid response format: {response_data}")
 
-        response = LLMResponse(
-            model_id=model_id,
-            completion=response_data["choices"][0]["message"]["content"],
-            stop_reason=self.stop_reason_map.get(
-                response_data["choices"][0].get("finish_reason", "unknown"), StopReason.UNKNOWN.value
-            ),
-            duration=duration,
-            api_duration=api_duration,
-            logprobs=logprobs,
-            cost=0,
-        )
-        responses = [response]
+        responses = [
+            LLMResponse(
+                model_id=model_id,
+                completion=choice["message"]["content"],
+                stop_reason=choice["finish_reason"],
+                api_duration=api_duration,
+                duration=duration,
+                cost=0,
+                logprobs=self.convert_top_logprobs(choice["logprobs"]) if choice.get("logprobs") is not None else None,
+            )
+            for choice in response_data["choices"]
+        ]
 
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:

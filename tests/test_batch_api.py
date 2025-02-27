@@ -201,10 +201,9 @@ async def test_batch_api_chunking(batch_api, tmp_path):
     """Test that BatchInferenceAPI properly handles chunking."""
     random.seed(time.time())
 
-    # Create a new BatchInferenceAPI instance with chunk_size=2
+    # Create a new BatchInferenceAPI instance without chunk parameter
     chunked_api = BatchInferenceAPI(
         prompt_history_dir=None,
-        chunk=2,
         anthropic_api_key=os.getenv("ANTHROPIC_BATCH_API_KEY") if os.getenv("ANTHROPIC_BATCH_API_KEY") else None,
     )
 
@@ -214,12 +213,13 @@ async def test_batch_api_chunking(batch_api, tmp_path):
         Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
     ]
 
-    # Run with chunking
+    # Run with chunking specified in the API call
     responses, batch_id = await chunked_api(
         model_id="claude-3-5-haiku-20241022",
         prompts=test_prompts,
         max_tokens=10,
         log_dir=tmp_path,
+        chunk=2,
     )
 
     # Verify we got responses for all prompts

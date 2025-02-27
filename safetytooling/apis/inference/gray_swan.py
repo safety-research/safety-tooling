@@ -24,7 +24,11 @@ class GraySwanChatModel(InferenceAPIModel):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
         if api_key is not None:
-            self.aclient = AsyncGraySwan(api_key=api_key)
+            try:
+                self.aclient = AsyncGraySwan(api_key=api_key)
+            except TypeError as e:
+                LOGGER.error(f"Failed to initialize GraySwan client: {e}")
+                self.aclient = None
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))

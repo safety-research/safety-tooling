@@ -80,7 +80,13 @@ def count_tokens(text: str) -> int:
 
 
 def get_max_context_length(model_id: str) -> int:
-    # go to: https://platform.openai.com/docs/models
+    if "ft:gpt-4o-mini" in model_id:
+        return 128_000
+    elif "ft:gpt-3.5-turbo" in model_id:
+        return 16_384
+    elif "ft:gpt-4o" in model_id:
+        return 128_000
+
     match model_id:
         case "o1" | "o1-2024-12-17" | "o3-mini" | "o3-mini-2025-01-31":
             return 200_000
@@ -92,6 +98,7 @@ def get_max_context_length(model_id: str) -> int:
             | "gpt-4o"
             | "gpt-4o-2024-05-13"
             | "gpt-4o-2024-08-06"
+            | "gpt-4o-2024-11-20"
             | "gpt-4o-mini"
             | "gpt-4o-mini-2024-07-18"
             | "gpt-4-turbo"
@@ -136,7 +143,12 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     # go to: https://platform.openai.com/settings/organization/limits
     """
     if "ft:gpt-3.5-turbo" in model_id:
-        return 2_000_000, 10_000
+        return 50_000_000, 10_000
+    elif "ft:gpt-4o-mini" in model_id:
+        return 150_000_000, 30_000
+    elif "ft:gpt-4o" in model_id:
+        return 30_000_000, 10_000
+
     match model_id:
         case "o1" | "o1-2024-12-17":
             return 30_000_000, 1_000
@@ -210,6 +222,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         "gpt-4o",
         "gpt-4o-2024-05-13",
         "gpt-4o-2024-08-06",
+        "gpt-4o-2024-11-20",
     ):
         prices = 2.5, 10
     elif model_id in (
@@ -267,6 +280,13 @@ def finetune_price_per_token(model_id: str) -> float | None:
     https://platform.openai.com/docs/guides/fine-tuning/what-models-can-be-fine-tuned
     for details.
     """
+    if "ft:gpt-4o-mini" in model_id:
+        return 0.003
+    elif "ft:gpt-4o" in model_id:
+        return 0.025
+    elif "ft:gpt-3.5-turbo" in model_id:
+        return 0.008
+
     match model_id:
         case "gpt-3.5-turbo-1106" | "gpt-3.5-turbo-0613" | "gpt-3.5-turbo":
             return 0.008

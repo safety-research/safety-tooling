@@ -1,5 +1,6 @@
 import random
 import re
+import string
 from functools import lru_cache
 from typing import Optional
 
@@ -57,3 +58,11 @@ def get_attack_string(num_tokens: int) -> AttackString:
     all_ids = get_filtered_token_ids(tokenizer)
     attack_string = AttackString(token_ids=random.sample(all_ids, num_tokens))
     return attack_string
+
+
+def normalize_text(text: str) -> str:
+    text = text.replace("”", '"').replace("“", '"')
+    text = text.replace("’", "'").replace("‘", "'")
+    text = text.translate(str.maketrans("", "", string.punctuation)).lower()
+    text = " ".join(text.split())
+    return text
