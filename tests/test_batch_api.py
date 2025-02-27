@@ -150,7 +150,6 @@ async def test_batch_api_no_cache_flag(batch_api, tmp_path):
     assert batch_id1 != batch_id2  # Different batch IDs for different API calls
 
 
-
 @pytest.mark.asyncio
 async def test_batch_api_chunking(batch_api, tmp_path):
     """Test that BatchInferenceAPI properly handles chunking."""
