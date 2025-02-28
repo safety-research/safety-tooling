@@ -77,6 +77,7 @@ async def queue_finetune(
         retry=retry_if_exception_type((APIConnectionError, RateLimitError)),
         stop=stop_after_attempt(600),
         wait=wait_fixed(120),
+        before_sleep=lambda retry_state: LOGGER.error(f"Error occurred: {retry_state.outcome.exception()}"),
     ):
         with attempt:
             LOGGER.info("Attempting to start fine-tuning job...")

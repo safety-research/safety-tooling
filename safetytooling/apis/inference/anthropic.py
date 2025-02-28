@@ -23,11 +23,13 @@ ANTHROPIC_MODELS = {
     "claude-3-sonnet-20240229",
     "claude-3-haiku-20240307",
     "research-claude-cabernet",
+    "claude-3-7-sonnet-20250219",
 }
 VISION_MODELS = {
     "claude-3-5-sonnet-20241022",
     "claude-3-5-sonnet-20240620",
     "claude-3-opus-20240229",
+    "claude-3-7-sonnet-20250219",
 }
 LOGGER = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ class AnthropicChatModel(InferenceAPIModel):
             self.aclient = AsyncAnthropic()
 
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens"}
+        self.allowed_kwargs = {"temperature", "max_tokens", "thinking"}
 
     async def __call__(
         self,
@@ -133,16 +135,30 @@ class AnthropicChatModel(InferenceAPIModel):
                 raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
 
         else:
-            assert len(response.content) == 1  # Anthropic doesn't support multiple completions (as of 2024-03-12).
+            is_reasoning = response.content[0].type == "thinking"
+            assert (
+                is_reasoning or len(response.content) == 1
+            ), "Anthropic reasoning models don't support multiple completions"
 
-            response = LLMResponse(
-                model_id=model_id,
-                completion=response.content[0].text,
-                stop_reason=response.stop_reason,
-                duration=duration,
-                api_duration=api_duration,
-                cost=0,
-            )
+            if is_reasoning:
+                response = LLMResponse(
+                    model_id=model_id,
+                    completion=response.content[1].text,
+                    stop_reason=response.stop_reason,
+                    duration=duration,
+                    api_duration=api_duration,
+                    cost=0,
+                    reasoning_content=response.content[0].thinking,
+                )
+            else:
+                response = LLMResponse(
+                    model_id=model_id,
+                    completion=response.content[0].text,
+                    stop_reason=response.stop_reason,
+                    duration=duration,
+                    api_duration=api_duration,
+                    cost=0,
+                )
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
 

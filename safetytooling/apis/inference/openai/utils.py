@@ -22,9 +22,12 @@ VISION_MODELS = (
     "gpt-4o-2024-08-06",
     "gpt-4-turbo",
     "gpt-4-turbo-2024-04-09",
+    "gpt-4.5-preview",
+    "gpt-4.5-preview-2025-02-27",
 )
 
 _GPT_4_MODELS = (
+    "gpt-4.5-preview-2025-02-27",
     "o3-mini",
     "o3-mini-2025-01-31",
     "o1-mini",
