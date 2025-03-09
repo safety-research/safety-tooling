@@ -106,7 +106,7 @@ To check for outdated dependencies, run `pip list --outdated`.
 
 To launch a finetuning job, run the following command:
 ```bash
-python -m safetytooling.apis.finetuning.run --model 'gpt-3.5-turbo-1106' --train_file <path-to-train-file> --n_epochs 1
+python -m safetytooling.apis.finetuning.openai.run --model 'gpt-3.5-turbo-1106' --train_file <path-to-train-file> --n_epochs 1
 ```
 This should automatically create a new job on the OpenAI API, and also sync that run to wandb. You will have to keep the program running until the OpenAI job is complete.
 
