@@ -48,7 +48,7 @@ class TogetherChatModel(InferenceAPIModel):
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "logprobs", "n"}
+        self.allowed_kwargs = {"temperature", "max_tokens", "logprobs", "n", "stop"}
 
     @staticmethod
     def convert_top_logprobs(data) -> list[dict]:

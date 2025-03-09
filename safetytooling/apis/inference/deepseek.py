@@ -25,7 +25,7 @@ class DeepSeekChatModel(InferenceAPIModel):
         self.prompt_history_dir = prompt_history_dir
         self.api_key = api_key
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "top_p", "stream"}
+        self.allowed_kwargs = {"temperature", "max_tokens", "top_p", "stream", "stop"}
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",

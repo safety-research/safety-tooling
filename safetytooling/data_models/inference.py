@@ -25,6 +25,7 @@ class LLMParams(HashableBaseModel):
     return_logprobs: bool = False  # ?
     top_k_logprobs: int | None = None  # ?
     logit_bias: dict[int, float] | None = None
+    stop: list[str] | None = None
     response_format: Any = pydantic.Field(
         default=None,
         # TODO: Stopgap.

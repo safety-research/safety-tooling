@@ -83,3 +83,37 @@ async def test_gpt4o_mini_2024_07_18_with_response_format():
     # Verify responses can be parsed into CustomResponse objects
     CustomResponse.model_validate_json(resp[0])
     CustomResponse.model_validate_json(resp[1])
+
+
+@pytest.mark.asyncio
+async def test_api_with_stop_parameter():
+    """Test that the stop parameter works correctly with the InferenceAPI."""
+    utils.setup_environment()
+
+    # Test with OpenAI model
+    openai_resp = await InferenceAPI.get_default_global_api().ask_single_question(
+        model_ids="gpt-4o-mini-2024-07-18",
+        question="Count from 1 to 10: 1, 2, 3,",
+        max_tokens=20,
+        stop=[", 5"],  # Should stop before outputting ", 5"
+    )
+
+    assert isinstance(openai_resp, list)
+    assert len(openai_resp) == 1
+    assert isinstance(openai_resp[0], str)
+    assert ", 5" not in openai_resp[0]
+    assert "4" in openai_resp[0]
+
+    # Test with Anthropic model
+    anthropic_resp = await InferenceAPI.get_default_global_api().ask_single_question(
+        model_ids="claude-3-haiku-20240307",
+        question="Count from 1 to 10: 1, 2, 3,",
+        max_tokens=20,
+        stop=[", 5"],  # Should stop before outputting ", 5"
+    )
+
+    assert isinstance(anthropic_resp, list)
+    assert len(anthropic_resp) == 1
+    assert isinstance(anthropic_resp[0], str)
+    assert ", 5" not in anthropic_resp[0]
+    assert "4" in anthropic_resp[0]
