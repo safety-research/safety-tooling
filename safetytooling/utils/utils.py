@@ -105,6 +105,7 @@ def setup_logging(logging_level):
     logging.getLogger("git").setLevel(logging.CRITICAL)
     logging.getLogger("httpcore").setLevel(logging.CRITICAL)
     logging.getLogger("anthropic._base_client").setLevel(logging.CRITICAL)
+    logging.getLogger("fork_posix").setLevel(logging.CRITICAL)
 
 
 def load_secrets(local_file_path: str | Path) -> dict[str, str | None]:
