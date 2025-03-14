@@ -5,11 +5,17 @@ import textwrap
 from typing import Sequence
 
 import filelock
-import IPython.display
-import ipywidgets
 import jsonlines
 
 from safetytooling.utils import utils
+
+try:
+    import IPython.display
+    import ipywidgets
+
+    JUPYTER_AVAILABLE = True
+except ImportError:
+    JUPYTER_AVAILABLE = False
 
 
 @dataclasses.dataclass
@@ -92,6 +98,11 @@ class TranscriptLabelingInterface:
         text_width: int = 80,
         hide_input: bool = False,
     ):
+        if not JUPYTER_AVAILABLE:
+            raise ImportError(
+                "ipywidgets and IPython.display are not installed. Please install them to use the TranscriptLabelingInterface."
+            )
+
         self.label_store = LabelStore(db_path)
         self.transcripts = [
             (

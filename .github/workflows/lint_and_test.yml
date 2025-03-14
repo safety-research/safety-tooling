@@ -72,7 +72,7 @@ jobs:
         if: steps.cache-python.outputs.cache-hit != 'true'
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -e .
 
       # Save Python cache after installing dependencies (even if tests fail)
       # https://github.com/risc0/actions-cache-s3/blob/main/caching-strategies.md#saving-cache-even-if-the-build-fails
