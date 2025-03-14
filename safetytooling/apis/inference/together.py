@@ -5,6 +5,7 @@ from pathlib import Path
 from traceback import format_exc
 
 from together import AsyncTogether
+from together.error import InvalidRequestError
 
 from safetytooling.data_models import LLMResponse, Prompt
 
@@ -100,7 +101,7 @@ class TogetherChatModel(InferenceAPIModel):
                     api_duration = time.time() - api_start
                     if not is_valid(response_data):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
-            except TypeError as e:
+            except (TypeError, InvalidRequestError) as e:
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"

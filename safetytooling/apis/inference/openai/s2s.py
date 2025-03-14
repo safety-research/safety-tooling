@@ -195,6 +195,10 @@ class OpenAIS2SModel(InferenceAPIModel):
         **kwargs,
     ) -> List[LLMResponse]:
 
+        assert (
+            model_id == "gpt-4o-realtime-preview-2024-10-01"
+        ), "Only gpt-4o-realtime-preview-2024-10-01 is supported for OpenAI S2S"
+
         self.max_attempts = max_attempts
 
         start = time.time()

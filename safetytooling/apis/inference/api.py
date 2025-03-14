@@ -270,7 +270,10 @@ class InferenceAPI:
     ) -> InferenceAPIModel:
         if force_provider is not None:
             assert force_provider in self.provider_to_class, f"Invalid force_provider: {force_provider}"
-            return self.provider_to_class[force_provider]
+            if force_provider == "batch_gpu":
+                return self._batch_models[model_id]
+            else:
+                return self.provider_to_class[force_provider]
         elif model_id in COMPLETION_MODELS:
             return self._openai_completion
         elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt") or model_id.startswith("gpt"):
@@ -368,6 +371,7 @@ class InferenceAPI:
         is_valid: Callable[[str], bool] = lambda _: True,
         insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry",
         gemini_use_vertexai: bool = False,
+        huggingface_model_url: str | None = None,
         force_provider: str | None = None,
         use_cache: bool = True,
         **kwargs,
@@ -393,6 +397,7 @@ class InferenceAPI:
                 - continue: return the valid responses, even if they are fewer than n
                 - pad_invalids: pad the list with invalid responses up to n
                 - retry: retry the API call until n valid responses are found
+            huggingface_model_url: If specified, use this model URL for HuggingFace models.
             force_provider: If specified, force the API call to use the specified provider.
             use_cache: Whether to use the cache.
         """
@@ -454,6 +459,8 @@ class InferenceAPI:
                     prompt = prompt
 
         if isinstance(model_class, AnthropicChatModel) or isinstance(model_class, HuggingFaceModel):
+            if isinstance(model_class, HuggingFaceModel):
+                kwargs["model_url"] = huggingface_model_url
             # Anthropic chat doesn't support generating multiple candidates at once, so we have to do it manually
             candidate_responses = list(
                 chain.from_iterable(
