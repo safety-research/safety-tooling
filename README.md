@@ -42,7 +42,7 @@ You can monitor what is being read from or written to Redis by running `redis-cl
 
 ### Secrets
 
-You should create a file called `SECRETS` at the root of the repository
+You should create a file called `.env` at the root of the repository
 with the following contents:
 ```
 # Required
@@ -192,7 +192,7 @@ python -m safetytooling.apis.inference.usage.usage_anthropic
     - It creates the experiment directory and sets up logging to be output into log files there. It also sets random seeds and initialises the InferenceAPI so it is accessible easily by using `cfg.api`.
     - See examples of usage in the `examples` repo in next section.
 - **API KEY management**
-    - All API keys get stored in the SECRETS file (that is in the .gitignore)
+    - All API keys get stored in the .env file (that is in the .gitignore)
     - `setup_environment()` in `safetytooling/uils/utils.py` loads these in so they are accessible by the code (and also automates exporting environment variables)
 - **Utilities:**
     - Plotting functions for confusion matrices and setting up plotting in notebooks (`plotting_utils.py`)

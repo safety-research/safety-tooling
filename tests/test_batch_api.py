@@ -7,7 +7,6 @@ import pytest
 from safetytooling.apis.batch_api import BatchInferenceAPI
 from safetytooling.data_models import ChatMessage, MessageRole, Prompt
 from safetytooling.utils import utils
-from safetytooling.utils.utils import load_secrets
 
 # Skip all tests in this module if SAFETYTOOLING_SLOW_TESTS is not set
 pytestmark = pytest.mark.skipif(
@@ -21,10 +20,9 @@ utils.setup_environment()
 
 @pytest.fixture
 def batch_api():
-    secrets = load_secrets("SECRETS")
     return BatchInferenceAPI(
         prompt_history_dir=None,
-        anthropic_api_key=secrets.get("ANTHROPIC_BATCH_API_KEY"),
+        anthropic_api_key=os.environ.get("ANTHROPIC_BATCH_API_KEY"),
     )
 
 
@@ -121,11 +119,10 @@ async def test_batch_api_no_cache_flag(batch_api, tmp_path):
     ]
 
     # Create a new BatchInferenceAPI instance with no_cache=True
-    secrets = load_secrets("SECRETS")
     no_cache_api = BatchInferenceAPI(
         prompt_history_dir=None,
         no_cache=True,
-        anthropic_api_key=secrets.get("ANTHROPIC_BATCH_API_KEY"),
+        anthropic_api_key=os.environ.get("ANTHROPIC_BATCH_API_KEY"),
     )
 
     # First request
@@ -156,10 +153,9 @@ async def test_batch_api_chunking(batch_api, tmp_path):
     random.seed(time.time())
 
     # Create a new BatchInferenceAPI instance without chunk parameter
-    secrets = load_secrets("SECRETS")
     chunked_api = BatchInferenceAPI(
         prompt_history_dir=None,
-        anthropic_api_key=secrets.get("ANTHROPIC_BATCH_API_KEY"),
+        anthropic_api_key=os.environ.get("ANTHROPIC_BATCH_API_KEY"),
     )
 
     # Create 5 test prompts with random numbers to ensure unique cache keys

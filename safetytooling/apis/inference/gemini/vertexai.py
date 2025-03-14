@@ -120,7 +120,7 @@ class GeminiVertexAIModel(InferenceAPIModel):
     ) -> list[LLMResponse]:
         if not self.is_initialized:
             raise RuntimeError(
-                "VertexAI is not initialized. Please set GOOGLE_PROJECT_ID and GOOGLE_PROJECT_REGION in SECRETS before running your script"
+                "VertexAI is not initialized. Please set GOOGLE_PROJECT_ID and GOOGLE_PROJECT_REGION in .env before running your script"
             )
         start = time.time()
 

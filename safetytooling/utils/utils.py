@@ -11,6 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import IO, Any, Callable
 
+import dotenv
 import git
 import jsonlines
 import pandas as pd
@@ -42,53 +43,47 @@ def print_with_wrap(text: str, width: int = 80):
 
 
 def setup_environment(
-    anthropic_tag: str = "ANTHROPIC_API_KEY",
     logging_level: str = "info",
     openai_tag: str = "OPENAI_API_KEY1",
+    anthropic_tag: str = "ANTHROPIC_API_KEY",
 ):
     setup_logging(logging_level)
-    secrets = load_secrets("SECRETS")
-    if openai_tag in secrets:
-        os.environ["OPENAI_API_KEY"] = secrets[openai_tag]
-    if anthropic_tag in secrets:
-        os.environ["ANTHROPIC_API_KEY"] = secrets[anthropic_tag]
+    dotenv.load_dotenv()
+
+    # users often have many API keys, this allows them to specify which one to use
+    if openai_tag in os.environ:
+        os.environ["OPENAI_API_KEY"] = os.environ[openai_tag]
+    if anthropic_tag in os.environ:
+        os.environ["ANTHROPIC_API_KEY"] = os.environ[anthropic_tag]
     # assert that we have an openai api key
-    assert "OPENAI_API_KEY" in os.environ, "OPENAI_API_KEY not found in environment"
-    assert "ANTHROPIC_API_KEY" in os.environ, "ANTHROPIC_API_KEY not found in environment"
+    assert "OPENAI_API_KEY" in os.environ, "OPENAI_API_KEY not found in environment, this is required"
+    assert "ANTHROPIC_API_KEY" in os.environ, "ANTHROPIC_API_KEY not found in environment, this is required"
 
-    if "ANTHROPIC_BATCH_API_KEY" in secrets:
-        os.environ["ANTHROPIC_BATCH_API_KEY"] = secrets["ANTHROPIC_BATCH_API_KEY"]
-    if "SCALE_BASE_URL" in secrets:
-        os.environ["SCALE_BASE_URL"] = secrets["SCALE_BASE_URL"]
-    if "RUNPOD_API_KEY" in secrets:
-        os.environ["RUNPOD_API_KEY"] = secrets["RUNPOD_API_KEY"]
-    if "HF_API_KEY" in secrets:
-        # https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables
-        os.environ["HF_TOKEN"] = secrets["HF_API_KEY"]
-    if "ELEVENLABS_API_KEY" in secrets:
-        os.environ["ELEVENLABS_API_KEY"] = secrets["ELEVENLABS_API_KEY"]
-    if "GOOGLE_API_KEY" in secrets:
-        os.environ["GOOGLE_API_KEY"] = secrets["GOOGLE_API_KEY"]
-    if "GOOGLE_PROJECT_ID" in secrets:
-        os.environ["GOOGLE_PROJECT_ID"] = secrets["GOOGLE_PROJECT_ID"]
-    if "GOOGLE_PROJECT_REGION" in secrets:
-        os.environ["GOOGLE_PROJECT_REGION"] = secrets["GOOGLE_PROJECT_REGION"]
-    if "GOOGLE_API_KEY_PERSONAL" in secrets:
-        os.environ["GOOGLE_API_KEY_PERSONAL"] = secrets["GOOGLE_API_KEY_PERSONAL"]
-    if "OPENAI_S2S_API_KEY" in secrets:
-        os.environ["OPENAI_S2S_API_KEY"] = secrets["OPENAI_S2S_API_KEY"]
-    if "GRAYSWAN_API_KEY" in secrets:
-        os.environ["GRAYSWAN_API_KEY"] = secrets["GRAYSWAN_API_KEY"]
-    if "TOGETHER_API_KEY" in secrets:
-        os.environ["TOGETHER_API_KEY"] = secrets["TOGETHER_API_KEY"]
+    for key in [
+        "ANTHROPIC_BATCH_API_KEY",
+        "SCALE_BASE_URL",
+        "RUNPOD_API_KEY",
+        "HF_API_KEY",
+        "ELEVENLABS_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENAI_S2S_API_KEY",
+        "GRAYSWAN_API_KEY",
+        "TOGETHER_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "PROMPT_HISTORY_DIR",
+        "CACHE_DIR",
+        "NO_CACHE",
+        "REDIS_CACHE",
+        "REDIS_PASSWORD",
+    ]:
+        keys_not_found = []
+        if key not in os.environ:
+            keys_not_found.append(key)
 
-    # non-secret configs that we set in the SECRETS file too
-    if "NO_CACHE" in secrets:
-        os.environ["NO_CACHE"] = secrets["NO_CACHE"]
-    if "REDIS_CACHE" in secrets:
-        os.environ["REDIS_CACHE"] = secrets["REDIS_CACHE"]
-    if "REDIS_PASSWORD" in secrets:
-        os.environ["REDIS_PASSWORD"] = secrets["REDIS_PASSWORD"]
+    if keys_not_found:
+        LOGGER.warning(
+            f"The following keys were not found in environment, some features may not work until they are set in .env: {keys_not_found}"
+        )
 
 
 def setup_logging(logging_level):
@@ -105,43 +100,6 @@ def setup_logging(logging_level):
     logging.getLogger("httpcore").setLevel(logging.CRITICAL)
     logging.getLogger("anthropic._base_client").setLevel(logging.CRITICAL)
     logging.getLogger("fork_posix").setLevel(logging.CRITICAL)
-
-
-def load_secrets(local_file_path: str | Path) -> dict[str, str | None]:
-    """Load secrets from a file, supporting comments and blank lines.
-
-    The file should contain KEY=value pairs, one per line.
-    Lines starting with # are treated as comments and ignored.
-    Blank lines are also ignored.
-    If the file doesn't exist, falls back to environment variables for CI.
-
-    Args:
-        local_file_path: Path to the secrets file, relative to repo root
-
-    Returns:
-        Dictionary mapping secret names to their values
-    """
-    secrets: dict[str, str | None] = {}
-    secrets_file = get_repo_root() / local_file_path
-    if secrets_file.exists():
-        with open(secrets_file) as f:
-            for line in f:
-                line = line.strip()
-                # Skip blank lines or comments
-                if not line or line.startswith("#"):
-                    continue
-                # Skip lines without =
-                if "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                secrets[key] = value.strip()
-    else:
-        # required for CI
-        secrets = {
-            "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY"),
-            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
-        }
-    return secrets
 
 
 def load_json(file_path: str | Path):

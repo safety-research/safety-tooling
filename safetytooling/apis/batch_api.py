@@ -1,21 +1,16 @@
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Literal
-
-from dotenv import load_dotenv
 
 from safetytooling.apis.inference.anthropic import ANTHROPIC_MODELS, AnthropicModelBatch
 from safetytooling.apis.inference.cache_manager import get_cache_manager
 from safetytooling.apis.inference.openai.batch_api import OpenAIModelBatch
 from safetytooling.apis.inference.openai.utils import GPT_CHAT_MODELS
 from safetytooling.data_models import LLMParams, LLMResponse, Prompt
-from safetytooling.utils.utils import load_secrets
 
 LOGGER = logging.getLogger(__name__)
-
-
-load_dotenv()
 
 
 def chunk_prompts_for_anthropic(prompts: list[Prompt], chunk_size: int = 100_000) -> list[list[Prompt]]:
@@ -76,14 +71,13 @@ class BatchInferenceAPI:
             no_cache: If True, disable caching regardless of other settings.
             chunk: Maximum number of prompts to send in a single batch. If None, send all prompts in one batch.
         """
-        secrets = load_secrets("SECRETS")
 
-        # Check NO_CACHE in secrets
-        self.no_cache = no_cache or secrets.get("NO_CACHE", "false").lower() == "true"
+        # Check NO_CACHE in os.environ
+        self.no_cache = no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
 
         if log_dir == "default":
-            if "PROMPT_HISTORY_DIR" in secrets:
-                self.log_dir = Path(secrets["PROMPT_HISTORY_DIR"])
+            if "PROMPT_HISTORY_DIR" in os.environ:
+                self.log_dir = Path(os.environ["PROMPT_HISTORY_DIR"])
             else:
                 self.log_dir = Path.home() / ".prompt_history"
         else:
@@ -91,16 +85,16 @@ class BatchInferenceAPI:
             self.log_dir = log_dir
 
         if cache_dir == "default":
-            if "CACHE_DIR" in secrets:
-                self.cache_dir = Path(secrets["CACHE_DIR"])
+            if "CACHE_DIR" in os.environ:
+                self.cache_dir = Path(os.environ["CACHE_DIR"])
             else:
                 self.cache_dir = Path.home() / ".cache"
         else:
             assert isinstance(cache_dir, Path) or cache_dir is None
             self.cache_dir = cache_dir
 
-        # Check REDIS_CACHE in secrets
-        self.use_redis = use_redis or secrets.get("REDIS_CACHE", "false").lower() == "true"
+        # Check REDIS_CACHE in os.environ
+        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         self.cache_manager = None
         if self.cache_dir is not None and not self.no_cache:
             self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
