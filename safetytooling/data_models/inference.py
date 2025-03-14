@@ -12,29 +12,26 @@ from .hashable import HashableBaseModel
 
 class LLMParams(HashableBaseModel):
     model: str | tuple[str, ...]
-    temperature: float = 0.2
-    top_p: float = 1.0
     n: int = 1
     num_candidates_per_completion: int = 1
     insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry"
-    max_tokens: int | None = None  # For OpenAI models this is converted to max_completion_tokens in the API layer
-    max_completion_tokens: int | None = None  # Used by OpenAI models
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
     thinking: dict[str, Any] | None = None  # Used by Anthropic reasoning models
     logprobs: int | None = None
     seed: int | None = None
-    return_logprobs: bool = False  # ?
-    top_k_logprobs: int | None = None  # ?
     logit_bias: dict[int, float] | None = None
     stop: list[str] | None = None
-    response_format: Any = pydantic.Field(
-        default=None,
-        # TODO: Stopgap.
-        # Currently we send a pydantic.BaseModel class type in this param, which is not serializable.
-        # Caching will be agnostic to the value of this field
-        # Remove exlude=True once you figure out how to serialise pydantic.BaseModel class types
-        exclude=True,
-    )
-    model_config = pydantic.ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="allow")  # Allow unknown kwargs e.g. response_format for OpenAI
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.unknown_kwargs = {
+            k: (v.model_dump() if isinstance(v, pydantic.BaseModel) else v)
+            for k, v in kwargs.items()
+            if k not in self.__annotations__
+        }
 
 
 class StopReason(Enum):

@@ -25,7 +25,6 @@ class DeepSeekChatModel(InferenceAPIModel):
         self.prompt_history_dir = prompt_history_dir
         self.api_key = api_key
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "top_p", "stream", "stop"}
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
@@ -59,7 +58,6 @@ class DeepSeekChatModel(InferenceAPIModel):
                 async with self.available_requests:
                     api_start = time.time()
 
-                    filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
                     async with aiohttp.ClientSession() as session:
                         async with session.post(
                             "https://api.deepseek.com/v1/chat/completions",
@@ -67,7 +65,7 @@ class DeepSeekChatModel(InferenceAPIModel):
                             json={
                                 "model": model_id,
                                 "messages": prompt.openai_format(),
-                                **filtered_kwargs,
+                                **kwargs,
                             },
                         ) as response:
                             response_data = await response.json()

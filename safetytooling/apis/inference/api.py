@@ -238,15 +238,6 @@ class InferenceAPI:
         # Check NO_CACHE in secrets
         self.no_cache = no_cache or secrets.get("NO_CACHE", "false").lower() == "true"
 
-    def semaphore_method_decorator(func):
-        # unused but could be useful to debug if openai jamming comes back
-        @wraps(func)
-        async def wrapper(self, *args, **kwargs):
-            async with self.openai_semaphore:
-                return await func(self, *args, **kwargs)
-
-        return wrapper
-
     @classmethod
     def get_default_global_api(cls) -> Self:
         global _DEFAULT_GLOBAL_INFERENCE_API
@@ -354,7 +345,6 @@ class InferenceAPI:
         prompt: Prompt | BatchPrompt,
         audio_out_dir: str | Path = None,
         print_prompt_and_response: bool = False,
-        max_tokens: int | None = None,
         n: int = 1,
         max_attempts_per_api_call: int = 10,
         num_candidates_per_completion: int = 1,
@@ -374,9 +364,6 @@ class InferenceAPI:
                 Passing in multiple models could speed up the response time if one of the models is overloaded.
             prompt: The prompt to send to the model(s). Type should be Prompt.
             audio_out_dir : The directory where any audio output from the model (relevant for speech-to-speech models) should be saved
-            max_tokens: The maximum number of tokens to request from the API (argument added to
-                standardize the Anthropic and OpenAI APIs. For OpenAI this is renamed to max_completion_tokens before
-                being passed to the API).
             print_prompt_and_response: Whether to print the prompt and response to stdout.
             n: The number of completions to request.
             max_attempts_per_api_call: Passed to the underlying API call. If the API call fails (e.g. because the
@@ -399,28 +386,16 @@ class InferenceAPI:
         if isinstance(model_ids, str):
             model_ids = get_equivalent_model_ids(model_ids)
 
-        if "gpt-4o-s2s" in model_ids or model_ids == "gpt-4o-s2s":
-            assert audio_out_dir is not None, "audio_out_dir is required when using gpt-4o-s2s model!"
-
         model_classes = [self.model_id_to_class(model_id, gemini_use_vertexai) for model_id in model_ids]
         if len(set(str(type(x)) for x in model_classes)) != 1:
             raise ValueError("All model ids must be of the same type.")
-
-        # standardize max_tokens argument
         model_class = model_classes[0]
-
-        if max_tokens is not None:
-            if isinstance(model_class, OpenAIChatModel):
-                # OpenAI chat models use max_completion_tokens instead of max_tokens
-                kwargs["max_completion_tokens"] = max_tokens
-            else:
-                kwargs["max_tokens"] = max_tokens
-        elif isinstance(model_class, AnthropicChatModel):
-            # Default non-null value for Anthropic chat models
-            kwargs["max_tokens"] = 2000
 
         num_candidates = num_candidates_per_completion * n
 
+        assert "top_logprobs" not in kwargs, "top_logprobs is not supported, pass an integer with `logprobs` instead"
+
+        # used for caching and type checking
         llm_cache_params = LLMParams(
             model=model_ids,
             n=n,

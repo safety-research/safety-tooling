@@ -76,7 +76,7 @@ class DivaModel(BatchAudioModel):
     def __init__(self, model_name: str, prompt_history_dir: Path = None):
         super().__init__(model_name, prompt_history_dir)
         try:
-            from alm_inference.submodules.DiVA.eval.models.via import ParallelVIA
+            from DiVA.eval.models.via import ParallelVIA
 
             self.model = ParallelVIA("/workspace/pretrained_ckpts/DIVA/model-00001-of-00004.safetensors")
         except Exception as e:

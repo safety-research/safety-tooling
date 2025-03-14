@@ -32,7 +32,6 @@ class GraySwanChatModel(InferenceAPIModel):
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens"}
 
     async def __call__(
         self,
@@ -63,12 +62,11 @@ class GraySwanChatModel(InferenceAPIModel):
                 async with self.available_requests:
                     api_start = time.time()
 
-                    filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
                     response = await self.aclient.chat.completion.create(
                         messages=prompt.openai_format(),
                         model=model_id,
                         stream=False,
-                        **filtered_kwargs,
+                        **kwargs,
                     )
                     api_duration = time.time() - api_start
                     if not is_valid(response):

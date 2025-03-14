@@ -204,11 +204,11 @@ class OpenAIS2SModel(InferenceAPIModel):
         start = time.time()
         input_data = prompt.openai_s2s_format()
         assert isinstance(input_data, List), "Input data format must be a list!"
-        params = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
+
         try:
             api_start = time.time()
             audio_out_file, text_out = await self.run_query(
-                input_data=input_data, audio_out_dir=audio_out_dir, params=params
+                input_data=input_data, audio_out_dir=audio_out_dir, params=kwargs
             )
             api_duration = time.time() - api_start
         except Exception as e:
