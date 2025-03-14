@@ -24,14 +24,16 @@ class LLMParams(HashableBaseModel):
     logit_bias: dict[int, float] | None = None
     stop: list[str] | None = None
     model_config = pydantic.ConfigDict(extra="allow")  # Allow unknown kwargs e.g. response_format for OpenAI
-
+    unknown_kwargs: dict[str, Any] = pydantic.Field(default_factory=dict)
+    
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.unknown_kwargs = {
+        unknown_kwargs = {
             k: (v.model_dump() if isinstance(v, pydantic.BaseModel) else v)
             for k, v in kwargs.items()
             if k not in self.__annotations__
         }
+        kwargs = {k: v for k, v in kwargs.items() if k in self.__annotations__}
+        super().__init__(**kwargs, unknown_kwargs=unknown_kwargs)
 
 
 class StopReason(Enum):

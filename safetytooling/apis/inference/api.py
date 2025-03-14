@@ -12,7 +12,6 @@ from typing import Awaitable, Callable, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from dotenv import load_dotenv
 from tqdm.auto import tqdm
 from typing_extensions import Self
@@ -46,7 +45,7 @@ from .openai.embedding import OpenAIEmbeddingModel
 from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
-from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
+from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
 
@@ -217,19 +216,19 @@ class InferenceAPI:
             api_key=secrets["DEEPSEEK_API_KEY"] if "DEEPSEEK_API_KEY" in secrets else None,
         )
 
-        self._batch_audio_models = {}
+        self._batch_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
-        if torch.cuda.is_available() and use_gpu_models:
+        if use_gpu_models:
             for model_name in BATCHED_MODELS:
                 try:
-                    self._batch_audio_models[model_name] = BatchAudioModel(
+                    self._batch_models[model_name] = BatchModel(
                         model_name,
                         prompt_history_dir=self.prompt_history_dir,
                     )
                 except Exception as e:
                     print(f"Error loading {model_name} model: {e}")
-                    self._batch_audio_models[model_name] = None
+                    self._batch_models[model_name] = None
 
         self.running_cost: float = 0
         self.model_timings = {}
@@ -269,7 +268,7 @@ class InferenceAPI:
         elif model_id in GEMINI_MODELS:
             return self.select_gemini_model(gemini_use_vertexai)
         elif model_id in BATCHED_MODELS:
-            class_for_model = self._batch_audio_models[model_id]
+            class_for_model = self._batch_models[model_id]
             assert class_for_model is not None, f"Error loading class for {model_id}"
             return class_for_model
         elif model_id in S2S_MODELS:
@@ -480,7 +479,7 @@ class InferenceAPI:
                         **kwargs,
                     )
                     candidate_responses.extend(response)
-        elif isinstance(model_class, BatchAudioModel):
+        elif isinstance(model_class, BatchModel):
             if not isinstance(prompt, BatchPrompt):
                 raise ValueError(f"{model_class.__class__.__name__} requires a BatchPrompt input")
             candidate_responses = model_class(
