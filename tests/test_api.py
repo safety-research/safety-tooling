@@ -18,7 +18,7 @@ def test_default_global_api():
 async def test_openai():
     utils.setup_environment()
     resp = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_ids="gpt-4o-mini",
+        model_id="gpt-4o-mini",
         question="What is the meaning of life?",
         max_tokens=1,
         n=2,
@@ -33,7 +33,7 @@ async def test_openai():
 async def test_claude_3():
     utils.setup_environment()
     resp = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_ids="claude-3-haiku-20240307",
+        model_id="claude-3-haiku-20240307",
         question="What is the meaning of life?",
         max_tokens=1,
         n=2,
@@ -48,7 +48,7 @@ async def test_claude_3():
 async def test_claude_3_with_system_prompt():
     utils.setup_environment()
     resp = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_ids="claude-3-haiku-20240307",
+        model_id="claude-3-haiku-20240307",
         question="What is the meaning of life?",
         system_prompt="You are an AI assistant who has never read the Hitchhiker's Guide to the Galaxy.",
         max_tokens=1,
@@ -69,7 +69,7 @@ async def test_gpt4o_mini_2024_07_18_with_response_format():
         confidence: float
 
     resp = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_ids="gpt-4o-mini-2024-07-18",
+        model_id="gpt-4o-mini-2024-07-18",
         question="What is the meaning of life? Format your response as a JSON object with fields: answer (string) and confidence (float between 0 and 1).",
         max_tokens=100,
         n=2,
@@ -92,7 +92,7 @@ async def test_api_with_stop_parameter():
 
     # Test with OpenAI model
     openai_resp = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_ids="gpt-4o-mini-2024-07-18",
+        model_id="gpt-4o-mini-2024-07-18",
         question="Count from 1 to 10: 1, 2, 3,",
         max_tokens=20,
         stop=[", 5"],  # Should stop before outputting ", 5"
@@ -106,7 +106,7 @@ async def test_api_with_stop_parameter():
 
     # Test with Anthropic model
     anthropic_resp = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_ids="claude-3-haiku-20240307",
+        model_id="claude-3-haiku-20240307",
         question="Count from 1 to 10: 1, 2, 3,",
         max_tokens=20,
         stop=[", 5"],  # Should stop before outputting ", 5"

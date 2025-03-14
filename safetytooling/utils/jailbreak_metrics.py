@@ -42,7 +42,7 @@ class JailbreakMetrics:
 
         try:
             responses = await self.api.__call__(  # TODO: typehints, and return none
-                model_ids=model,
+                model_id=model,
                 n=n_samples,
                 temperature=temperature,
                 prompt=prompt,

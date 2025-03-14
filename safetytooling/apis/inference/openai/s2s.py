@@ -187,7 +187,7 @@ class OpenAIS2SModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: str | tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         audio_out_dir: str | Path,
         print_prompt_and_response: bool = False,
@@ -196,10 +196,6 @@ class OpenAIS2SModel(InferenceAPIModel):
     ) -> List[LLMResponse]:
 
         self.max_attempts = max_attempts
-
-        assert len(model_ids) == 1, "Implementation only supports one model at a time."
-
-        (model_id,) = model_ids
 
         start = time.time()
         input_data = prompt.openai_s2s_format()

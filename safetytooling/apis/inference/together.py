@@ -63,7 +63,7 @@ class TogetherChatModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
@@ -75,8 +75,6 @@ class TogetherChatModel(InferenceAPIModel):
                 "TOGETHER_API_KEY environment variable must be set in SECRETS before running your script"
             )
         start = time.time()
-        assert len(model_ids) == 1, "Together implementation only supports one model at a time."
-        (model_id,) = model_ids
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 

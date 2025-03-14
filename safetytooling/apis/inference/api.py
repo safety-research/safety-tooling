@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 from tqdm.auto import tqdm
 from typing_extensions import Self
 
-from safetytooling.apis.inference.openai.utils import get_equivalent_model_ids
 from safetytooling.data_models import (
     GEMINI_MODELS,
     BatchPrompt,
@@ -359,7 +358,7 @@ class InferenceAPI:
 
     async def __call__(
         self,
-        model_ids: str | tuple[str, ...],
+        model_id: str,
         prompt: Prompt | BatchPrompt,
         audio_out_dir: str | Path = None,
         print_prompt_and_response: bool = False,
@@ -377,11 +376,8 @@ class InferenceAPI:
         Make maximally efficient API requests for the specified model(s) and prompt.
 
         Args:
-            model_ids: The model(s) to call. If multiple models are specified, the output will be sampled from the
-                cheapest model that has capacity. All models must be from the same class (e.g. OpenAI Base,
-                OpenAI Chat, or Anthropic Chat). Anthropic chat will error if multiple models are passed in.
-                Passing in multiple models could speed up the response time if one of the models is overloaded.
-            prompt: The prompt to send to the model(s). Type should be Prompt.
+            model_id: The model to call.
+            prompt: The prompt to send to the model. Type should be Prompt.
             audio_out_dir : The directory where any audio output from the model (relevant for speech-to-speech models) should be saved
             print_prompt_and_response: Whether to print the prompt and response to stdout.
             n: The number of completions to request.
@@ -403,16 +399,7 @@ class InferenceAPI:
         if self.no_cache:
             use_cache = False
 
-        # trick to double rate limit for most recent model only
-        if isinstance(model_ids, str):
-            model_ids = get_equivalent_model_ids(model_ids)
-
-        model_classes = [
-            self.model_id_to_class(model_id, gemini_use_vertexai, force_provider) for model_id in model_ids
-        ]
-        if len(set(str(type(x)) for x in model_classes)) != 1:
-            raise ValueError("All model ids must be of the same type.")
-        model_class = model_classes[0]
+        model_class = self.model_id_to_class(model_id, gemini_use_vertexai, force_provider)
 
         num_candidates = num_candidates_per_completion * n
 
@@ -420,7 +407,7 @@ class InferenceAPI:
 
         # used for caching and type checking
         llm_cache_params = LLMParams(
-            model=model_ids,
+            model=model_id,
             n=n,
             insufficient_valids_behaviour=insufficient_valids_behaviour,
             num_candidates_per_completion=num_candidates_per_completion,
@@ -473,7 +460,7 @@ class InferenceAPI:
                     await asyncio.gather(
                         *[
                             model_class(
-                                model_ids,
+                                model_id,
                                 prompt,
                                 self.print_prompt_and_response or print_prompt_and_response,
                                 max_attempts_per_api_call,
@@ -491,7 +478,7 @@ class InferenceAPI:
             for _ in range(num_candidates):
                 async with self.gemini_semaphore:
                     response = await model_class(
-                        model_ids,
+                        model_id,
                         prompt,
                         self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call,
@@ -507,7 +494,7 @@ class InferenceAPI:
             if not isinstance(prompt, BatchPrompt):
                 raise ValueError(f"{model_class.__class__.__name__} requires a BatchPrompt input")
             candidate_responses = model_class(
-                model_ids=model_ids,
+                model_id=model_id,
                 batch_prompt=prompt,
                 print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call=max_attempts_per_api_call,
@@ -532,7 +519,7 @@ class InferenceAPI:
                     self.n_calls += 1
                     await self.gpt_4o_rate_limiter.acquire()
                     response = await model_class(
-                        model_ids=model_ids,
+                        model_id=model_id,
                         prompt=prompt,
                         audio_out_dir=audio_out_dir,
                         print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
@@ -544,7 +531,7 @@ class InferenceAPI:
         else:
             async with self.openai_semaphore:
                 candidate_responses = await model_class(
-                    model_ids,
+                    model_id,
                     prompt,
                     self.print_prompt_and_response or print_prompt_and_response,
                     max_attempts_per_api_call,
@@ -602,14 +589,14 @@ class InferenceAPI:
 
     async def ask_single_question(
         self,
-        model_ids: str | tuple[str, ...],
+        model_id: str,
         question: str,
         system_prompt: str | None = None,
         **api_kwargs,
     ) -> list[str]:
         """Wrapper around __call__ to ask a single question."""
         responses = await self(
-            model_ids=model_ids,
+            model_id=model_id,
             prompt=Prompt(
                 messages=(
                     [] if system_prompt is None else [ChatMessage(role=MessageRole.system, content=system_prompt)]
