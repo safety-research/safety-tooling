@@ -90,7 +90,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     response = await self.aclient.messages.create(
                         messages=chat_messages,
                         model=model_id,
-                        max_tokens=kwargs.get("max_tokens", 2000),
+                        max_tokens=kwargs.pop("max_tokens", 2000),
                         **kwargs,
                         **(dict(system=sys_prompt) if sys_prompt else {}),
                     )
