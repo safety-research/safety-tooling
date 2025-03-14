@@ -12,7 +12,7 @@ LOGGER = logging.getLogger(__name__)
 class InferenceAPIModel(Protocol):
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt,
         print_prompt_and_response: bool,
         max_attempts: int,

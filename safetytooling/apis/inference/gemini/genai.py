@@ -252,7 +252,7 @@ class GeminiModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
@@ -262,8 +262,7 @@ class GeminiModel(InferenceAPIModel):
     ) -> List[LLMResponse]:
         start = time.time()
 
-        for model_id in model_ids:
-            self.add_model_id(model_id)
+        self.add_model_id(model_id)
 
         async def attempt_api_call(model_id):
             async with self.lock:
@@ -289,7 +288,7 @@ class GeminiModel(InferenceAPIModel):
             # Update tracking of recitation retries by generate attempt (not at the prompt level)
             self.total_generate_calls += 1
             try:
-                responses = await attempt_api_call(model_ids[0])
+                responses = await attempt_api_call(model_id)
                 if (
                     responses is not None
                     and len([response for response in responses if is_valid(response)]) / len(responses)
@@ -316,7 +315,7 @@ class GeminiModel(InferenceAPIModel):
             LOGGER.info(f"Current recitation failure rate: {self.recitation_failure_rate* 100:.2f}")
             return [
                 LLMResponse(
-                    model_id=model_ids[0],
+                    model_id=model_id,
                     completion="",
                     stop_reason=GeminiStopReason.RECITATION,
                     safety_ratings={},

@@ -53,7 +53,7 @@ class AnthropicChatModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
@@ -61,9 +61,6 @@ class AnthropicChatModel(InferenceAPIModel):
         **kwargs,
     ) -> list[LLMResponse]:
         start = time.time()
-        assert len(model_ids) == 1, "Anthropic implementation only supports one model at a time."
-
-        (model_id,) = model_ids
 
         if prompt.contains_image():
             assert model_id in VISION_MODELS, f"Model {model_id} does not support images"
@@ -239,9 +236,7 @@ class AnthropicModelBatch:
         hash_str = prompt.model_hash()
         return f"{index}_{hash_str}"
 
-    def prompts_to_requests(
-        self, model_id: tuple[str, ...], prompts: list[Prompt], max_tokens: int, **kwargs
-    ) -> list[Request]:
+    def prompts_to_requests(self, model_id: str, prompts: list[Prompt], max_tokens: int, **kwargs) -> list[Request]:
         requests = []
         for i, prompt in enumerate(prompts):
             sys_prompt, chat_messages = prompt.anthropic_format()

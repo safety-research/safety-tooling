@@ -198,7 +198,7 @@ class GeminiVertexAIModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
@@ -208,8 +208,7 @@ class GeminiVertexAIModel(InferenceAPIModel):
     ) -> List[LLMResponse]:
         start = time.time()
 
-        for model_id in model_ids:
-            self.add_model_id(model_id)
+        self.add_model_id(model_id)
 
         async def attempt_api_call(model_id):
             async with self.lock:
@@ -235,7 +234,7 @@ class GeminiVertexAIModel(InferenceAPIModel):
 
         for i in range(max_attempts):
             try:
-                responses = await attempt_api_call(model_ids[0])
+                responses = await attempt_api_call(model_id)
                 if responses is not None and not all(is_valid(response) for response in responses):
                     raise RuntimeError(f"Invalid responses according to is_valid {responses}")
             except (TypeError, InvalidArgument) as e:

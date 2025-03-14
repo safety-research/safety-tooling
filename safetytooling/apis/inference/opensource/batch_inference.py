@@ -27,7 +27,7 @@ class BatchModel(InferenceAPIModel):
 
     def __call__(
         self,
-        model_ids: str | tuple[str, ...],
+        model_id: str,
         batch_prompt: BatchPrompt,
         print_prompt_and_response: bool,
         max_attempts_per_api_call: int,
@@ -35,9 +35,6 @@ class BatchModel(InferenceAPIModel):
         is_valid: Callable[[str], bool] = lambda _: True,
         **kwargs,
     ) -> list[LLMResponse]:
-        assert len(model_ids) == 1, "Implementation only supports one model at a time."
-        (model_id,) = model_ids
-
         start = time.time()
         batch, text_batch, system_prompts = batch_prompt.batch_format()
 

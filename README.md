@@ -139,7 +139,6 @@ python -m safetytooling.apis.inference.usage.usage_anthropic
         - The cache implementation is automatically selected based on the `REDIS_CACHE` environment variable.
         - **No Cache:** Set `NO_CACHE=True` as an environment variable to disable all caching. This is equivalent to setting `use_cache=False` when initialising an InferenceAPI or BatchInferenceAPI object.
     - **Prompt Logging:** For debugging, human-readable `.txt` files are can be output in `$exp_dir/prompt_history` and timestamped for easy reference (off by default). You can also pass `print_prompt_and_response` to the api object to print coloured messages to the terminal.
-    - Ability to double the rate limit if you pass a list of models e.g. `["gpt-3.5-turbo", "gpt-3.5-turbo-0613"]`
     - Manages rate limits efficiently for OpenAI bypassing the need for exponential backoff.
     - Number of concurrent threads can be customised when initialising the api object for each provider (e.g. `openai_num_threads`, `anthropic_num_threads`). Furthermore, the fraction of the OpenAI rate limit can be specified (e.g. only using 50% rate limit by setting `openai_fraction_rate_limit=0.5`.
     - When initialising the API it checks how much OpenAI rate limit is available and sets caps based on that.

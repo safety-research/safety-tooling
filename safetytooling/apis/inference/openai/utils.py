@@ -195,7 +195,7 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
         case "babbage-002" | "davinci-002" | "text-davinci-003" | "text-davinci-002":
             return 250_000, 3_000
         case _:
-            raise ValueError(f"Invalid model id: {model_id}")
+            return 1_000_000, 10_000  # default to smaller rate limit for unknown models
 
 
 def price_per_token(model_id: str) -> tuple[float, float]:
@@ -270,7 +270,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
     elif model_id == "gpt-3.5-turbo-instruct" or model_id == "gpt-3.5-turbo-instruct-0914":
         prices = 1.5, 2
     else:
-        raise ValueError(f"Invalid model id: {model_id}")
+        prices = 0, 0  # default to 0 price for unknown models
 
     return tuple(price / 1_000_000 for price in prices)
 
@@ -304,60 +304,3 @@ def finetune_price_per_token(model_id: str) -> float | None:
             return 0.0004
         case _:
             return None
-
-
-def get_equivalent_model_ids(model_id: str) -> tuple[str, ...]:
-    """
-    Updated 2024-04-25 by Tony. This should be periodically updated.
-    """
-
-    # https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo#o1
-    o1_models = ("o1", "o1-2024-12-17")
-    if model_id in o1_models:
-        return o1_models
-    o1_mini_models = ("o1-mini", "o1-mini-2024-09-12")
-    if model_id in o1_mini_models:
-        return o1_mini_models
-    o1_preview_models = ("o1-preview", "o1-preview-2024-09-12")
-    if model_id in o1_preview_models:
-        return o1_preview_models
-    o3_mini_models = ("o3-mini", "o3-mini-2025-01-31")
-    if model_id in o3_mini_models:
-        return o3_mini_models
-
-    # https://platform.openai.com/docs/models/gpt-3-5
-    gpt_3_5_turbo_models = ("gpt-3.5-turbo", "gpt-3.5-turbo-0125")
-    if model_id in gpt_3_5_turbo_models:
-        return gpt_3_5_turbo_models
-    gpt_3_5_turbo_16k_models = ("gpt-3.5-turbo-16k", "gpt-3.5-turbo-16k-0613")
-    if model_id in gpt_3_5_turbo_16k_models:
-        return gpt_3_5_turbo_16k_models
-    gpt_3_5_turbo_instruct_models = ("gpt-3.5-turbo-instruct", "gpt-3.5-turbo-instruct-0914")
-    if model_id in gpt_3_5_turbo_instruct_models:
-        return gpt_3_5_turbo_instruct_models
-
-    # https://platform.openai.com/docs/models/gpt-4o
-    gpt_4o_models = ("gpt-4o", "gpt-4o-2024-08-06")
-    if model_id in gpt_4o_models:
-        return gpt_4o_models
-
-    # https://platform.openai.com/docs/models/gpt-4o-mini
-    gpt_4o_mini_models = ("gpt-4o-mini", "gpt-4o-mini-2024-07-18")
-    if model_id in gpt_4o_mini_models:
-        return gpt_4o_mini_models
-
-    # https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo
-    gpt_4_models = ("gpt-4", "gpt-4-0613")
-    if model_id in gpt_4_models:
-        return gpt_4_models
-    gpt_4_32k_models = ("gpt-4-32k", "gpt-4-32k-0613")
-    if model_id in gpt_4_32k_models:
-        return gpt_4_32k_models
-    gpt4t_models = ("gpt-4-turbo", "gpt-4-turbo-2024-04-09")
-    if model_id in gpt4t_models:
-        return gpt4t_models
-    gpt4tp_models = ("gpt-4-turbo-preview", "gpt-4-0125-preview")
-    if model_id in gpt4tp_models:
-        return gpt4t_models
-
-    return (model_id,)
