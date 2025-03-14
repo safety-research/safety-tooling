@@ -236,6 +236,19 @@ class InferenceAPI:
         # Check NO_CACHE in secrets
         self.no_cache = no_cache or secrets.get("NO_CACHE", "false").lower() == "true"
 
+        self.provider_to_class = {
+            "openai_completion": self._openai_completion,
+            "openai": self._openai_chat,
+            "anthropic": self._anthropic_chat,
+            "huggingface": self._huggingface,
+            "gemini": self._gemini_genai,
+            "batch_gpu": self._batch_models,
+            "openai_s2s": self._openai_s2s,
+            "together": self._together,
+            "vllm": self._vllm,
+            "deepseek": self._deepseek,
+        }
+
     @classmethod
     def get_default_global_api(cls) -> Self:
         global _DEFAULT_GLOBAL_INFERENCE_API
@@ -253,18 +266,23 @@ class InferenceAPI:
         else:
             return self._gemini_genai
 
-    def model_id_to_class(self, model_id: str, gemini_use_vertexai: bool = False) -> InferenceAPIModel:
-        if model_id in COMPLETION_MODELS:
+    def model_id_to_class(
+        self, model_id: str, gemini_use_vertexai: bool = False, force_provider: str | None = None
+    ) -> InferenceAPIModel:
+        if force_provider is not None:
+            assert force_provider in self.provider_to_class, f"Invalid force_provider: {force_provider}"
+            return self.provider_to_class[force_provider]
+        elif model_id in COMPLETION_MODELS:
             return self._openai_completion
-        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt"):
+        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt") or model_id.startswith("gpt"):
             return self._openai_chat
-        elif model_id in ANTHROPIC_MODELS:
+        elif model_id in ANTHROPIC_MODELS or model_id.startswith("claude"):
             return self._anthropic_chat
         elif model_id in HUGGINGFACE_MODELS:
             return self._huggingface
         elif model_id in GRAYSWAN_MODELS:
             return self._gray_swan
-        elif model_id in GEMINI_MODELS:
+        elif model_id in GEMINI_MODELS or model_id.startswith("gemini"):
             return self.select_gemini_model(gemini_use_vertexai)
         elif model_id in BATCHED_MODELS:
             class_for_model = self._batch_models[model_id]
@@ -276,11 +294,13 @@ class InferenceAPI:
             return self._together
         elif model_id in VLLM_MODELS:
             return self._vllm
-        elif model_id in DEEPSEEK_MODELS:  # Add this condition
+        elif model_id in DEEPSEEK_MODELS:
             return self._deepseek
         elif self.use_vllm_if_model_not_found:
             return self._vllm
-        raise ValueError(f"Invalid model id: {model_id}")
+        raise ValueError(
+            f"Invalid model id: {model_id}. Pass openai_completion, openai_chat, anthropic, huggingface, gemini, batch_gpu, openai_s2s, together, vllm, or deepseek to force a provider."
+        )
 
     async def check_rate_limit(self, wait_time=60):
         current_time = time.time()
@@ -349,6 +369,7 @@ class InferenceAPI:
         is_valid: Callable[[str], bool] = lambda _: True,
         insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry",
         gemini_use_vertexai: bool = False,
+        force_provider: str | None = None,
         use_cache: bool = True,
         **kwargs,
     ) -> list[LLMResponse]:
@@ -376,6 +397,8 @@ class InferenceAPI:
                 - continue: return the valid responses, even if they are fewer than n
                 - pad_invalids: pad the list with invalid responses up to n
                 - retry: retry the API call until n valid responses are found
+            force_provider: If specified, force the API call to use the specified provider.
+            use_cache: Whether to use the cache.
         """
         if self.no_cache:
             use_cache = False
@@ -384,7 +407,9 @@ class InferenceAPI:
         if isinstance(model_ids, str):
             model_ids = get_equivalent_model_ids(model_ids)
 
-        model_classes = [self.model_id_to_class(model_id, gemini_use_vertexai) for model_id in model_ids]
+        model_classes = [
+            self.model_id_to_class(model_id, gemini_use_vertexai, force_provider) for model_id in model_ids
+        ]
         if len(set(str(type(x)) for x in model_classes)) != 1:
             raise ValueError("All model ids must be of the same type.")
         model_class = model_classes[0]
