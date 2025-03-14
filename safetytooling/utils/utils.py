@@ -9,10 +9,9 @@ import textwrap
 import threading
 from collections import defaultdict
 from pathlib import Path
-from typing import IO, Any, Callable, Sequence
+from typing import IO, Any, Callable
 
 import git
-import IPython.display
 import jsonlines
 import pandas as pd
 import yaml
@@ -317,43 +316,6 @@ def hash_str(s: str) -> str:
     """Returns base64-encoded SHA-256 hash of the input string."""
     digest = hashlib.sha256(s.encode()).digest()
     return base64.b64encode(digest).decode()
-
-
-def display_raw_text(text: str):
-    IPython.display.display(
-        IPython.display.Markdown(f"~~~text\n{text}\n~~~"),
-    )
-
-
-def display_content_block_v2(
-    content: Sequence[tuple[bool, bool | None, str, str]],
-    title: str | None = None,
-):
-    assert len(content) > 0
-
-    content_to_disp = ""
-    if title is not None:
-        content_to_disp += f'<div style="font-size:12pt">{title}</div>\n'
-
-    for collapsible, keep_open, key, val in content:
-        if content_to_disp != "":
-            content_to_disp += "<br>"
-
-        if collapsible:
-            assert keep_open is not None
-            content_to_disp += f"""\
-<details {'open' if keep_open else ''}>
-<summary><tt>{key}</tt></summary>
-
-~~~text
-{val}
-~~~
-</details>
-"""
-        else:
-            content_to_disp += f"<tt> {key}: {val} </tt>\n"
-
-    IPython.display.display(IPython.display.Markdown(content_to_disp))
 
 
 def load_jsonl_df(input_file: Path) -> pd.DataFrame:
