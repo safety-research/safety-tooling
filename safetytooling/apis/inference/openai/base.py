@@ -79,10 +79,6 @@ class OpenAIModel(InferenceAPIModel):
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
 
     @staticmethod
-    def _assert_valid_id(model_id: str):
-        raise NotImplementedError
-
-    @staticmethod
     async def _get_dummy_response_header(model_id: str):
         raise NotImplementedError
 
@@ -101,7 +97,6 @@ class OpenAIModel(InferenceAPIModel):
         return len(self.tokenizer.encode(text))
 
     async def add_model_id(self, model_id: str):
-        self._assert_valid_id(model_id)
         if model_id in self.model_ids:
             return
 
@@ -167,7 +162,7 @@ class OpenAIModel(InferenceAPIModel):
                 responses = await attempt_api_call()
                 if responses is not None and not all(is_valid(response.completion) for response in responses):
                     raise RuntimeError(f"Invalid responses according to is_valid {responses}")
-            except TypeError as e:
+            except (TypeError, openai.NotFoundError) as e:
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"

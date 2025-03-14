@@ -236,7 +236,7 @@ class Prompt(HashableBaseModel):
                 return rendered_prompt
 
             case _:
-                raise ValueError(f"Unsupported model {hf_model_id}")
+                return self.openai_format()
 
     def openai_format(
         self,

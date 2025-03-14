@@ -14,16 +14,12 @@ from safetytooling.data_models import LLMResponse, Prompt
 from safetytooling.utils import math_utils
 
 from .base import OpenAIModel
-from .utils import GPT_CHAT_MODELS, VISION_MODELS, get_rate_limit, price_per_token
+from .utils import get_rate_limit, price_per_token
 
 LOGGER = logging.getLogger(__name__)
 
 
 class OpenAIChatModel(OpenAIModel):
-    def _assert_valid_id(self, model_id: str):
-        if "ft:" in model_id:
-            model_id = model_id.split(":")[1]
-        assert model_id in GPT_CHAT_MODELS, f"Invalid model id: {model_id}"
 
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
@@ -88,9 +84,6 @@ class OpenAIChatModel(OpenAIModel):
 
     async def _make_api_call(self, prompt: Prompt, model_id, start_time, **kwargs) -> list[LLMResponse]:
         LOGGER.debug(f"Making {model_id} call")
-
-        if prompt.contains_image():
-            assert model_id in VISION_MODELS, f"Model {model_id} does not support images"
 
         # convert completion logprobs api to chat logprobs api
         if "logprobs" in kwargs:
