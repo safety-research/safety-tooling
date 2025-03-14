@@ -27,15 +27,16 @@ class LLMParams(HashableBaseModel):
     unknown_kwargs: dict[str, Any] = pydantic.Field(default_factory=dict)
 
     def __init__(self, **kwargs):
-        # convert response_format to a string if it's a class
-        if isinstance(kwargs.get("response_format"), type):
-            rf = kwargs["response_format"]
-            kwargs["response_format"] = f"{rf.__name__} {list(rf.__annotations__.keys())}"
+        # convert response_format to a string if it's a class so it can be serialized during hashing
+        response_format = kwargs.get("response_format")
+        if isinstance(response_format, type):
+            kwargs["response_format"] = f"{response_format.__name__} {list(response_format.__annotations__.keys())}"
 
-        unknown_kwargs = {k: v for k, v in kwargs.items() if k not in self.__annotations__}
         known_kwargs = {k: v for k, v in kwargs.items() if k in self.__annotations__}
-        kwargs = {**known_kwargs, "unknown_kwargs": unknown_kwargs}
-        super().__init__(**kwargs)
+        unknown_kwargs = {k: v for k, v in kwargs.items() if k not in self.__annotations__}
+        known_kwargs.update({"unknown_kwargs": unknown_kwargs})
+
+        super().__init__(**known_kwargs)
 
 
 class StopReason(Enum):
