@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import time
-from itertools import cycle
 from pathlib import Path
 from traceback import format_exc
 from typing import Optional
@@ -12,7 +11,7 @@ import tiktoken
 from safetytooling.data_models import LLMResponse
 
 from ..model import InferenceAPIModel
-from .utils import COMPLETION_MODELS, price_per_token
+from .utils import COMPLETION_MODELS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -80,10 +79,6 @@ class OpenAIModel(InferenceAPIModel):
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
 
     @staticmethod
-    def _assert_valid_id(model_id: str):
-        raise NotImplementedError
-
-    @staticmethod
     async def _get_dummy_response_header(model_id: str):
         raise NotImplementedError
 
@@ -102,7 +97,6 @@ class OpenAIModel(InferenceAPIModel):
         return len(self.tokenizer.encode(text))
 
     async def add_model_id(self, model_id: str):
-        self._assert_valid_id(model_id)
         if model_id in self.model_ids:
             return
 
@@ -131,7 +125,7 @@ class OpenAIModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
@@ -141,42 +135,34 @@ class OpenAIModel(InferenceAPIModel):
         start = time.time()
 
         async def attempt_api_call():
-            for model_id in cycle(model_ids):
-                async with self.lock_consume:
-                    request_capacity, token_capacity = (
-                        self.request_capacity[model_id],
-                        self.token_capacity[model_id],
-                    )
-                    if request_capacity.geq(1) and token_capacity.geq(token_count):
-                        request_capacity.consume(1)
-                        token_capacity.consume(token_count)
-                    else:
-                        await asyncio.sleep(0.01)
-                        continue  # Skip this iteration if the condition isn't met
-
-                # Make the API call outside the lock
-                return await asyncio.wait_for(
-                    self._make_api_call(prompt, model_id, start, **kwargs),
-                    timeout=1200,
+            async with self.lock_consume:
+                request_capacity, token_capacity = (
+                    self.request_capacity[model_id],
+                    self.token_capacity[model_id],
                 )
+                if request_capacity.geq(1) and token_capacity.geq(token_count):
+                    request_capacity.consume(1)
+                    token_capacity.consume(token_count)
+                else:
+                    await asyncio.sleep(0.01)
 
-        model_ids = tuple(
-            sorted(model_ids, key=lambda model_id: price_per_token(model_id))
-        )  # Default to cheapest model
+            # Make the API call outside the lock
+            return await asyncio.wait_for(
+                self._make_api_call(prompt, model_id, start, **kwargs),
+                timeout=1200,
+            )
+
         async with self.lock_add:
-            for model_id in model_ids:
-                await self.add_model_id(model_id)
+            await self.add_model_id(model_id)
         token_count = self._count_prompt_token_capacity(prompt, **kwargs)
-        assert (
-            max(self.token_capacity[model_id].refresh_rate for model_id in model_ids) >= token_count
-        ), "Prompt is too long for any model to handle."
+        assert self.token_capacity[model_id].refresh_rate >= token_count, "Prompt is too long for any model to handle."
         responses: Optional[list[LLMResponse]] = None
         for i in range(max_attempts):
             try:
                 responses = await attempt_api_call()
                 if responses is not None and not all(is_valid(response.completion) for response in responses):
                     raise RuntimeError(f"Invalid responses according to is_valid {responses}")
-            except TypeError as e:
+            except (TypeError, openai.NotFoundError) as e:
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"

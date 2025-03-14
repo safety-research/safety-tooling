@@ -11,7 +11,7 @@ from .hashable import HashableBaseModel
 
 
 class LLMParams(HashableBaseModel):
-    model: str | tuple[str, ...]
+    model: str
     n: int = 1
     num_candidates_per_completion: int = 1
     insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry"

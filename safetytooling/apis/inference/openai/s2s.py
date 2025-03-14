@@ -187,7 +187,7 @@ class OpenAIS2SModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: str | tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         audio_out_dir: str | Path,
         print_prompt_and_response: bool = False,
@@ -195,11 +195,11 @@ class OpenAIS2SModel(InferenceAPIModel):
         **kwargs,
     ) -> List[LLMResponse]:
 
+        assert (
+            model_id == "gpt-4o-realtime-preview-2024-10-01"
+        ), "Only gpt-4o-realtime-preview-2024-10-01 is supported for OpenAI S2S"
+
         self.max_attempts = max_attempts
-
-        assert len(model_ids) == 1, "Implementation only supports one model at a time."
-
-        (model_id,) = model_ids
 
         start = time.time()
         input_data = prompt.openai_s2s_format()

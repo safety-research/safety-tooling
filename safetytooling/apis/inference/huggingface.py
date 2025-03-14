@@ -103,21 +103,23 @@ class HuggingFaceModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
         is_valid=lambda x: True,
+        model_url: str | None = None,
         **kwargs,
     ) -> list[LLMResponse]:
         assert self.token is not None and self.token.startswith("hf_"), f"Invalid token {self.token}"
 
         start = time.time()
-        assert len(model_ids) == 1, "Implementation only supports one model at a time."
 
-        (model_id,) = model_ids
-        assert model_id in HUGGINGFACE_MODELS, f"Model {model_id} not supported"
-        model_url = HUGGINGFACE_MODELS[model_id]
+        if model_id not in HUGGINGFACE_MODELS:
+            assert model_url is not None, f"Please pass in a model_url for {model_id}"
+        else:
+            model_url = HUGGINGFACE_MODELS[model_id]
+
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
         for k, v in self.kwarg_change_name.items():

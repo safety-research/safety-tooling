@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 class ExperimentConfig(ExperimentConfigBase):
     """Get responses to requests."""
 
-    model_ids: tuple[str, ...] = ("claude-3-5-sonnet-20241022",)
+    model_id: str = "claude-3-5-sonnet-20241022"
     batch: bool = True
     num_repeats: int = 10
     limit_dataset: int | None = None
@@ -75,11 +75,11 @@ async def main(cfg: ExperimentConfig):
                 batch_dir = output_dir / f"repeat_{repeat}" / f"batch_{i}"
                 batch_dir.mkdir(parents=True, exist_ok=True)
 
-                async def batch_task(model_ids, prompts, batch_dir):
+                async def batch_task(model_id, prompts, batch_dir):
                     batch_start_time = time.time()
                     print(f"Starting batch {batch_dir}")
                     responses, batch_id = await batch_model(
-                        model_ids=model_ids, prompts=prompts, max_tokens=200, log_dir=batch_dir
+                        model_id=model_id, prompts=prompts, max_tokens=200, log_dir=batch_dir
                     )
                     batch_end_time = time.time()
                     batch_duration = batch_end_time - batch_start_time
@@ -98,7 +98,7 @@ async def main(cfg: ExperimentConfig):
                         "num_prompts": len(prompts),
                     }
 
-                batch_tasks.append(batch_task(cfg.model_ids, batch_prompts, batch_dir))
+                batch_tasks.append(batch_task(cfg.model_id, batch_prompts, batch_dir))
 
             batch_results = await asyncio.gather(*batch_tasks)
 
@@ -148,7 +148,7 @@ async def main(cfg: ExperimentConfig):
 
                 batch_start_time = time.time()
                 batch_responses = await asyncio.gather(
-                    *[cfg.api(model_ids=cfg.model_ids, prompt=prompt, max_tokens=200) for prompt in batch_prompts]
+                    *[cfg.api(model_id=cfg.model_id, prompt=prompt, max_tokens=200) for prompt in batch_prompts]
                 )
                 batch_end_time = time.time()
 
