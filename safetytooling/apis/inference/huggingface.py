@@ -119,7 +119,7 @@ class HuggingFaceModel(InferenceAPIModel):
         assert model_id in HUGGINGFACE_MODELS, f"Model {model_id} not supported"
         model_url = HUGGINGFACE_MODELS[model_id]
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
-        
+
         for k, v in self.kwarg_change_name.items():
             if k in kwargs:
                 kwargs[v] = kwargs[k]
@@ -155,6 +155,8 @@ class HuggingFaceModel(InferenceAPIModel):
                         response_data = [response_data]
                     if not is_valid(response_data[0]["generated_text"]):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
 

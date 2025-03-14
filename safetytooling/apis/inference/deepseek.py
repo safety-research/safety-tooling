@@ -78,7 +78,8 @@ class DeepSeekChatModel(InferenceAPIModel):
                     if not is_valid(response_data["choices"][0]["message"]["content"]):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
                     break
-
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

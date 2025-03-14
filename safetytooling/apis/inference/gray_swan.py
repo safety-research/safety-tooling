@@ -71,6 +71,8 @@ class GraySwanChatModel(InferenceAPIModel):
                     api_duration = time.time() - api_start
                     if not is_valid(response):
                         raise RuntimeError(f"Invalid response according to is_valid {response}")
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

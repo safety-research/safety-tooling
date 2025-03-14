@@ -92,7 +92,7 @@ class TogetherChatModel(InferenceAPIModel):
         for i in range(max_attempts):
             try:
                 async with self.available_requests:
-                    api_start = time.time()                    
+                    api_start = time.time()
 
                     response_data = await self.aclient.chat.completions.create(
                         messages=prompt.openai_format(),
@@ -102,6 +102,8 @@ class TogetherChatModel(InferenceAPIModel):
                     api_duration = time.time() - api_start
                     if not is_valid(response_data):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

@@ -118,7 +118,6 @@ class VLLMChatModel(InferenceAPIModel):
             try:
                 async with self.available_requests:
                     api_start = time.time()
-                    
 
                     response_data = await self.run_query(
                         model_url,
@@ -134,7 +133,8 @@ class VLLMChatModel(InferenceAPIModel):
                     if not all(is_valid(choice["message"]["content"]) for choice in response_data["choices"]):
                         LOGGER.error(f"Invalid responses according to is_valid {response_data}")
                         raise RuntimeError(f"Invalid responses according to is_valid {response_data}")
-
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
