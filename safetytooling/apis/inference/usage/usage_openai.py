@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import os
 
 import requests
 import simple_parsing
@@ -53,11 +54,10 @@ def fetch_ratelimit_usage_base(api_key, model_name) -> float:
 
 
 def get_current_openai_model_usage(models, openai_tags) -> None:
-    secrets = utils.load_secrets("SECRETS")
     print("\nModel usage: 1 is hitting rate limits, 0 is not in use. -1 is error.\n")
     for openai_tag in openai_tags:
         print(f"{openai_tag}:")
-        api_key = secrets[openai_tag]
+        api_key = os.environ[openai_tag]
         for model_name in models:
             usage = fetch_ratelimit_usage(api_key, model_name)
             print(f"\t{model_name}:\t{usage:.2f}")

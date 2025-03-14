@@ -43,9 +43,7 @@ class GraySwanChatModel(InferenceAPIModel):
         **kwargs,
     ) -> list[LLMResponse]:
         if self.aclient is None:
-            raise RuntimeError(
-                "GRAYSWAN_API_KEY environment variable must be set in SECRETS before running your script"
-            )
+            raise RuntimeError("GRAYSWAN_API_KEY environment variable must be set in .env before running your script")
         start = time.time()
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)

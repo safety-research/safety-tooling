@@ -105,7 +105,7 @@ class GeminiModel(InferenceAPIModel):
     ) -> Tuple[str, List[genai.types.file_types.File]]:
         if not self.is_initialized:
             raise RuntimeError(
-                "Gemini is not initialized. Please set GOOGLE_API_KEY in SECRETS before running your script"
+                "Gemini is not initialized. Please set GOOGLE_API_KEY in .env before running your script"
             )
         if generation_config:
             model = genai.GenerativeModel(

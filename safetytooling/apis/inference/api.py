@@ -11,7 +11,6 @@ from typing import Awaitable, Callable, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-from dotenv import load_dotenv
 from tqdm.auto import tqdm
 from typing_extensions import Self
 
@@ -27,7 +26,7 @@ from safetytooling.data_models import (
     Prompt,
     TaggedModeration,
 )
-from safetytooling.utils.utils import get_repo_root, load_secrets, setup_environment
+from safetytooling.utils.utils import get_repo_root
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
 from .cache_manager import BaseCacheManager, get_cache_manager
@@ -46,8 +45,6 @@ from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
-
-load_dotenv()
 
 LOGGER = logging.getLogger(__name__)
 
@@ -126,10 +123,9 @@ class InferenceAPI:
         # can also set via env var
         if os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "false").lower() == "true":
             self.print_prompt_and_response = True
-        secrets = load_secrets("SECRETS")
         if prompt_history_dir == "default":
-            if "PROMPT_HISTORY_DIR" in secrets:
-                self.prompt_history_dir = Path(secrets["PROMPT_HISTORY_DIR"])
+            if "PROMPT_HISTORY_DIR" in os.environ:
+                self.prompt_history_dir = Path(os.environ["PROMPT_HISTORY_DIR"])
             else:
                 self.prompt_history_dir = get_repo_root() / ".prompt_history"
         else:
@@ -137,8 +133,8 @@ class InferenceAPI:
             self.prompt_history_dir = prompt_history_dir
 
         if cache_dir == "default":
-            if "CACHE_DIR" in secrets:
-                self.cache_dir = Path(secrets["CACHE_DIR"])
+            if "CACHE_DIR" in os.environ:
+                self.cache_dir = Path(os.environ["CACHE_DIR"])
             else:
                 self.cache_dir = get_repo_root() / ".cache"
         else:
@@ -146,7 +142,7 @@ class InferenceAPI:
             self.cache_dir = cache_dir
 
         self.cache_manager: BaseCacheManager | None = None
-        self.use_redis = use_redis or secrets.get("REDIS_CACHE", "false").lower() == "true"
+        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         if self.cache_dir is not None:
             self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
             print(f"{self.cache_manager=}")
@@ -179,19 +175,19 @@ class InferenceAPI:
         self._huggingface = HuggingFaceModel(
             num_threads=self.huggingface_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            token=secrets["HF_API_KEY"] if "HF_API_KEY" in secrets else None,
+            token=os.environ.get("HF_API_KEY", None),
         )
 
         self._gray_swan = GraySwanChatModel(
             num_threads=self.gray_swan_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=secrets["GRAYSWAN_API_KEY"] if "GRAYSWAN_API_KEY" in secrets else None,
+            api_key=os.environ.get("GRAYSWAN_API_KEY", None),
         )
 
         self._together = TogetherChatModel(
             num_threads=self.together_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=secrets["TOGETHER_API_KEY"] if "TOGETHER_API_KEY" in secrets else None,
+            api_key=os.environ.get("TOGETHER_API_KEY", None),
         )
 
         self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
@@ -211,7 +207,7 @@ class InferenceAPI:
         self._deepseek = DeepSeekChatModel(
             num_threads=self.deepseek_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=secrets["DEEPSEEK_API_KEY"] if "DEEPSEEK_API_KEY" in secrets else None,
+            api_key=os.environ.get("DEEPSEEK_API_KEY", None),
         )
 
         self._batch_models = {}
@@ -232,8 +228,8 @@ class InferenceAPI:
         self.model_timings = {}
         self.model_wait_times = {}
 
-        # Check NO_CACHE in secrets
-        self.no_cache = no_cache or secrets.get("NO_CACHE", "false").lower() == "true"
+        # Check NO_CACHE in os.environ
+        self.no_cache = no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
 
         self.provider_to_class = {
             "openai_completion": self._openai_completion,
@@ -726,7 +722,6 @@ class InferenceAPI:
 
 
 async def demo():
-    setup_environment()
     model_api = InferenceAPI()
 
     prompt_examples = [
