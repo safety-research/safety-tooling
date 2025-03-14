@@ -78,7 +78,6 @@ class OpenAIChatModel(OpenAIModel):
 
         for item in data.content:
             # <|end|> is known to be duplicated on gpt-4-turbo-2024-04-09
-            # See experiments/sample-notebooks/api-tests/logprob-dup-tokens.ipynb for details
             possibly_duplicated_top_logprobs = collections.defaultdict(list)
             for top_logprob in item.top_logprobs:
                 possibly_duplicated_top_logprobs[top_logprob.token].append(top_logprob.logprob)
@@ -87,36 +86,41 @@ class OpenAIChatModel(OpenAIModel):
 
         return top_logprobs
 
-    async def _make_api_call(self, prompt: Prompt, model_id, start_time, **params) -> list[LLMResponse]:
+    async def _make_api_call(self, prompt: Prompt, model_id, start_time, **kwargs) -> list[LLMResponse]:
         LOGGER.debug(f"Making {model_id} call")
 
         if prompt.contains_image():
             assert model_id in VISION_MODELS, f"Model {model_id} does not support images"
 
         # convert completion logprobs api to chat logprobs api
-        if "logprobs" in params:
-            params["top_logprobs"] = params["logprobs"]
-            params["logprobs"] = True
+        if "logprobs" in kwargs:
+            kwargs["top_logprobs"] = kwargs["logprobs"]
+            kwargs["logprobs"] = True
+
+        # max tokens is deprecated in favor of max_completion_tokens
+        if "max_tokens" in kwargs:
+            kwargs["max_completion_tokens"] = kwargs["max_tokens"]
+            del kwargs["max_tokens"]
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
         api_start = time.time()
 
         # Choose between parse and create based on response format
         if (
-            "response_format" in params
-            and isinstance(params["response_format"], type)
-            and issubclass(params["response_format"], pydantic.BaseModel)
+            "response_format" in kwargs
+            and isinstance(kwargs["response_format"], type)
+            and issubclass(kwargs["response_format"], pydantic.BaseModel)
         ):
             api_func = self.aclient.beta.chat.completions.parse
             LOGGER.info(
-                f"Using parse API because response_format: {params['response_format']} is of type {type(params['response_format'])}"
+                f"Using parse API because response_format: {kwargs['response_format']} is of type {type(kwargs['response_format'])}"
             )
         else:
             api_func = self.aclient.chat.completions.create
         api_response: openai.types.chat.ChatCompletion = await api_func(
             messages=prompt.openai_format(),
             model=model_id,
-            **params,
+            **kwargs,
         )
         api_duration = time.time() - api_start
         duration = time.time() - start_time
@@ -141,14 +145,11 @@ class OpenAIChatModel(OpenAIModel):
         self,
         prompt: Prompt,
         model_id,
-        **params,
+        **kwargs,
     ) -> openai.AsyncStream[openai.types.chat.ChatCompletionChunk]:
-        # TODO(tony): Can eventually wrap this in an async generator and keep
-        #             track of cost. Will need to do this in the parent API
-        #             class.
         return await self.aclient.chat.completions.create(
             messages=prompt.openai_format(),
             model=model_id,
             stream=True,
-            **params,
+            **kwargs,
         )

@@ -176,6 +176,8 @@ class OpenAIModel(InferenceAPIModel):
                 responses = await attempt_api_call()
                 if responses is not None and not all(is_valid(response.completion) for response in responses):
                     raise RuntimeError(f"Invalid responses according to is_valid {responses}")
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

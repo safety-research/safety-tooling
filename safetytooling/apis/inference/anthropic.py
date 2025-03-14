@@ -49,7 +49,7 @@ class AnthropicChatModel(InferenceAPIModel):
             self.aclient = AsyncAnthropic()
 
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "thinking", "stop"}
+        self.kwarg_change_name = {"stop": "stop_sequences"}
 
     async def __call__(
         self,
@@ -68,10 +68,11 @@ class AnthropicChatModel(InferenceAPIModel):
         if prompt.contains_image():
             assert model_id in VISION_MODELS, f"Model {model_id} does not support images"
 
-        filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
-        if "stop" in kwargs:
-            filtered_kwargs["stop_sequences"] = kwargs["stop"]
-            del filtered_kwargs["stop"]
+        # Rename based on kwarg_change_name
+        for k, v in self.kwarg_change_name.items():
+            if k in kwargs:
+                kwargs[v] = kwargs[k]
+                del kwargs[k]
 
         sys_prompt, chat_messages = prompt.anthropic_format()
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
@@ -89,13 +90,16 @@ class AnthropicChatModel(InferenceAPIModel):
                     response = await self.aclient.messages.create(
                         messages=chat_messages,
                         model=model_id,
-                        **filtered_kwargs,
+                        max_tokens=kwargs.pop("max_tokens", 2000),
+                        **kwargs,
                         **(dict(system=sys_prompt) if sys_prompt else {}),
                     )
 
                     api_duration = time.time() - api_start
                     if not is_valid(response):
                         raise RuntimeError(f"Invalid response according to is_valid {response}")
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

@@ -46,11 +46,8 @@ class HuggingFaceModel(InferenceAPIModel):
             "Content-Type": "application/json",
         }
         self.kwarg_change_name = {
-            "temperature": "temperature",
             "max_tokens": "max_new_tokens",
-            "top_p": "top_p",
             "logprobs": "top_n_tokens",
-            "seed": "seed",
         }
 
         self.stop_reason_map = {
@@ -111,7 +108,6 @@ class HuggingFaceModel(InferenceAPIModel):
         print_prompt_and_response: bool,
         max_attempts: int,
         is_valid=lambda x: True,
-        truncate_prompt: bool = True,
         **kwargs,
     ) -> list[LLMResponse]:
         assert self.token is not None and self.token.startswith("hf_"), f"Invalid token {self.token}"
@@ -124,37 +120,22 @@ class HuggingFaceModel(InferenceAPIModel):
         model_url = HUGGINGFACE_MODELS[model_id]
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
-        if truncate_prompt and ("zephyr" in model_id or "Llama" in model_id):
-            num_input_tokens = self.count_tokens(prompt.hf_format(hf_model_id=model_id), model_id) + 1
-            if num_input_tokens > 3600:
-                # truncate last user message to take away num_input_tokens - 3600 words
-                user_message = prompt.messages[-1].content
-                num_tokens_to_remove = num_input_tokens - 3600
-                num_words_to_remove = num_tokens_to_remove  # rough estimate
-                new_user_message = " ".join(user_message.split()[:-num_words_to_remove])
-                prompt.messages[-1] = prompt.messages[-1].copy(update={"content": new_user_message})
-                print(f"Removed {num_words_to_remove} words from the last user message to reduce input length to 3600")
+        for k, v in self.kwarg_change_name.items():
+            if k in kwargs:
+                kwargs[v] = kwargs[k]
+                del kwargs[k]
 
-            old_max_tokens = kwargs.get("max_tokens", 2048)
-            kwargs["max_tokens"] = min(4090 - num_input_tokens, old_max_tokens)
-            if kwargs["max_tokens"] < old_max_tokens:
-                print(
-                    f"Reduced max_tokens from {old_max_tokens} to {kwargs['max_tokens']} for input length {num_input_tokens}"
-                )
-
-        # the circuit breaker model breaks on this specific prompt, so skip it
-        if model_id == "GraySwanAI/Llama-3-8B-Instruct-RR" and "YOU ARE YOJA" in prompt.hf_format(hf_model_id=model_id):
-            print("Skipping YOJA")
-            response = LLMResponse(
-                model_id=model_id,
-                completion="Sorry, I cannot help with that.",
-                stop_reason=StopReason.STOP_SEQUENCE.value,
-                duration=0,
-                api_duration=0,
-                logprobs=None,
-                cost=0,
-            )
-            return [response]
+        if "temperature" in kwargs:
+            if kwargs["temperature"] == 0:
+                # Huggingface API doesn't support temperature = 0
+                # Need to set do_sample = False instead
+                del kwargs["temperature"]
+                kwargs["do_sample"] = False
+            else:
+                kwargs["do_sample"] = True
+        else:
+            kwargs["do_sample"] = True
+            kwargs["temperature"] = 1
 
         LOGGER.debug(f"Making {model_id} call")
         response_data = None
@@ -164,29 +145,18 @@ class HuggingFaceModel(InferenceAPIModel):
             try:
                 async with self.available_requests:
                     api_start = time.time()
-                    params = {self.kwarg_change_name[k]: v for k, v in kwargs.items() if k in self.kwarg_change_name}
-                    if "temperature" in kwargs:
-                        if kwargs["temperature"] == 0:
-                            # Huggingface API doesn't support temperature = 0
-                            # Need to set do_sample = False instead
-                            del params["temperature"]
-                            params["do_sample"] = False
-                        else:
-                            params["do_sample"] = True
-                    else:
-                        params["do_sample"] = True
-                        params["temperature"] = 1
-
                     response_data = await self.run_query(
                         model_url,
                         prompt.hf_format(hf_model_id=model_id),
-                        params,
+                        kwargs,
                     )
                     api_duration = time.time() - api_start
                     if isinstance(response_data, dict):
                         response_data = [response_data]
                     if not is_valid(response_data[0]["generated_text"]):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
 

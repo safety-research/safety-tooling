@@ -5,14 +5,12 @@ import logging
 import os
 import time
 from collections import defaultdict
-from functools import wraps
 from itertools import chain
 from pathlib import Path
 from typing import Awaitable, Callable, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from dotenv import load_dotenv
 from tqdm.auto import tqdm
 from typing_extensions import Self
@@ -46,7 +44,7 @@ from .openai.embedding import OpenAIEmbeddingModel
 from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
-from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
+from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
 
@@ -217,19 +215,19 @@ class InferenceAPI:
             api_key=secrets["DEEPSEEK_API_KEY"] if "DEEPSEEK_API_KEY" in secrets else None,
         )
 
-        self._batch_audio_models = {}
+        self._batch_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
-        if torch.cuda.is_available() and use_gpu_models:
+        if use_gpu_models:
             for model_name in BATCHED_MODELS:
                 try:
-                    self._batch_audio_models[model_name] = BatchAudioModel(
+                    self._batch_models[model_name] = BatchModel(
                         model_name,
                         prompt_history_dir=self.prompt_history_dir,
                     )
                 except Exception as e:
                     print(f"Error loading {model_name} model: {e}")
-                    self._batch_audio_models[model_name] = None
+                    self._batch_models[model_name] = None
 
         self.running_cost: float = 0
         self.model_timings = {}
@@ -237,15 +235,6 @@ class InferenceAPI:
 
         # Check NO_CACHE in secrets
         self.no_cache = no_cache or secrets.get("NO_CACHE", "false").lower() == "true"
-
-    def semaphore_method_decorator(func):
-        # unused but could be useful to debug if openai jamming comes back
-        @wraps(func)
-        async def wrapper(self, *args, **kwargs):
-            async with self.openai_semaphore:
-                return await func(self, *args, **kwargs)
-
-        return wrapper
 
     @classmethod
     def get_default_global_api(cls) -> Self:
@@ -278,7 +267,7 @@ class InferenceAPI:
         elif model_id in GEMINI_MODELS:
             return self.select_gemini_model(gemini_use_vertexai)
         elif model_id in BATCHED_MODELS:
-            class_for_model = self._batch_audio_models[model_id]
+            class_for_model = self._batch_models[model_id]
             assert class_for_model is not None, f"Error loading class for {model_id}"
             return class_for_model
         elif model_id in S2S_MODELS:
@@ -354,7 +343,6 @@ class InferenceAPI:
         prompt: Prompt | BatchPrompt,
         audio_out_dir: str | Path = None,
         print_prompt_and_response: bool = False,
-        max_tokens: int | None = None,
         n: int = 1,
         max_attempts_per_api_call: int = 10,
         num_candidates_per_completion: int = 1,
@@ -374,9 +362,6 @@ class InferenceAPI:
                 Passing in multiple models could speed up the response time if one of the models is overloaded.
             prompt: The prompt to send to the model(s). Type should be Prompt.
             audio_out_dir : The directory where any audio output from the model (relevant for speech-to-speech models) should be saved
-            max_tokens: The maximum number of tokens to request from the API (argument added to
-                standardize the Anthropic and OpenAI APIs. For OpenAI this is renamed to max_completion_tokens before
-                being passed to the API).
             print_prompt_and_response: Whether to print the prompt and response to stdout.
             n: The number of completions to request.
             max_attempts_per_api_call: Passed to the underlying API call. If the API call fails (e.g. because the
@@ -399,28 +384,16 @@ class InferenceAPI:
         if isinstance(model_ids, str):
             model_ids = get_equivalent_model_ids(model_ids)
 
-        if "gpt-4o-s2s" in model_ids or model_ids == "gpt-4o-s2s":
-            assert audio_out_dir is not None, "audio_out_dir is required when using gpt-4o-s2s model!"
-
         model_classes = [self.model_id_to_class(model_id, gemini_use_vertexai) for model_id in model_ids]
         if len(set(str(type(x)) for x in model_classes)) != 1:
             raise ValueError("All model ids must be of the same type.")
-
-        # standardize max_tokens argument
         model_class = model_classes[0]
-
-        if max_tokens is not None:
-            if isinstance(model_class, OpenAIChatModel):
-                # OpenAI chat models use max_completion_tokens instead of max_tokens
-                kwargs["max_completion_tokens"] = max_tokens
-            else:
-                kwargs["max_tokens"] = max_tokens
-        elif isinstance(model_class, AnthropicChatModel):
-            # Default non-null value for Anthropic chat models
-            kwargs["max_tokens"] = 2000
 
         num_candidates = num_candidates_per_completion * n
 
+        assert "top_logprobs" not in kwargs, "top_logprobs is not supported, pass an integer with `logprobs` instead"
+
+        # used for caching and type checking
         llm_cache_params = LLMParams(
             model=model_ids,
             n=n,
@@ -505,7 +478,7 @@ class InferenceAPI:
                         **kwargs,
                     )
                     candidate_responses.extend(response)
-        elif isinstance(model_class, BatchAudioModel):
+        elif isinstance(model_class, BatchModel):
             if not isinstance(prompt, BatchPrompt):
                 raise ValueError(f"{model_class.__class__.__name__} requires a BatchPrompt input")
             candidate_responses = model_class(

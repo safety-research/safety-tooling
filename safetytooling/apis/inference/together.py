@@ -48,7 +48,6 @@ class TogetherChatModel(InferenceAPIModel):
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "logprobs", "n", "stop"}
 
     @staticmethod
     def convert_top_logprobs(data) -> list[dict]:
@@ -81,6 +80,10 @@ class TogetherChatModel(InferenceAPIModel):
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
+        if "logprobs" in kwargs:
+            kwargs["top_logprobs"] = kwargs["logprobs"]
+            kwargs["logprobs"] = True
+
         LOGGER.debug(f"Making {model_id} call")
         response_data = None
         duration = None
@@ -91,19 +94,16 @@ class TogetherChatModel(InferenceAPIModel):
                 async with self.available_requests:
                     api_start = time.time()
 
-                    filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
-                    if "logprobs" in filtered_kwargs:
-                        filtered_kwargs["top_logprobs"] = filtered_kwargs["logprobs"]
-                        filtered_kwargs["logprobs"] = True
-
                     response_data = await self.aclient.chat.completions.create(
                         messages=prompt.openai_format(),
                         model=model_id,
-                        **filtered_kwargs,
+                        **kwargs,
                     )
                     api_duration = time.time() - api_start
                     if not is_valid(response_data):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

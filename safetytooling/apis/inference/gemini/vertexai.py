@@ -9,6 +9,7 @@ from typing import Callable, List, Optional
 import google.generativeai as genai
 import googleapiclient
 import vertexai
+from google.api_core.exceptions import InvalidArgument
 from vertexai.generative_models import GenerationConfig, GenerativeModel, HarmBlockThreshold, HarmCategory
 
 from safetytooling.data_models import GeminiStopReason, LLMResponse, Prompt
@@ -44,10 +45,7 @@ class GeminiVertexAIModel(InferenceAPIModel):
         self.lock = asyncio.Lock()
 
         self.kwarg_change_name = {
-            "temperature": "temperature",
             "max_tokens": "max_output_tokens",
-            "top_p": "top_p",
-            "top_k": "top_k",
         }
 
         # Maps simple input of the safety threshold values (None, few, some, most) to the HarmBlockThreshold class values
@@ -75,8 +73,11 @@ class GeminiVertexAIModel(InferenceAPIModel):
             self.rate_trackers[model_id] = GeminiRateTracker(rpm_limit=GEMINI_RPM[model_id], tpm_limit=GEMINI_TPM)
 
     def get_generation_config(self, kwargs):
-        params = {self.kwarg_change_name[k]: v for k, v in kwargs.items() if k in self.kwarg_change_name}
-        return GenerationConfig(**params)
+        for k, v in self.kwarg_change_name.items():
+            if k in kwargs:
+                kwargs[v] = kwargs[k]
+                del kwargs[k]
+        return GenerationConfig(**kwargs)
 
     def get_safety_settings(self, safety_threshold):
         safety_settings = {
@@ -237,6 +238,8 @@ class GeminiVertexAIModel(InferenceAPIModel):
                 responses = await attempt_api_call(model_ids[0])
                 if responses is not None and not all(is_valid(response) for response in responses):
                     raise RuntimeError(f"Invalid responses according to is_valid {responses}")
+            except (TypeError, InvalidArgument) as e:
+                raise e
             except googleapiclient.errors.ResumableUploadError as e:
                 if "Resource Exhausted" in str(e):
 

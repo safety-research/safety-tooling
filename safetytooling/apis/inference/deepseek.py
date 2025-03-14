@@ -25,7 +25,6 @@ class DeepSeekChatModel(InferenceAPIModel):
         self.prompt_history_dir = prompt_history_dir
         self.api_key = api_key
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "top_p", "stream", "stop"}
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
@@ -59,7 +58,6 @@ class DeepSeekChatModel(InferenceAPIModel):
                 async with self.available_requests:
                     api_start = time.time()
 
-                    filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
                     async with aiohttp.ClientSession() as session:
                         async with session.post(
                             "https://api.deepseek.com/v1/chat/completions",
@@ -67,7 +65,7 @@ class DeepSeekChatModel(InferenceAPIModel):
                             json={
                                 "model": model_id,
                                 "messages": prompt.openai_format(),
-                                **filtered_kwargs,
+                                **kwargs,
                             },
                         ) as response:
                             response_data = await response.json()
@@ -80,7 +78,8 @@ class DeepSeekChatModel(InferenceAPIModel):
                     if not is_valid(response_data["choices"][0]["message"]["content"]):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
                     break
-
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

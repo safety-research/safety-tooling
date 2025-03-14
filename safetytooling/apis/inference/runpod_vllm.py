@@ -36,15 +36,6 @@ class VLLMChatModel(InferenceAPIModel):
         if self.vllm_base_url.endswith("v1"):
             self.vllm_base_url += "/chat/completions"
 
-        self.kwarg_change_name = {
-            "temperature": "temperature",
-            "max_tokens": "max_tokens",
-            "top_p": "top_p",
-            "stream": "stream",
-            "logprobs": "logprobs",
-            "n": "n",
-        }
-
         self.stop_reason_map = {
             "length": StopReason.MAX_TOKENS.value,
             "stop": StopReason.STOP_SEQUENCE.value,
@@ -118,21 +109,20 @@ class VLLMChatModel(InferenceAPIModel):
         duration = None
         api_duration = None
 
+        kwargs["model"] = model_id
+        if "logprobs" in kwargs:
+            kwargs["top_logprobs"] = kwargs["logprobs"]
+            kwargs["logprobs"] = True
+
         for i in range(max_attempts):
             try:
                 async with self.available_requests:
                     api_start = time.time()
-                    params = {self.kwarg_change_name[k]: v for k, v in kwargs.items() if k in self.kwarg_change_name}
-                    params["model"] = model_id
-
-                    if "logprobs" in params:
-                        params["top_logprobs"] = params["logprobs"]
-                        params["logprobs"] = True
 
                     response_data = await self.run_query(
                         model_url,
                         prompt.openai_format(),
-                        params,
+                        kwargs,
                     )
                     api_duration = time.time() - api_start
 
@@ -143,7 +133,8 @@ class VLLMChatModel(InferenceAPIModel):
                     if not all(is_valid(choice["message"]["content"]) for choice in response_data["choices"]):
                         LOGGER.error(f"Invalid responses according to is_valid {response_data}")
                         raise RuntimeError(f"Invalid responses according to is_valid {response_data}")
-
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

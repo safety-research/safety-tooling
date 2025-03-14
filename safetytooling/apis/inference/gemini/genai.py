@@ -7,6 +7,7 @@ from traceback import format_exc
 from typing import Callable, List, Optional, Tuple
 
 import google.generativeai as genai
+from google.api_core.exceptions import InvalidArgument
 from google.generativeai.types import GenerationConfig, HarmBlockThreshold, HarmCategory
 
 from safetytooling.data_models import GeminiStopReason, LLMResponse, Prompt
@@ -50,10 +51,7 @@ class GeminiModel(InferenceAPIModel):
         self.lock = asyncio.Lock()
 
         self.kwarg_change_name = {
-            "temperature": "temperature",
             "max_tokens": "max_output_tokens",
-            "top_p": "top_p",
-            "top_k": "top_k",
         }
 
         # Maps simple input of the safety threshold values (None, few, some, most) to the HarmBlockThreshold class values
@@ -80,8 +78,11 @@ class GeminiModel(InferenceAPIModel):
             self.rate_trackers[model_id] = GeminiRateTracker(rpm_limit=GEMINI_RPM[model_id], tpm_limit=GEMINI_TPM)
 
     def get_generation_config(self, kwargs):
-        params = {self.kwarg_change_name[k]: v for k, v in kwargs.items() if k in self.kwarg_change_name}
-        return GenerationConfig(**params)
+        for k, v in self.kwarg_change_name.items():
+            if k in kwargs:
+                kwargs[v] = kwargs[k]
+                del kwargs[k]
+        return GenerationConfig(**kwargs)
 
     def get_safety_settings(self, safety_threshold):
         safety_settings = {
@@ -295,7 +296,8 @@ class GeminiModel(InferenceAPIModel):
                     < self.empty_completion_threshold
                 ):
                     raise RuntimeError(f"All invalid responses according to is_valid {responses}")
-
+            except (TypeError, InvalidArgument) as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying in {1.5**i} seconds. (Attempt {i})")
