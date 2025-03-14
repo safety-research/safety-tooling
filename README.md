@@ -12,20 +12,17 @@
 To set up the development environment for this project,
 follow the steps below:
 
-1. First install `micromamba` if you haven't already.
-You can follow the installation instructions here:
-https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html. The Homebrew / automatic installation method is recommended.
-Or just run:
+1. First install `uv` if you haven't already.
 ```
-"${SHELL}" <(curl -L micro.mamba.pm/install.sh)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+uv python install 3.11
+uv venv
+source .venv/bin/activate
+uv pip install -e .
+uv pip install -r requirements_dev.txt
+python -m ipykernel install --user --name=venv # so it shows up in jupyter notebooks within vscode
 ```
-2. Next, you need to run the following from the root of the repository:
-    ```bash
-    micromamba env create -n safetytooling python=3.11.7
-    eval "$(micromamba shell hook --shell bash)"
-    micromamba activate safetytooling
-    pip install -r requirements.txt
-    ```
 
 ### Redis Configuration (Optional)
 
@@ -88,12 +85,10 @@ SAFETYTOOLING_SLOW_TESTS=True python -m pytest -v -s -n 6
 ### Updating dependencies
 We only pin top-level dependencies only to make cross-platform development easier.
 
-- To add a new python dependency, add a line to `requirements.txt`.
-- To upgrade a dependency, bump the version number in `requirements.txt`.
+- To add a new python dependency, add a line to `pyproject.toml`. If it is only for development, add it to `requirements_dev.txt`.
+- To upgrade a dependency, bump the version number in `pyproject.toml`.
 
-Run `pip install -r requirements.txt` after edits have been made to the requirements file.
-
-To check for outdated dependencies, run `pip list --outdated`.
+To check for outdated dependencies, run `uv pip list --outdated`.
 
 ## Usage
 
