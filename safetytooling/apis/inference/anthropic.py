@@ -163,8 +163,6 @@ class AnthropicChatModel(InferenceAPIModel):
                     api_duration=api_duration,
                     cost=0,
                 )
-        duration = time.time() - start
-        LOGGER.debug(f"Completed call to {model_id} in {duration}s")
 
         responses = [response]
 

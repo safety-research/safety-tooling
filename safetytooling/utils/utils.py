@@ -102,6 +102,9 @@ def setup_logging(logging_level):
     # Disable logging from openai
     logging.getLogger("openai").setLevel(logging.CRITICAL)
     logging.getLogger("httpx").setLevel(logging.CRITICAL)
+    logging.getLogger("git").setLevel(logging.CRITICAL)
+    logging.getLogger("httpcore").setLevel(logging.CRITICAL)
+    logging.getLogger("anthropic._base_client").setLevel(logging.CRITICAL)
 
 
 def load_secrets(local_file_path: str | Path) -> dict[str, str | None]:
