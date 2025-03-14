@@ -25,7 +25,7 @@ class LLMParams(HashableBaseModel):
     stop: list[str] | None = None
     model_config = pydantic.ConfigDict(extra="allow")  # Allow unknown kwargs e.g. response_format for OpenAI
     unknown_kwargs: dict[str, Any] = pydantic.Field(default_factory=dict)
-    
+
     def __init__(self, **kwargs):
         unknown_kwargs = {
             k: (v.model_dump() if isinstance(v, pydantic.BaseModel) else v)

@@ -96,7 +96,7 @@ class OpenAIChatModel(OpenAIModel):
         if "logprobs" in kwargs:
             kwargs["top_logprobs"] = kwargs["logprobs"]
             kwargs["logprobs"] = True
-        
+
         # max tokens is deprecated in favor of max_completion_tokens
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs["max_tokens"]
