@@ -2,43 +2,53 @@
 
 - This is a repo designed to be shared across many AI Safety projects. It has built up since Summer 2023 during projects with Ethan Perez. The code primarily provides an LLM API with a common interface for OpenAI, Anthropic and Google models.
 - The aim is that this repo continues to grow and evolve as more collaborators start to use it, ultimately speeding up new AI Safety researchers that join the cohort in the future. Furthermore, it provides an opportunity for those who have less of a software engineering background to upskill in contributing to a larger codebase that has many users.
-- This repo is designed to be a git [submodule](https://git-scm.com/docs/git-submodule). This has the benefit of being able to use the code directly (without needing to install it) and having the ease of being able to commit changes that everyone can benefit from. When you `cd` into the submodule directory, you can `git pull` and `git push` to that repository.
-    - An example repo that uses `safety-tooling` as a submodule is provided and explained in the second section.
+- This repo works great as a git [submodule](https://git-scm.com/docs/git-submodule). This has the benefit of having the ease of being able to commit changes that everyone can benefit from. When you `cd` into the submodule directory, you can `git pull` and `git push` to that repository.
+    - We provide an example repo that uses `safety-tooling` as a submodule here: https://github.com/safety-research/safety-examples
+    - The code can also eaisly be pip installed if that is more suitable for your use case.
 
 ## Repository setup
 
-### Environment
+### Installation (from clone)
 
 To set up the development environment for this project,
 follow the steps below:
 
-1. First install `uv` if you haven't already.
+1. We recommend using `uv` to manage the python environment. Install it with the following command:
 ```
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.local/bin/env
+```
+
+2. Clone the repository and navigate to the directory.
+```
+git clone git@github.com:safety-research/safety-tooling.git
+cd safety-tooling
+```
+
+3. Install python 3.11 and create a virtual environment.
+```
 uv python install 3.11
 uv venv
 source .venv/bin/activate
+```
+
+3. Install the package in editable mode and also install the development dependencies.
+```
 uv pip install -e .
 uv pip install -r requirements_dev.txt
-python -m ipykernel install --user --name=venv # so it shows up in jupyter notebooks within vscode
 ```
 
-### Redis Configuration (Optional)
-
-To use Redis for caching instead of writing everything to disk, *[install Redis](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/)*, and make sure it's running by doing `redis-cli ping`.
-
-```bash
-export REDIS_CACHE=True  # Enable Redis caching (defaults to False)
-export REDIS_PASSWORD=<your-password>  # Optional Redis password, in case the Redis instance on your machine is password protected
+4. Install the kernel in vscode so it can be used in jupyter notebooks (optional).
+```
+python -m ipykernel install --user --name=venv
 ```
 
-Default Redis configuration if not specified:
-- Host: localhost
-- Port: 6379
-- No authentication
+### Installation (directly from pip)
 
-You can monitor what is being read from or written to Redis by running `redis-cli` and then `MONITOR`.
+If you don't expect to make any changes to the package (not recommended when actively doing research), you can install it directly from pip by running the following command. This is not recommended when actively doing research but a great option once you release your code.
+```
+pip install git+https://github.com/safety-research/safety-tooling.git@<branch-name>#egg=safetytooling
+```
 
 ### Secrets
 
@@ -64,6 +74,22 @@ If you use vscode, it's recommended to install the official Ruff extension.
 
 In addition, there is a pre-commit hook that runs the linter and formatter before you commit.
 To enable it, run `make hooks` but this is optional.
+
+### Redis Configuration (Optional)
+
+To use Redis for caching instead of writing everything to disk, *[install Redis](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/)*, and make sure it's running by doing `redis-cli ping`.
+
+```bash
+export REDIS_CACHE=True  # Enable Redis caching (defaults to False)
+export REDIS_PASSWORD=<your-password>  # Optional Redis password, in case the Redis instance on your machine is password protected
+```
+
+Default Redis configuration if not specified:
+- Host: localhost
+- Port: 6379
+- No authentication
+
+You can monitor what is being read from or written to Redis by running `redis-cli` and then `MONITOR`.
 
 ### Testing
 Run tests as a Python module (with 6 parallel workers, and verbose output) using:
