@@ -42,25 +42,19 @@ You can monitor what is being read from or written to Redis by running `redis-cl
 
 ### Secrets
 
-You should create a file called `.env` at the root of the repository
-with the following contents:
+You should copy the `.env.example` file to `.env` at the root of the repository and fill in the API keys. All are optional but features that rely on them will not work if they are not set.
 ```
-# Required
-OPENAI_API_KEY1=<your-key>
-OPENAI_API_KEY2=<your-key>
+OPENAI_API_KEY=<your-key>
 ANTHROPIC_API_KEY=<your-key>
-RUNPOD_API_KEY=<your-key>
-HF_API_KEY=<your-key>
+HF_TOKEN=<your-key>
 GOOGLE_API_KEY=<your-key>
-GOOGLE_PROJECT_ID=<GCP-project-name>
-GOOGLE_PROJECT_REGION=<GCP-project-region>
+GRAYSWAN_API_KEY=<your-key>
+TOGETHER_API_KEY=<your-key>
+DEEPSEEK_API_KEY=<your-key>
 ELEVENLABS_API_KEY=<your-key>
-
-# Optional: Where to log prompt history by default.
-# If not set or empty, prompt history will not be logged.
-# Path should be relative to the root of the repository.
-PROMPT_HISTORY_DIR=<path-to-directory>
 ```
+
+You can add multiple OpenAI and Anthropic API keys by adding them to the `.env` file with different names. You can then pass the `openai_tag` and `anthropic_tag` to `utils.setup_environment()` to switch between them. Alternatively, pass `openai_api_key` and `anthropic_api_key` to the InferenceAPI object directly.
 
 ### Linting and formatting
 We lint our code with [Ruff](https://docs.astral.sh/ruff/) and format with black.

@@ -44,7 +44,7 @@ def print_with_wrap(text: str, width: int = 80):
 
 def setup_environment(
     logging_level: str = "info",
-    openai_tag: str = "OPENAI_API_KEY1",
+    openai_tag: str = "OPENAI_API_KEY",
     anthropic_tag: str = "ANTHROPIC_API_KEY",
 ):
     setup_logging(logging_level)
@@ -55,26 +55,19 @@ def setup_environment(
         os.environ["OPENAI_API_KEY"] = os.environ[openai_tag]
     if anthropic_tag in os.environ:
         os.environ["ANTHROPIC_API_KEY"] = os.environ[anthropic_tag]
-    # assert that we have an openai api key
-    assert "OPENAI_API_KEY" in os.environ, "OPENAI_API_KEY not found in environment, this is required"
-    assert "ANTHROPIC_API_KEY" in os.environ, "ANTHROPIC_API_KEY not found in environment, this is required"
+    # warn if we do not have an openai api key
+    if "OPENAI_API_KEY" not in os.environ:
+        LOGGER.warning("OPENAI_API_KEY not found in environment, OpenAI API will not be available")
+    if "ANTHROPIC_API_KEY" not in os.environ:
+        LOGGER.warning("ANTHROPIC_API_KEY not found in environment, Anthropic API will not be available")
 
     for key in [
-        "ANTHROPIC_BATCH_API_KEY",
-        "SCALE_BASE_URL",
-        "RUNPOD_API_KEY",
-        "HF_API_KEY",
+        "HF_TOKEN",
         "ELEVENLABS_API_KEY",
         "GOOGLE_API_KEY",
-        "OPENAI_S2S_API_KEY",
         "GRAYSWAN_API_KEY",
         "TOGETHER_API_KEY",
         "DEEPSEEK_API_KEY",
-        "PROMPT_HISTORY_DIR",
-        "CACHE_DIR",
-        "NO_CACHE",
-        "REDIS_CACHE",
-        "REDIS_PASSWORD",
     ]:
         keys_not_found = []
         if key not in os.environ:

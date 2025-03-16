@@ -175,7 +175,7 @@ class InferenceAPI:
         self._huggingface = HuggingFaceModel(
             num_threads=self.huggingface_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            token=os.environ.get("HF_API_KEY", None),
+            token=os.environ.get("HF_TOKEN", None),
         )
 
         self._gray_swan = GraySwanChatModel(
