@@ -99,8 +99,38 @@ To check for outdated dependencies, run `pip list --outdated`.
 
 ### Running Inference
 
-* See `examples/inference_api/inference_api.ipynb` for an example of how to use the Inference API.
-* See `examples/anthropic_batch_api/run_anthropic_batch.py` for an example of how to use the Anthropic Batch API and how to set up command line input arguments using `simple_parsing` and `ExperimentConfigBase` (a useful base class we created for this project).
+Minimal example to run inference for gpt-4o-mini. See `examples/inference_api/inference_api.ipynb` to quickly run this example.
+
+```
+from safetytooling.apis import InferenceAPI
+from safetytooling.data_models import ChatMessage, MessageRole, Prompt
+from safetytooling.utils import utils
+
+utils.setup_environment()
+API = InferenceAPI(cache_dir=".cache")
+prompt = Prompt(messages=[ChatMessage(content="What is your name?", role=MessageRole.user)])
+
+response = await API(
+    model_id="gpt-4o-mini",
+    prompt=prompt,
+    print_prompt_and_response=True,
+)
+```
+
+The InferenceAPI class supports running new models when they come out without needing to update the codebase. However, you have to pass `force_provider` to the API object call. For example, if you want to run gpt-4-new-model, you can do:
+```
+response = await API(
+    model_id="gpt-4-new-model",
+    prompt=prompt,
+    force_provider="openai"
+)
+```
+Note: setup_environment() will automatically load the API keys and set the environment variables. You can set custom API keys by setting the environment variables instead of calling setup_environment(). If you have multiple API keys for OpenAI and Anthropic, you can pass openai_tag and anthropic_tag to setup_environment() to choose those to be exported.
+```
+utils.setup_environment(openai_tag="OPENAI_API_KEY_CUSTOM", anthropic_tag="ANTHROPIC_API_KEY_CUSTOM")
+```
+
+See `examples/anthropic_batch_api/run_anthropic_batch.py` for an example of how to use the Anthropic Batch API and how to set up command line input arguments using `simple_parsing` and `ExperimentConfigBase` (a useful base class we created for this project).
 
 ### Running Finetuning
 
