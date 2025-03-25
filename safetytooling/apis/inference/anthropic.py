@@ -71,6 +71,11 @@ class AnthropicChatModel(InferenceAPIModel):
                 kwargs[v] = kwargs[k]
                 del kwargs[k]
 
+        # Special case: ignore seed parameter since it's used for caching in safety-tooling
+        # Other surplus parameters will still raise an error
+        if "seed" in kwargs:
+            del kwargs["seed"]
+
         sys_prompt, chat_messages = prompt.anthropic_format()
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
@@ -237,6 +242,11 @@ class AnthropicModelBatch:
         return f"{index}_{hash_str}"
 
     def prompts_to_requests(self, model_id: str, prompts: list[Prompt], max_tokens: int, **kwargs) -> list[Request]:
+        # Special case: ignore seed parameter since it's used for caching in safety-tooling
+        # Other surplus parameters will still raise an error
+        if "seed" in kwargs:
+            del kwargs["seed"]
+
         requests = []
         for i, prompt in enumerate(prompts):
             sys_prompt, chat_messages = prompt.anthropic_format()
