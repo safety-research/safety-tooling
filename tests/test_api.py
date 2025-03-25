@@ -117,3 +117,29 @@ async def test_api_with_stop_parameter():
     assert isinstance(anthropic_resp[0], str)
     assert ", 5" not in anthropic_resp[0]
     assert "4" in anthropic_resp[0]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_seed_parameter():
+    """Test that the seed parameter is properly handled with Anthropic models."""
+    utils.setup_environment()
+
+    # Test that seed parameter is ignored without error for Anthropic models
+    resp = await InferenceAPI.get_default_global_api().ask_single_question(
+        model_id="claude-3-5-sonnet-20240620",
+        question="What is 2+2?",
+        max_tokens=10,
+        seed=42  # This should be ignored without error for Anthropic
+    )
+    assert isinstance(resp, list)
+    assert len(resp) == 1
+    assert isinstance(resp[0], str)
+
+    # Test that other invalid parameters still raise an error
+    with pytest.raises(TypeError):
+        await InferenceAPI.get_default_global_api().ask_single_question(
+            model_id="claude-3-5-sonnet-20240620",
+            question="What is 2+2?",
+            max_tokens=10,
+            invalid_param=123  # This should raise an error
+        )
