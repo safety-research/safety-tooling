@@ -48,7 +48,7 @@ def setup_environment(
     anthropic_tag: str = "ANTHROPIC_API_KEY",
 ):
     setup_logging(logging_level)
-    dotenv.load_dotenv()
+    dotenv.load_dotenv(override=True)
 
     # users often have many API keys, this allows them to specify which one to use
     if openai_tag in os.environ:
