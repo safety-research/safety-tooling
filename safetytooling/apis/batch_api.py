@@ -142,7 +142,13 @@ class BatchInferenceAPI:
             assert max_tokens is not None, "max_tokens must be provided for Anthropic models"
             kwargs["max_tokens"] = max_tokens
 
-        llm_params = LLMParams(model=model_id, **kwargs)
+        llm_params = LLMParams(
+            model=model_id,
+            n=1,
+            insufficient_valids_behaviour="retry",
+            num_candidates_per_completion=1,
+            **kwargs,
+        )
         cached_responses = []
         cached_indices = []
         uncached_prompts = []
