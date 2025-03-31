@@ -120,9 +120,10 @@ Minimal example to run inference for gpt-4o-mini. See `examples/inference_api/in
 from safetytooling.apis import InferenceAPI
 from safetytooling.data_models import ChatMessage, MessageRole, Prompt
 from safetytooling.utils import utils
+from pathlib import Path
 
 utils.setup_environment()
-API = InferenceAPI(cache_dir=".cache")
+API = InferenceAPI(cache_dir=Path(".cache"))
 prompt = Prompt(messages=[ChatMessage(content="What is your name?", role=MessageRole.user)])
 
 response = await API(
