@@ -148,6 +148,19 @@ utils.setup_environment(openai_tag="OPENAI_API_KEY_CUSTOM", anthropic_tag="ANTHR
 
 See `examples/anthropic_batch_api/run_anthropic_batch.py` for an example of how to use the Anthropic Batch API and how to set up command line input arguments using `simple_parsing` and `ExperimentConfigBase` (a useful base class we created for this project).
 
+If you want to use a different provider that uses an OpenAI compatible api, you can just override the `base_url` when creating an `InferenceAPI` and then doing `force_provider="openai"` when calling it. E.g.
+```
+API = InferenceAPI(cache_dir=Path(".cache"), openai_base_url="https://openrouter.ai/api/v1", openai_api_key=openrouter_api_key)
+response = await API(
+    model_id="deepseek/deepseek-v3-base:free",
+    prompt=base_prompt,
+    max_tokens=100,
+    print_prompt_and_response=True,
+    temperature=0,
+    force_provider="openai",
+)
+```
+
 ### Running Finetuning
 
 To launch a finetuning job, run the following command:
