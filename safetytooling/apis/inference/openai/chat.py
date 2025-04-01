@@ -3,6 +3,7 @@ import logging
 import os
 import time
 
+import httpx
 import openai
 import openai.types
 import openai.types.chat
@@ -72,6 +73,9 @@ class OpenAIChatModel(OpenAIModel):
         # convert OpenAI chat version of logprobs response to completion version
         top_logprobs = []
 
+        if not hasattr(data, 'content') or data.content is None:
+            return []
+
         for item in data.content:
             # <|end|> is known to be duplicated on gpt-4-turbo-2024-04-09
             possibly_duplicated_top_logprobs = collections.defaultdict(list)
@@ -115,6 +119,9 @@ class OpenAIChatModel(OpenAIModel):
             model=model_id,
             **kwargs,
         )
+        if hasattr(api_response, 'error') and ('Rate limit exceeded' in api_response.error['message'] or api_response.error['code'] == 429): # OpenRouter routes through the error messages from the different providers, so we catch them here
+            dummy_request = httpx.Request(method='POST', url='https://api.openai.com/v1/chat/completions', headers={'Authorization': f'Bearer {self.openai_api_key}'}, json={'messages': prompt.openai_format(), 'model': model_id, **kwargs})
+            raise openai.RateLimitError(api_response.error['message'], response=httpx.Response(status_code=429, text=api_response.error['message'], request=dummy_request), body=api_response.error)
         api_duration = time.time() - api_start
         duration = time.time() - start_time
         context_token_cost, completion_token_cost = price_per_token(model_id)
