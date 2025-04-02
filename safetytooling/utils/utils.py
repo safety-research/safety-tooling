@@ -48,7 +48,13 @@ def setup_environment(
     anthropic_tag: str = "ANTHROPIC_API_KEY",
 ):
     setup_logging(logging_level)
-    dotenv.load_dotenv(override=True)
+    load_success = dotenv.load_dotenv(override=True)
+    if not load_success:
+        load_success = dotenv.load_dotenv(dotenv_path="safety-tooling/.env", override=True)
+        if not load_success:
+            LOGGER.warning(
+                "No .env file found in repo or in safety-tooling submodule, some features may not work unless you set the environment variables manually"
+            )
 
     # users often have many API keys, this allows them to specify which one to use
     if openai_tag in os.environ:
