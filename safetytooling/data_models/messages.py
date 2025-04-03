@@ -19,6 +19,7 @@ from ..utils.image_utils import (
     image_to_base64,
     prepare_gemini_image,
 )
+from ..utils.special_prompts import gopher_base_model_prompt
 from .hashable import HashableBaseModel
 from .inference import LLMResponse
 
@@ -454,6 +455,25 @@ class Prompt(HashableBaseModel):
                 raise ValueError(f"Invalid role {msg.role} in prompt")
 
         return system_message, messages
+
+    def gopher_format(self) -> "Prompt":
+        """
+        Uses the prompt from this paper: https://arxiv.org/pdf/2202.03286
+        This is useful if you want to prompt base models in a chat format.
+        """
+        out = gopher_base_model_prompt
+        for msg in self.messages:
+            match msg.role:
+                case MessageRole.user:
+                    out += f"<USER>{msg.content}</USER>\n"
+                case MessageRole.assistant:
+                    out += f"<GOPHER>{msg.content}</GOPHER>\n"
+                case MessageRole.system:
+                    out += f"<SYSTEM>{msg.content}</SYSTEM>\n"
+                case _:
+                    raise ValueError(f"Invalid role {msg.role} in gopher prompt")
+        out += "<GOPHER>"
+        return Prompt(messages=[ChatMessage(role=MessageRole.none, content=out)])
 
     def pretty_print(self, responses: list[LLMResponse], print_fn: Callable | None = None) -> None:
         if print_fn is None:
