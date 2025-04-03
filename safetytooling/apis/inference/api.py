@@ -74,7 +74,7 @@ class InferenceAPI:
         together_num_threads: int = 80,
         vllm_num_threads: int = 8,
         deepseek_num_threads: int = 20,
-        prompt_history_dir: Path | Literal["default"] | None = "default",
+        prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
         use_redis: bool = False,
         empty_completion_threshold: int = 0,
