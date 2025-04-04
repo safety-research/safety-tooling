@@ -58,6 +58,10 @@ class OpenAIChatModel(OpenAIModel):
         BUFFER = 5  # A bit of buffer for some error margin
         MIN_NUM_TOKENS = 20
 
+        max_tokens = kwargs.get("max_completion_tokens", kwargs.get("max_tokens", 15))
+        if max_tokens is None:
+            max_tokens = 15
+
         num_tokens = 0
         for message in prompt.messages:
             num_tokens += 1
@@ -65,7 +69,7 @@ class OpenAIChatModel(OpenAIModel):
 
         return max(
             MIN_NUM_TOKENS,
-            int(num_tokens + BUFFER) + kwargs.get("n", 1) * kwargs.get("max_tokens", 15),
+            int(num_tokens + BUFFER) + kwargs.get("n", 1) * max_tokens,
         )
 
     @staticmethod
