@@ -251,6 +251,15 @@ class Prompt(HashableBaseModel):
             return self.openai_image_format()
         return [msg.openai_format() for msg in self.messages]
 
+    def together_format(
+        self,
+    ) -> list[openai.types.chat.ChatCompletionMessageParam]:
+        if self.is_none_in_messages():
+            raise ValueError(f"Together chat prompts cannot have a None role. Got {self.messages}")
+        if self.contains_image():
+            return self.openai_image_format()
+        return [msg.openai_format() for msg in self.messages]
+
     def gemini_format(self, use_vertexai: bool = False) -> List[str]:
         if self.is_none_in_messages():
             raise ValueError(f"Gemini chat prompts cannot have a None role. Got {self.messages}")

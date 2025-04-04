@@ -25,10 +25,15 @@ TOGETHER_MODELS = {
     "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
     "meta-llama/Llama-2-13b-chat-hf",
     "meta-llama/Llama-3.2-3B-Instruct-Turbo",
+    "mistralai/Mistral-7B-v0.1",
     "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "mistralai/Mixtral-8x22B-Instruct-v0.1",
+    "google/gemma-2-9b-it",
+    "google/gemma-2-27b-it",
     "deepseek-ai/DeepSeek-R1",
     "deepseek-ai/DeepSeek-V3",
     "deepseek-ai/deepseek-llm-67b-chat",
+    "Qwen/Qwen2.5-Coder-32B-Instruct",
     "Qwen/Qwen2.5-72B-Instruct-Turbo",
     "Qwen/QwQ-32B-Preview",
 }
@@ -92,7 +97,7 @@ class TogetherChatModel(InferenceAPIModel):
                     api_start = time.time()
 
                     response_data = await self.aclient.chat.completions.create(
-                        messages=prompt.openai_format(),
+                        messages=prompt.together_format(),
                         model=model_id,
                         **kwargs,
                     )

@@ -69,7 +69,6 @@ class BatchInferenceAPI:
             anthropic_api_key: Optional API key for Anthropic. If not provided, will try to load from environment.
             openai_api_key: Optional API key for OpenAI. If not provided, will try to load from environment.
             no_cache: If True, disable caching regardless of other settings.
-            chunk: Maximum number of prompts to send in a single batch. If None, send all prompts in one batch.
         """
 
         # Check NO_CACHE in os.environ
@@ -120,7 +119,8 @@ class BatchInferenceAPI:
             prompts: List of prompts to send to the model.
             log_dir: Directory to store logs. If None, will use prompt_history_dir.
             use_cache: Whether to use caching. Ignored if no_cache was set during initialization.
-            max_tokens: Maximum number of tokens to generate per prompt. Setting different max_tokens for each prompt is not yet supported here, although it is in principle supported in the underlying API.
+            max_tokens: Maximum number of tokens to generate per prompt. Setting different max_tokens for each prompt is not yet supported here, although it is in principle supported in the underlying API.\
+            chunk: Maximum number of prompts to send in a single batch. If None, will use a default value based on the model.
             **kwargs: Additional arguments to pass to the model. "seed" should be used for preventing cached responses from being used.
 
         Returns:
