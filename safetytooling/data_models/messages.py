@@ -134,26 +134,47 @@ class Prompt(HashableBaseModel):
         sep: str = 8 * "=",
         strip_content: bool = False,
     ) -> Self:
-        if not text.startswith(sep):
-            return cls(
-                messages=[
-                    ChatMessage(
-                        role=MessageRole.user,
-                        content=text.strip() if strip_content else text,
-                    )
-                ]
-            )
+        import re
 
+        # Pattern to match exactly 8 = signs, followed by a role name, followed by exactly 8 = signs
+        role_pattern = rf"^{sep}([a-zA-Z]+){sep}$"
+
+        # Split text into lines
+        lines = text.split("\n")
         messages = []
-        for role_content_str in ("\n" + text).split("\n" + sep):
-            if role_content_str == "":
-                continue
+        current_role = MessageRole.user  # Default role
+        current_content = []
 
-            role, content = role_content_str.split(sep + "\n")
+        for line in lines:
+            match = re.match(role_pattern, line)
+            if match:
+                # If we have accumulated content, save it as a message if it's not empty
+                if current_content:
+                    content = "\n".join(current_content)
+                    if strip_content:
+                        content = content.strip()
+                    # Only add message if content is not empty (not just whitespace)
+                    if content.strip():
+                        messages.append(ChatMessage(role=current_role, content=content))
+                    current_content = []
+
+                # Update role for next content
+                try:
+                    current_role = MessageRole[match.group(1)]
+                except KeyError:
+                    # If role is invalid, treat this line as content with previous role
+                    current_content.append(line)
+            else:
+                current_content.append(line)
+
+        # Don't forget to add the last message if it's not empty
+        if current_content:
+            content = "\n".join(current_content)
             if strip_content:
                 content = content.strip()
-
-            messages.append(ChatMessage(role=MessageRole[role], content=content))
+            # Only add message if content is not empty (not just whitespace)
+            if content.strip():
+                messages.append(ChatMessage(role=current_role, content=content))
 
         return cls(messages=messages)
 
