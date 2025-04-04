@@ -49,11 +49,11 @@ class AnthropicChatModel(InferenceAPIModel):
             self.aclient = AsyncAnthropic()
 
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "thinking"}
+        self.kwarg_change_name = {"stop": "stop_sequences"}
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
@@ -61,12 +61,20 @@ class AnthropicChatModel(InferenceAPIModel):
         **kwargs,
     ) -> list[LLMResponse]:
         start = time.time()
-        assert len(model_ids) == 1, "Anthropic implementation only supports one model at a time."
-
-        (model_id,) = model_ids
 
         if prompt.contains_image():
             assert model_id in VISION_MODELS, f"Model {model_id} does not support images"
+
+        # Rename based on kwarg_change_name
+        for k, v in self.kwarg_change_name.items():
+            if k in kwargs:
+                kwargs[v] = kwargs[k]
+                del kwargs[k]
+
+        # Special case: ignore seed parameter since it's used for caching in safety-tooling
+        # Other surplus parameters will still raise an error
+        if "seed" in kwargs:
+            del kwargs["seed"]
 
         sys_prompt, chat_messages = prompt.anthropic_format()
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
@@ -81,17 +89,19 @@ class AnthropicChatModel(InferenceAPIModel):
                 async with self.available_requests:
                     api_start = time.time()
 
-                    filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
                     response = await self.aclient.messages.create(
                         messages=chat_messages,
                         model=model_id,
-                        **filtered_kwargs,
+                        max_tokens=kwargs.pop("max_tokens", 2000),
+                        **kwargs,
                         **(dict(system=sys_prompt) if sys_prompt else {}),
                     )
 
                     api_duration = time.time() - api_start
                     if not is_valid(response):
                         raise RuntimeError(f"Invalid response according to is_valid {response}")
+            except (TypeError, anthropic.NotFoundError) as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
@@ -159,8 +169,6 @@ class AnthropicChatModel(InferenceAPIModel):
                     api_duration=api_duration,
                     cost=0,
                 )
-        duration = time.time() - start
-        LOGGER.debug(f"Completed call to {model_id} in {duration}s")
 
         responses = [response]
 
@@ -233,9 +241,12 @@ class AnthropicModelBatch:
         hash_str = prompt.model_hash()
         return f"{index}_{hash_str}"
 
-    def prompts_to_requests(
-        self, model_id: tuple[str, ...], prompts: list[Prompt], max_tokens: int, **kwargs
-    ) -> list[Request]:
+    def prompts_to_requests(self, model_id: str, prompts: list[Prompt], max_tokens: int, **kwargs) -> list[Request]:
+        # Special case: ignore seed parameter since it's used for caching in safety-tooling
+        # Other surplus parameters will still raise an error
+        if "seed" in kwargs:
+            del kwargs["seed"]
+
         requests = []
         for i, prompt in enumerate(prompts):
             sys_prompt, chat_messages = prompt.anthropic_format()

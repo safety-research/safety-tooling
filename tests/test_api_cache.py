@@ -15,7 +15,7 @@ async def test_api_cache():
 
     q = f"What is the meaning of life? {random.randint(0, 1000000)}"
     response1 = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_ids="gpt-4o-mini-2024-07-18",
+        model_id="gpt-4o-mini-2024-07-18",
         question=q,
         max_tokens=20,
         temperature=1.2,
@@ -24,7 +24,7 @@ async def test_api_cache():
     cost = InferenceAPI.default_global_running_cost()
 
     response2 = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_ids="gpt-4o-mini-2024-07-18",
+        model_id="gpt-4o-mini-2024-07-18",
         question=q,
         max_tokens=20,
         temperature=1.2,
@@ -46,7 +46,7 @@ async def test_no_cache_flag():
     random.seed(time.time())
     q = f"What is the meaning of life? {random.randint(0, 1000000)}"
     _ = await api.ask_single_question(
-        model_ids="gpt-4o-mini-2024-07-18",
+        model_id="gpt-4o-mini-2024-07-18",
         question=q,
         max_tokens=20,
         temperature=1.2,
@@ -55,7 +55,7 @@ async def test_no_cache_flag():
     cost = api.running_cost
 
     _ = await api.ask_single_question(
-        model_ids="gpt-4o-mini-2024-07-18",
+        model_id="gpt-4o-mini-2024-07-18",
         question=q,
         max_tokens=20,
         temperature=1.2,

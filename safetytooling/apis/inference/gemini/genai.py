@@ -7,6 +7,7 @@ from traceback import format_exc
 from typing import Callable, List, Optional, Tuple
 
 import google.generativeai as genai
+from google.api_core.exceptions import InvalidArgument
 from google.generativeai.types import GenerationConfig, HarmBlockThreshold, HarmCategory
 
 from safetytooling.data_models import GeminiStopReason, LLMResponse, Prompt
@@ -50,10 +51,7 @@ class GeminiModel(InferenceAPIModel):
         self.lock = asyncio.Lock()
 
         self.kwarg_change_name = {
-            "temperature": "temperature",
             "max_tokens": "max_output_tokens",
-            "top_p": "top_p",
-            "top_k": "top_k",
         }
 
         # Maps simple input of the safety threshold values (None, few, some, most) to the HarmBlockThreshold class values
@@ -80,8 +78,11 @@ class GeminiModel(InferenceAPIModel):
             self.rate_trackers[model_id] = GeminiRateTracker(rpm_limit=GEMINI_RPM[model_id], tpm_limit=GEMINI_TPM)
 
     def get_generation_config(self, kwargs):
-        params = {self.kwarg_change_name[k]: v for k, v in kwargs.items() if k in self.kwarg_change_name}
-        return GenerationConfig(**params)
+        for k, v in self.kwarg_change_name.items():
+            if k in kwargs:
+                kwargs[v] = kwargs[k]
+                del kwargs[k]
+        return GenerationConfig(**kwargs)
 
     def get_safety_settings(self, safety_threshold):
         safety_settings = {
@@ -104,7 +105,7 @@ class GeminiModel(InferenceAPIModel):
     ) -> Tuple[str, List[genai.types.file_types.File]]:
         if not self.is_initialized:
             raise RuntimeError(
-                "Gemini is not initialized. Please set GOOGLE_API_KEY in SECRETS before running your script"
+                "Gemini is not initialized. Please set GOOGLE_API_KEY in .env before running your script"
             )
         if generation_config:
             model = genai.GenerativeModel(
@@ -251,7 +252,7 @@ class GeminiModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
@@ -261,8 +262,7 @@ class GeminiModel(InferenceAPIModel):
     ) -> List[LLMResponse]:
         start = time.time()
 
-        for model_id in model_ids:
-            self.add_model_id(model_id)
+        self.add_model_id(model_id)
 
         async def attempt_api_call(model_id):
             async with self.lock:
@@ -288,14 +288,15 @@ class GeminiModel(InferenceAPIModel):
             # Update tracking of recitation retries by generate attempt (not at the prompt level)
             self.total_generate_calls += 1
             try:
-                responses = await attempt_api_call(model_ids[0])
+                responses = await attempt_api_call(model_id)
                 if (
                     responses is not None
                     and len([response for response in responses if is_valid(response)]) / len(responses)
                     < self.empty_completion_threshold
                 ):
                     raise RuntimeError(f"All invalid responses according to is_valid {responses}")
-
+            except (TypeError, InvalidArgument) as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying in {1.5**i} seconds. (Attempt {i})")
@@ -314,7 +315,7 @@ class GeminiModel(InferenceAPIModel):
             LOGGER.info(f"Current recitation failure rate: {self.recitation_failure_rate* 100:.2f}")
             return [
                 LLMResponse(
-                    model_id=model_ids[0],
+                    model_id=model_id,
                     completion="",
                     stop_reason=GeminiStopReason.RECITATION,
                     safety_ratings={},

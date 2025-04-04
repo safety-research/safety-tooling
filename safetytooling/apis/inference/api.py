@@ -5,19 +5,15 @@ import logging
 import os
 import time
 from collections import defaultdict
-from functools import wraps
 from itertools import chain
 from pathlib import Path
 from typing import Awaitable, Callable, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-from dotenv import load_dotenv
 from tqdm.auto import tqdm
 from typing_extensions import Self
 
-from safetytooling.apis.inference.openai.utils import get_equivalent_model_ids
 from safetytooling.data_models import (
     GEMINI_MODELS,
     BatchPrompt,
@@ -30,7 +26,7 @@ from safetytooling.data_models import (
     Prompt,
     TaggedModeration,
 )
-from safetytooling.utils.utils import get_repo_root, load_secrets, setup_environment
+from safetytooling.utils.utils import get_repo_root
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
 from .cache_manager import BaseCacheManager, get_cache_manager
@@ -46,11 +42,9 @@ from .openai.embedding import OpenAIEmbeddingModel
 from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
-from .opensource.batch_inference import BATCHED_MODELS, BatchAudioModel
+from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
-
-load_dotenv()
 
 LOGGER = logging.getLogger(__name__)
 
@@ -80,7 +74,7 @@ class InferenceAPI:
         together_num_threads: int = 80,
         vllm_num_threads: int = 8,
         deepseek_num_threads: int = 20,
-        prompt_history_dir: Path | Literal["default"] | None = "default",
+        prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
         use_redis: bool = False,
         empty_completion_threshold: int = 0,
@@ -129,10 +123,9 @@ class InferenceAPI:
         # can also set via env var
         if os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "false").lower() == "true":
             self.print_prompt_and_response = True
-        secrets = load_secrets("SECRETS")
         if prompt_history_dir == "default":
-            if "PROMPT_HISTORY_DIR" in secrets:
-                self.prompt_history_dir = Path(secrets["PROMPT_HISTORY_DIR"])
+            if "PROMPT_HISTORY_DIR" in os.environ:
+                self.prompt_history_dir = Path(os.environ["PROMPT_HISTORY_DIR"])
             else:
                 self.prompt_history_dir = get_repo_root() / ".prompt_history"
         else:
@@ -140,8 +133,8 @@ class InferenceAPI:
             self.prompt_history_dir = prompt_history_dir
 
         if cache_dir == "default":
-            if "CACHE_DIR" in secrets:
-                self.cache_dir = Path(secrets["CACHE_DIR"])
+            if "CACHE_DIR" in os.environ:
+                self.cache_dir = Path(os.environ["CACHE_DIR"])
             else:
                 self.cache_dir = get_repo_root() / ".cache"
         else:
@@ -149,7 +142,7 @@ class InferenceAPI:
             self.cache_dir = cache_dir
 
         self.cache_manager: BaseCacheManager | None = None
-        self.use_redis = use_redis or secrets.get("REDIS_CACHE", "false").lower() == "true"
+        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         if self.cache_dir is not None:
             self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
             print(f"{self.cache_manager=}")
@@ -182,19 +175,19 @@ class InferenceAPI:
         self._huggingface = HuggingFaceModel(
             num_threads=self.huggingface_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            token=secrets["HF_API_KEY"] if "HF_API_KEY" in secrets else None,
+            token=os.environ.get("HF_TOKEN", None),
         )
 
         self._gray_swan = GraySwanChatModel(
             num_threads=self.gray_swan_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=secrets["GRAYSWAN_API_KEY"] if "GRAYSWAN_API_KEY" in secrets else None,
+            api_key=os.environ.get("GRAYSWAN_API_KEY", None),
         )
 
         self._together = TogetherChatModel(
             num_threads=self.together_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=secrets["TOGETHER_API_KEY"] if "TOGETHER_API_KEY" in secrets else None,
+            api_key=os.environ.get("TOGETHER_API_KEY", None),
         )
 
         self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
@@ -214,38 +207,42 @@ class InferenceAPI:
         self._deepseek = DeepSeekChatModel(
             num_threads=self.deepseek_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=secrets["DEEPSEEK_API_KEY"] if "DEEPSEEK_API_KEY" in secrets else None,
+            api_key=os.environ.get("DEEPSEEK_API_KEY", None),
         )
 
-        self._batch_audio_models = {}
+        self._batch_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
-        if torch.cuda.is_available() and use_gpu_models:
+        if use_gpu_models:
             for model_name in BATCHED_MODELS:
                 try:
-                    self._batch_audio_models[model_name] = BatchAudioModel(
+                    self._batch_models[model_name] = BatchModel(
                         model_name,
                         prompt_history_dir=self.prompt_history_dir,
                     )
                 except Exception as e:
                     print(f"Error loading {model_name} model: {e}")
-                    self._batch_audio_models[model_name] = None
+                    self._batch_models[model_name] = None
 
         self.running_cost: float = 0
         self.model_timings = {}
         self.model_wait_times = {}
 
-        # Check NO_CACHE in secrets
-        self.no_cache = no_cache or secrets.get("NO_CACHE", "false").lower() == "true"
+        # Check NO_CACHE in os.environ
+        self.no_cache = no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
 
-    def semaphore_method_decorator(func):
-        # unused but could be useful to debug if openai jamming comes back
-        @wraps(func)
-        async def wrapper(self, *args, **kwargs):
-            async with self.openai_semaphore:
-                return await func(self, *args, **kwargs)
-
-        return wrapper
+        self.provider_to_class = {
+            "openai_completion": self._openai_completion,
+            "openai": self._openai_chat,
+            "anthropic": self._anthropic_chat,
+            "huggingface": self._huggingface,
+            "gemini": self._gemini_genai,
+            "batch_gpu": self._batch_models,
+            "openai_s2s": self._openai_s2s,
+            "together": self._together,
+            "vllm": self._vllm,
+            "deepseek": self._deepseek,
+        }
 
     @classmethod
     def get_default_global_api(cls) -> Self:
@@ -264,21 +261,29 @@ class InferenceAPI:
         else:
             return self._gemini_genai
 
-    def model_id_to_class(self, model_id: str, gemini_use_vertexai: bool = False) -> InferenceAPIModel:
-        if model_id in COMPLETION_MODELS:
+    def model_id_to_class(
+        self, model_id: str, gemini_use_vertexai: bool = False, force_provider: str | None = None
+    ) -> InferenceAPIModel:
+        if force_provider is not None:
+            assert force_provider in self.provider_to_class, f"Invalid force_provider: {force_provider}"
+            if force_provider == "batch_gpu":
+                return self._batch_models[model_id]
+            else:
+                return self.provider_to_class[force_provider]
+        elif model_id in COMPLETION_MODELS:
             return self._openai_completion
-        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt"):
+        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt") or model_id.startswith("gpt"):
             return self._openai_chat
-        elif model_id in ANTHROPIC_MODELS:
+        elif model_id in ANTHROPIC_MODELS or model_id.startswith("claude"):
             return self._anthropic_chat
         elif model_id in HUGGINGFACE_MODELS:
             return self._huggingface
         elif model_id in GRAYSWAN_MODELS:
             return self._gray_swan
-        elif model_id in GEMINI_MODELS:
+        elif model_id in GEMINI_MODELS or model_id.startswith("gemini"):
             return self.select_gemini_model(gemini_use_vertexai)
         elif model_id in BATCHED_MODELS:
-            class_for_model = self._batch_audio_models[model_id]
+            class_for_model = self._batch_models[model_id]
             assert class_for_model is not None, f"Error loading class for {model_id}"
             return class_for_model
         elif model_id in S2S_MODELS:
@@ -287,11 +292,13 @@ class InferenceAPI:
             return self._together
         elif model_id in VLLM_MODELS:
             return self._vllm
-        elif model_id in DEEPSEEK_MODELS:  # Add this condition
+        elif model_id in DEEPSEEK_MODELS:
             return self._deepseek
         elif self.use_vllm_if_model_not_found:
             return self._vllm
-        raise ValueError(f"Invalid model id: {model_id}")
+        raise ValueError(
+            f"Invalid model id: {model_id}. Pass openai_completion, openai_chat, anthropic, huggingface, gemini, batch_gpu, openai_s2s, together, vllm, or deepseek to force a provider."
+        )
 
     async def check_rate_limit(self, wait_time=60):
         current_time = time.time()
@@ -350,17 +357,18 @@ class InferenceAPI:
 
     async def __call__(
         self,
-        model_ids: str | tuple[str, ...],
+        model_id: str,
         prompt: Prompt | BatchPrompt,
         audio_out_dir: str | Path = None,
         print_prompt_and_response: bool = False,
-        max_tokens: int | None = None,
         n: int = 1,
         max_attempts_per_api_call: int = 10,
         num_candidates_per_completion: int = 1,
         is_valid: Callable[[str], bool] = lambda _: True,
         insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry",
         gemini_use_vertexai: bool = False,
+        huggingface_model_url: str | None = None,
+        force_provider: str | None = None,
         use_cache: bool = True,
         **kwargs,
     ) -> list[LLMResponse]:
@@ -368,15 +376,9 @@ class InferenceAPI:
         Make maximally efficient API requests for the specified model(s) and prompt.
 
         Args:
-            model_ids: The model(s) to call. If multiple models are specified, the output will be sampled from the
-                cheapest model that has capacity. All models must be from the same class (e.g. OpenAI Base,
-                OpenAI Chat, or Anthropic Chat). Anthropic chat will error if multiple models are passed in.
-                Passing in multiple models could speed up the response time if one of the models is overloaded.
-            prompt: The prompt to send to the model(s). Type should be Prompt.
+            model_id: The model to call.
+            prompt: The prompt to send to the model. Type should be Prompt.
             audio_out_dir : The directory where any audio output from the model (relevant for speech-to-speech models) should be saved
-            max_tokens: The maximum number of tokens to request from the API (argument added to
-                standardize the Anthropic and OpenAI APIs. For OpenAI this is renamed to max_completion_tokens before
-                being passed to the API).
             print_prompt_and_response: Whether to print the prompt and response to stdout.
             n: The number of completions to request.
             max_attempts_per_api_call: Passed to the underlying API call. If the API call fails (e.g. because the
@@ -391,38 +393,22 @@ class InferenceAPI:
                 - continue: return the valid responses, even if they are fewer than n
                 - pad_invalids: pad the list with invalid responses up to n
                 - retry: retry the API call until n valid responses are found
+            huggingface_model_url: If specified, use this model URL for HuggingFace models.
+            force_provider: If specified, force the API call to use the specified provider.
+            use_cache: Whether to use the cache.
         """
         if self.no_cache:
             use_cache = False
 
-        # trick to double rate limit for most recent model only
-        if isinstance(model_ids, str):
-            model_ids = get_equivalent_model_ids(model_ids)
-
-        if "gpt-4o-s2s" in model_ids or model_ids == "gpt-4o-s2s":
-            assert audio_out_dir is not None, "audio_out_dir is required when using gpt-4o-s2s model!"
-
-        model_classes = [self.model_id_to_class(model_id, gemini_use_vertexai) for model_id in model_ids]
-        if len(set(str(type(x)) for x in model_classes)) != 1:
-            raise ValueError("All model ids must be of the same type.")
-
-        # standardize max_tokens argument
-        model_class = model_classes[0]
-
-        if max_tokens is not None:
-            if isinstance(model_class, OpenAIChatModel):
-                # OpenAI chat models use max_completion_tokens instead of max_tokens
-                kwargs["max_completion_tokens"] = max_tokens
-            else:
-                kwargs["max_tokens"] = max_tokens
-        elif isinstance(model_class, AnthropicChatModel):
-            # Default non-null value for Anthropic chat models
-            kwargs["max_tokens"] = 2000
+        model_class = self.model_id_to_class(model_id, gemini_use_vertexai, force_provider)
 
         num_candidates = num_candidates_per_completion * n
 
+        assert "top_logprobs" not in kwargs, "top_logprobs is not supported, pass an integer with `logprobs` instead"
+
+        # used for caching and type checking
         llm_cache_params = LLMParams(
-            model=model_ids,
+            model=model_id,
             n=n,
             insufficient_valids_behaviour=insufficient_valids_behaviour,
             num_candidates_per_completion=num_candidates_per_completion,
@@ -469,13 +455,15 @@ class InferenceAPI:
                     prompt = prompt
 
         if isinstance(model_class, AnthropicChatModel) or isinstance(model_class, HuggingFaceModel):
+            if isinstance(model_class, HuggingFaceModel):
+                kwargs["model_url"] = huggingface_model_url
             # Anthropic chat doesn't support generating multiple candidates at once, so we have to do it manually
             candidate_responses = list(
                 chain.from_iterable(
                     await asyncio.gather(
                         *[
                             model_class(
-                                model_ids,
+                                model_id,
                                 prompt,
                                 self.print_prompt_and_response or print_prompt_and_response,
                                 max_attempts_per_api_call,
@@ -493,7 +481,7 @@ class InferenceAPI:
             for _ in range(num_candidates):
                 async with self.gemini_semaphore:
                     response = await model_class(
-                        model_ids,
+                        model_id,
                         prompt,
                         self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call,
@@ -505,11 +493,11 @@ class InferenceAPI:
                         **kwargs,
                     )
                     candidate_responses.extend(response)
-        elif isinstance(model_class, BatchAudioModel):
+        elif isinstance(model_class, BatchModel):
             if not isinstance(prompt, BatchPrompt):
                 raise ValueError(f"{model_class.__class__.__name__} requires a BatchPrompt input")
             candidate_responses = model_class(
-                model_ids=model_ids,
+                model_id=model_id,
                 batch_prompt=prompt,
                 print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call=max_attempts_per_api_call,
@@ -534,7 +522,7 @@ class InferenceAPI:
                     self.n_calls += 1
                     await self.gpt_4o_rate_limiter.acquire()
                     response = await model_class(
-                        model_ids=model_ids,
+                        model_id=model_id,
                         prompt=prompt,
                         audio_out_dir=audio_out_dir,
                         print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
@@ -546,7 +534,7 @@ class InferenceAPI:
         else:
             async with self.openai_semaphore:
                 candidate_responses = await model_class(
-                    model_ids,
+                    model_id,
                     prompt,
                     self.print_prompt_and_response or print_prompt_and_response,
                     max_attempts_per_api_call,
@@ -604,14 +592,14 @@ class InferenceAPI:
 
     async def ask_single_question(
         self,
-        model_ids: str | tuple[str, ...],
+        model_id: str,
         question: str,
         system_prompt: str | None = None,
         **api_kwargs,
     ) -> list[str]:
         """Wrapper around __call__ to ask a single question."""
         responses = await self(
-            model_ids=model_ids,
+            model_id=model_id,
             prompt=Prompt(
                 messages=(
                     [] if system_prompt is None else [ChatMessage(role=MessageRole.system, content=system_prompt)]
@@ -734,7 +722,6 @@ class InferenceAPI:
 
 
 async def demo():
-    setup_environment()
     model_api = InferenceAPI()
 
     prompt_examples = [

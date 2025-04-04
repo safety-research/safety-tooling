@@ -5,6 +5,7 @@ from pathlib import Path
 from traceback import format_exc
 
 from together import AsyncTogether
+from together.error import InvalidRequestError
 
 from safetytooling.data_models import LLMResponse, Prompt
 
@@ -23,11 +24,13 @@ TOGETHER_MODELS = {
     "meta-llama/Llama-3.3-70B-Instruct-Turbo",
     "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
     "meta-llama/Llama-2-13b-chat-hf",
+    "meta-llama/Llama-3.2-3B-Instruct-Turbo",
     "mistralai/Mistral-7B-v0.1",
     "mistralai/Mixtral-8x7B-Instruct-v0.1",
     "mistralai/Mixtral-8x22B-Instruct-v0.1",
     "google/gemma-2-9b-it",
     "google/gemma-2-27b-it",
+    "deepseek-ai/DeepSeek-R1",
     "deepseek-ai/DeepSeek-V3",
     "deepseek-ai/deepseek-llm-67b-chat",
     "Qwen/Qwen2.5-Coder-32B-Instruct",
@@ -51,7 +54,6 @@ class TogetherChatModel(InferenceAPIModel):
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "logprobs", "n"}
 
     @staticmethod
     def convert_top_logprobs(data) -> list[dict]:
@@ -67,7 +69,7 @@ class TogetherChatModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
@@ -75,14 +77,14 @@ class TogetherChatModel(InferenceAPIModel):
         **kwargs,
     ) -> list[LLMResponse]:
         if self.aclient is None:
-            raise RuntimeError(
-                "TOGETHER_API_KEY environment variable must be set in SECRETS before running your script"
-            )
+            raise RuntimeError("TOGETHER_API_KEY environment variable must be set in .env before running your script")
         start = time.time()
-        assert len(model_ids) == 1, "Together implementation only supports one model at a time."
-        (model_id,) = model_ids
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
+
+        if "logprobs" in kwargs:
+            kwargs["top_logprobs"] = kwargs["logprobs"]
+            kwargs["logprobs"] = True
 
         LOGGER.debug(f"Making {model_id} call")
         response_data = None
@@ -94,19 +96,16 @@ class TogetherChatModel(InferenceAPIModel):
                 async with self.available_requests:
                     api_start = time.time()
 
-                    filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
-                    if "logprobs" in filtered_kwargs:
-                        filtered_kwargs["top_logprobs"] = filtered_kwargs["logprobs"]
-                        filtered_kwargs["logprobs"] = True
-
                     response_data = await self.aclient.chat.completions.create(
                         messages=prompt.together_format(),
                         model=model_id,
-                        **filtered_kwargs,
+                        **kwargs,
                     )
                     api_duration = time.time() - api_start
                     if not is_valid(response_data):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
+            except (TypeError, InvalidRequestError) as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

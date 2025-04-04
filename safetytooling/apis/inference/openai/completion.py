@@ -10,15 +10,12 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 from safetytooling.data_models import LLMResponse, Prompt
 
 from .base import OpenAIModel
-from .utils import COMPLETION_MODELS, get_rate_limit, price_per_token
+from .utils import get_rate_limit, price_per_token
 
 LOGGER = logging.getLogger(__name__)
 
 
 class OpenAICompletionModel(OpenAIModel):
-    def _assert_valid_id(self, model_id: str):
-        assert model_id in COMPLETION_MODELS, f"Invalid model id: {model_id}"
-
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
         url = "https://api.openai.com/v1/completions" if self.base_url is None else self.base_url + "/v1/completions"

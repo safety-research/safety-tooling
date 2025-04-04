@@ -25,7 +25,6 @@ class DeepSeekChatModel(InferenceAPIModel):
         self.prompt_history_dir = prompt_history_dir
         self.api_key = api_key
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        self.allowed_kwargs = {"temperature", "max_tokens", "top_p", "stream"}
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
@@ -33,7 +32,7 @@ class DeepSeekChatModel(InferenceAPIModel):
 
     async def __call__(
         self,
-        model_ids: tuple[str, ...],
+        model_id: str,
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
@@ -41,12 +40,8 @@ class DeepSeekChatModel(InferenceAPIModel):
         **kwargs,
     ) -> list[LLMResponse]:
         if self.api_key is None:
-            raise RuntimeError(
-                "DEEPSEEK_API_KEY environment variable must be set in SECRETS before running your script"
-            )
+            raise RuntimeError("DEEPSEEK_API_KEY environment variable must be set in .env before running your script")
         start = time.time()
-        assert len(model_ids) == 1, "DeepSeek implementation only supports one model at a time."
-        (model_id,) = model_ids
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
@@ -59,7 +54,6 @@ class DeepSeekChatModel(InferenceAPIModel):
                 async with self.available_requests:
                     api_start = time.time()
 
-                    filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.allowed_kwargs}
                     async with aiohttp.ClientSession() as session:
                         async with session.post(
                             "https://api.deepseek.com/v1/chat/completions",
@@ -67,7 +61,7 @@ class DeepSeekChatModel(InferenceAPIModel):
                             json={
                                 "model": model_id,
                                 "messages": prompt.openai_format(),
-                                **filtered_kwargs,
+                                **kwargs,
                             },
                         ) as response:
                             response_data = await response.json()
@@ -80,7 +74,8 @@ class DeepSeekChatModel(InferenceAPIModel):
                     if not is_valid(response_data["choices"][0]["message"]["content"]):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
                     break
-
+            except TypeError as e:
+                raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")

@@ -1,3 +1,6 @@
+Here is an example of a handler for a model that is finetuned using the Hugging Face Hub.
+
+```python
 import argparse
 import os
 import subprocess
@@ -98,3 +101,4 @@ if __name__ == "__main__":
             print(result)
     except KeyboardInterrupt:
         print("Inference stopped by user.")
+```
