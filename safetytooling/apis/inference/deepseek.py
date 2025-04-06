@@ -5,7 +5,6 @@ from pathlib import Path
 from traceback import format_exc
 
 import aiohttp
-
 from safetytooling.data_models import LLMResponse, Prompt
 
 from .model import InferenceAPIModel
@@ -55,16 +54,28 @@ class DeepSeekChatModel(InferenceAPIModel):
                     api_start = time.time()
 
                     async with aiohttp.ClientSession() as session:
-                        async with session.post(
-                            "https://api.deepseek.com/v1/chat/completions",
-                            headers=self.headers,
-                            json={
-                                "model": model_id,
-                                "messages": prompt.openai_format(),
-                                **kwargs,
-                            },
-                        ) as response:
-                            response_data = await response.json()
+                        if prompt.messages[-1].role == "user":
+                            async with session.post(
+                                "https://api.deepseek.com/v1/chat/completions",
+                                headers=self.headers,
+                                json={
+                                    "model": model_id,
+                                    "messages": prompt.deepseek_format(),
+                                    **kwargs,
+                                },
+                            ) as response:
+                                response_data = await response.json()
+                        elif prompt.messages[-1].role == "assistant":
+                            async with session.post(
+                                "https://api.deepseek.com/beta/chat/completions",
+                                headers=self.headers,
+                                json={
+                                    "model": model_id,
+                                    "messages": prompt.deepseek_format(),
+                                    **kwargs,
+                                },
+                            ) as response:
+                                response_data = await response.json()
 
                     api_duration = time.time() - api_start
 
