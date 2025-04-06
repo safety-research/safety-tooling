@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import anthropic.types
 import numpy as np
@@ -42,6 +42,16 @@ class MessageRole(str, Enum):
     none = "none"
 
 
+class ChatCompletionDeepSeekAssistantMessageParam(openai.types.chat.ChatCompletionAssistantMessageParam):
+    """
+    Inherited from openai.types.chat.ChatCompletionAssistantMessageParam
+    to add prefix field for DeepSeek API
+    """
+
+    prefix: Optional[bool]
+    """Whether the message is a prefill/prefix. Specifically for DeepSeek API."""
+
+
 class ChatMessage(HashableBaseModel):
     role: MessageRole
     content: str | Path
@@ -56,7 +66,9 @@ class ChatMessage(HashableBaseModel):
     def openai_format(self) -> openai.types.chat.ChatCompletionMessageParam:
         return {"role": self.role.value, "content": self.content}
 
-    def deepseek_format(self, is_prefix=False) -> openai.types.chat.ChatCompletionMessageParam:
+    def deepseek_format(
+        self, is_prefix=False
+    ) -> Union[openai.types.chat.ChatCompletionMessageParam, ChatCompletionDeepSeekAssistantMessageParam]:
         if is_prefix:
             return {"role": self.role.value, "content": self.content, "prefix": True}
         else:
