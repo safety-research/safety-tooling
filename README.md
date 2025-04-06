@@ -160,6 +160,29 @@ response = await API(
     force_provider="openai",
 )
 ```
+### Deploying for inference via VLLM
+
+We make this easy to run a server locally and hook into the InferenceAPI. Here is a snippet and it is also in the `examples/inference_api/vllm_api.ipynb` notebook.
+
+```
+from safetytooling.apis import InferenceAPI
+from safetytooling.data_models import ChatMessage, MessageRole, Prompt
+from safetytooling.utils import utils
+from safetytooling.utils.vllm_utils import deploy_model_vllm_locally_auto
+
+utils.setup_environment()
+
+server = await deploy_model_vllm_locally_auto("meta-llama/Llama-3.1-8B-Instruct", max_model_len=1024, max_num_seqs=32)
+API = InferenceAPI(vllm_base_url=f"{server.base_url}/v1/chat/completions", vllm_num_threads=32, use_vllm_if_model_not_found=True)
+prompt = Prompt(messages=[ChatMessage(content="What is your name?", role=MessageRole.user)])
+
+response = await API(
+    model_id=server.model_name,
+    prompt=prompt,
+    print_prompt_and_response=True,
+)
+```
+
 
 ### Running Finetuning
 
