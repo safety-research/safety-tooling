@@ -25,10 +25,9 @@ git clone git@github.com:safety-research/safety-tooling.git
 cd safety-tooling
 ```
 
-3. Install python 3.11 and create a virtual environment.
+3. Create a virtual environment with python 3.11.
 ```
-uv python install 3.11
-uv venv
+uv venv --python=python3.11
 source .venv/bin/activate
 ```
 

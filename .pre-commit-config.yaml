@@ -12,7 +12,7 @@ repos:
       - id: no-commit-to-branch
         args: ['--branch=main']
         stages:
-          - commit
+          - pre-commit
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
