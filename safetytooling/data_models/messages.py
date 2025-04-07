@@ -67,7 +67,7 @@ class ChatMessage(HashableBaseModel):
         return {"role": self.role.value, "content": self.content}
 
     def deepseek_format(
-        self, is_prefix=False
+        self, is_prefix: bool = False
     ) -> Union[openai.types.chat.ChatCompletionMessageParam, ChatCompletionDeepSeekAssistantMessageParam]:
         if is_prefix:
             return {"role": self.role.value, "content": self.content, "prefix": True}
