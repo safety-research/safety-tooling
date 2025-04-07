@@ -5,6 +5,7 @@ from pathlib import Path
 from traceback import format_exc
 
 import aiohttp
+
 from safetytooling.data_models import LLMResponse, Prompt
 
 from .model import InferenceAPIModel
