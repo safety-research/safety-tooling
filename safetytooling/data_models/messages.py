@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import anthropic.types
 import numpy as np
@@ -9,8 +9,16 @@ import pydantic
 from termcolor import cprint
 from typing_extensions import Self
 
-from ..utils.audio_utils import get_audio_data, prepare_audio_part, prepare_openai_s2s_audio
-from ..utils.image_utils import get_image_file_type, image_to_base64, prepare_gemini_image
+from ..utils.audio_utils import (
+    get_audio_data,
+    prepare_audio_part,
+    prepare_openai_s2s_audio,
+)
+from ..utils.image_utils import (
+    get_image_file_type,
+    image_to_base64,
+    prepare_gemini_image,
+)
 from .hashable import HashableBaseModel
 from .inference import LLMResponse
 
@@ -34,6 +42,16 @@ class MessageRole(str, Enum):
     none = "none"
 
 
+class ChatCompletionDeepSeekAssistantMessageParam(openai.types.chat.ChatCompletionAssistantMessageParam):
+    """
+    Inherited from openai.types.chat.ChatCompletionAssistantMessageParam
+    to add prefix field for DeepSeek API
+    """
+
+    prefix: Optional[bool]
+    """Whether the message is a prefill/prefix. Specifically for DeepSeek API."""
+
+
 class ChatMessage(HashableBaseModel):
     role: MessageRole
     content: str | Path
@@ -47,6 +65,14 @@ class ChatMessage(HashableBaseModel):
 
     def openai_format(self) -> openai.types.chat.ChatCompletionMessageParam:
         return {"role": self.role.value, "content": self.content}
+
+    def deepseek_format(
+        self, is_prefix: bool = False
+    ) -> Union[openai.types.chat.ChatCompletionMessageParam, ChatCompletionDeepSeekAssistantMessageParam]:
+        if is_prefix:
+            return {"role": self.role.value, "content": self.content, "prefix": True}
+        else:
+            return {"role": self.role.value, "content": self.content}
 
     def openai_image_format(self):
         # for images the format involves including images and user text in the same message
@@ -259,6 +285,19 @@ class Prompt(HashableBaseModel):
         if self.contains_image():
             return self.openai_image_format()
         return [msg.openai_format() for msg in self.messages]
+
+    def deepseek_format(
+        self,
+    ) -> list[openai.types.chat.ChatCompletionMessageParam]:
+        if self.is_last_message_assistant():
+            return [msg.deepseek_format() for msg in self.messages[:-1]] + [
+                self.messages[-1].deepseek_format(is_prefix=True)
+            ]
+        if self.is_none_in_messages():
+            raise ValueError(f"DeepSeek chat prompts cannot have a None role. Got {self.messages}")
+        if self.contains_image():
+            return self.openai_image_format()
+        return [msg.deepseek_format() for msg in self.messages]
 
     def gemini_format(self, use_vertexai: bool = False) -> List[str]:
         if self.is_none_in_messages():
