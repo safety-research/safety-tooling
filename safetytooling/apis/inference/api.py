@@ -42,6 +42,7 @@ from .openai.embedding import OpenAIEmbeddingModel
 from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
+from .openrouter import OPENROUTER_MODELS, OpenRouterChatModel
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
@@ -72,6 +73,7 @@ class InferenceAPI:
         gray_swan_num_threads: int = 80,
         huggingface_num_threads: int = 100,
         together_num_threads: int = 80,
+        openrouter_num_threads: int = 80,
         vllm_num_threads: int = 8,
         deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = None,
@@ -108,6 +110,7 @@ class InferenceAPI:
         self.gemini_recitation_rate_threshold = gemini_recitation_rate_threshold
         self.gray_swan_num_threads = gray_swan_num_threads
         self.together_num_threads = together_num_threads
+        self.openrouter_num_threads = openrouter_num_threads
         self.huggingface_num_threads = huggingface_num_threads
         self.vllm_num_threads = vllm_num_threads
         self.deepseek_num_threads = deepseek_num_threads
@@ -190,6 +193,12 @@ class InferenceAPI:
             api_key=os.environ.get("TOGETHER_API_KEY", None),
         )
 
+        self._openrouter = OpenRouterChatModel(
+            num_threads=self.openrouter_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+            api_key=os.environ.get("OPENROUTER_API_KEY", None),
+        )
+
         self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
         self._gemini_genai = GeminiModel(
             prompt_history_dir=self.prompt_history_dir,
@@ -240,6 +249,7 @@ class InferenceAPI:
             "batch_gpu": self._batch_models,
             "openai_s2s": self._openai_s2s,
             "together": self._together,
+            "openrouter": self._openrouter,
             "vllm": self._vllm,
             "deepseek": self._deepseek,
         }
@@ -290,6 +300,8 @@ class InferenceAPI:
             return self._openai_s2s
         elif model_id in TOGETHER_MODELS or model_id.startswith("scalesafetyresearch"):
             return self._together
+        elif model_id in OPENROUTER_MODELS or model_id.startswith("openrouter/"):
+            return self._openrouter
         elif model_id in VLLM_MODELS:
             return self._vllm
         elif model_id in DEEPSEEK_MODELS:
@@ -297,7 +309,7 @@ class InferenceAPI:
         elif self.use_vllm_if_model_not_found:
             return self._vllm
         raise ValueError(
-            f"Invalid model id: {model_id}. Pass openai_completion, openai_chat, anthropic, huggingface, gemini, batch_gpu, openai_s2s, together, vllm, or deepseek to force a provider."
+            f"Invalid model id: {model_id}. Pass openai_completion, openai_chat, anthropic, huggingface, gemini, batch_gpu, openai_s2s, together, openrouter, vllm, or deepseek to force a provider."
         )
 
     async def check_rate_limit(self, wait_time=60):
