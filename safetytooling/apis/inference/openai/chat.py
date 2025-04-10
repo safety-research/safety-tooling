@@ -133,22 +133,32 @@ class OpenAIChatModel(OpenAIModel):
                 response=httpx.Response(status_code=429, text=api_response.error["message"], request=dummy_request),
                 body=api_response.error,
             )
+        if (
+            api_response.choices is None or api_response.usage.prompt_tokens == api_response.usage.total_tokens
+        ):  # this sometimes happens on OpenRouter; we want to raise an error
+            raise RuntimeError(f"No tokens were generated for {model_id}")
         api_duration = time.time() - api_start
         duration = time.time() - start_time
         context_token_cost, completion_token_cost = price_per_token(model_id)
-        context_cost = api_response.usage.prompt_tokens * context_token_cost
-        responses = [
-            LLMResponse(
-                model_id=model_id,
-                completion=choice.message.content,
-                stop_reason=choice.finish_reason,
-                api_duration=api_duration,
-                duration=duration,
-                cost=context_cost + self.count_tokens(choice.message.content) * completion_token_cost,
-                logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
+        if api_response.usage is not None:
+            context_cost = api_response.usage.prompt_tokens * context_token_cost
+        else:
+            context_cost = 0
+        responses = []
+        for choice in api_response.choices:
+            if choice.message.content is None or choice.finish_reason is None:
+                raise RuntimeError(f"No content or finish reason for {model_id}")
+            responses.append(
+                LLMResponse(
+                    model_id=model_id,
+                    completion=choice.message.content,
+                    stop_reason=choice.finish_reason,
+                    api_duration=api_duration,
+                    duration=duration,
+                    cost=context_cost + self.count_tokens(choice.message.content) * completion_token_cost,
+                    logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
+                )
             )
-            for choice in api_response.choices
-        ]
         self.add_response_to_prompt_file(prompt_file, responses)
         return responses
 

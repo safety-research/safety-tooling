@@ -151,9 +151,11 @@ class AnthropicChatModel(InferenceAPIModel):
             ), "Anthropic reasoning models don't support multiple completions"
 
             if is_reasoning:
+                if not hasattr(response.content[-1], "text"):
+                    raise RuntimeError(f"Anthropic reasoning model {model_id} returned a response with no text")
                 response = LLMResponse(
                     model_id=model_id,
-                    completion=response.content[1].text,
+                    completion=response.content[-1].text,
                     stop_reason=response.stop_reason,
                     duration=duration,
                     api_duration=api_duration,
