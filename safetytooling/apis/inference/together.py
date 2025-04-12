@@ -5,7 +5,7 @@ from pathlib import Path
 from traceback import format_exc
 
 from together import AsyncTogether
-from together.error import InvalidRequestError
+from together.error import InvalidRequestError, ServiceUnavailableError
 
 from safetytooling.data_models import LLMResponse, Prompt
 
@@ -101,6 +101,9 @@ class TogetherChatModel(InferenceAPIModel):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
             except (TypeError, InvalidRequestError) as e:
                 raise e
+            except ServiceUnavailableError:
+                LOGGER.warn(f"Service Unavailable or Rate Limited for {model_id}")
+                await asyncio.sleep(10)
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
