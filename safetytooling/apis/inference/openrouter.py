@@ -90,6 +90,13 @@ class OpenRouterChatModel(InferenceAPIModel):
                         **kwargs,
                     )
                     api_duration = time.time() - api_start
+                    if (
+                        response_data.choices[0].message.content is None
+                        or response_data.choices[0].message.content == ""
+                    ):
+                        raise RuntimeError(f"Empty response from {model_id} (common for openrouter so retrying)")
+                    if response_data.choices[0].finish_reason is None:
+                        raise RuntimeError(f"No finish reason from {model_id} (common for openrouter so retrying)")
                     if not is_valid(response_data):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
             except (TypeError, BadRequestError) as e:
@@ -108,6 +115,9 @@ class OpenRouterChatModel(InferenceAPIModel):
 
         if response_data is None:
             raise RuntimeError("No response data received")
+
+        if response_data.choices[0].message.content is None or response_data.choices[0].message.content == "":
+            raise RuntimeError(f"Empty response from {model_id} (even after retries, perhaps decrease concurrency)")
 
         assert len(response_data.choices) == kwargs.get(
             "n", 1
