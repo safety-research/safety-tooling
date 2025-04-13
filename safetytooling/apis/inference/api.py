@@ -30,7 +30,6 @@ from safetytooling.utils.utils import get_repo_root
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
 from .cache_manager import BaseCacheManager, get_cache_manager
-from .deepseek import DEEPSEEK_MODELS, DeepSeekChatModel
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
@@ -51,6 +50,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 _DEFAULT_GLOBAL_INFERENCE_API: InferenceAPI | None = None
+
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_MODELS = {"deepseek-chat", "deepseek-reasoner"}
 
 
 class InferenceAPI:
@@ -103,6 +105,7 @@ class InferenceAPI:
         self.openai_fraction_rate_limit = openai_fraction_rate_limit
         self.openai_base_url = openai_base_url
         # limit openai api calls to stop async jamming
+        self.deepseek_semaphore = asyncio.Semaphore(deepseek_num_threads)
         self.openai_semaphore = asyncio.Semaphore(openai_num_threads)
         self.gemini_semaphore = asyncio.Semaphore(gemini_num_threads)
         self.openai_s2s_semaphore = asyncio.Semaphore(openai_s2s_num_threads)
@@ -213,10 +216,12 @@ class InferenceAPI:
             vllm_base_url=self.vllm_base_url,
         )
 
-        self._deepseek = DeepSeekChatModel(
-            num_threads=self.deepseek_num_threads,
+        # DeepSeek uses the OpenAI API
+        self._deepseek = OpenAIChatModel(
+            frac_rate_limit=1,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=os.environ.get("DEEPSEEK_API_KEY", None),
+            base_url=DEEPSEEK_BASE_URL,
+            openai_api_key=os.environ.get("DEEPSEEK_API_KEY", None),
         )
 
         self._batch_models = {}
@@ -318,9 +323,9 @@ class InferenceAPI:
         avg_rpm = self.n_calls / total_runtime
 
         try:
-            assert (
-                avg_rpm <= self.gpt4o_s2s_rpm_cap
-            ), f"Average RPM {avg_rpm} is above rate limit of {self.gpt4o_s2s_rpm_cap}!"
+            assert avg_rpm <= self.gpt4o_s2s_rpm_cap, (
+                f"Average RPM {avg_rpm} is above rate limit of {self.gpt4o_s2s_rpm_cap}!"
+            )
         except Exception:
             LOGGER.warning(
                 f"Average RPM {avg_rpm} with {self.n_calls} calls made in {total_runtime} minutes is above rate limit of {self.gpt4o_s2s_rpm_cap}! Sleeping for {wait_time} seconds"
@@ -443,9 +448,9 @@ class InferenceAPI:
             if all(cached_results):
                 # Assert there is only one result in cached_result if prompt is a regular Prompt (i.e. not BatchPrompt)
                 if isinstance(prompt, Prompt):
-                    assert (
-                        len(cached_results) == len(cached_responses) == 1
-                    ), "prompt is not a BatchPrompt but cached results contain more than one entry!"
+                    assert len(cached_results) == len(cached_responses) == 1, (
+                        "prompt is not a BatchPrompt but cached results contain more than one entry!"
+                    )
                     return cached_responses[0]
                 else:
                     return cached_responses
@@ -543,17 +548,49 @@ class InferenceAPI:
                         **kwargs,
                     )
                     candidate_responses.extend(response)
+        elif isinstance(model_class, OpenRouterChatModel):
+            candidate_responses = await model_class(
+                model_id,
+                prompt,
+                self.print_prompt_and_response or print_prompt_and_response,
+                max_attempts_per_api_call,
+                n=num_candidates,
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                **kwargs,
+            )
         else:
-            async with self.openai_semaphore:
-                candidate_responses = await model_class(
-                    model_id,
-                    prompt,
-                    self.print_prompt_and_response or print_prompt_and_response,
-                    max_attempts_per_api_call,
-                    n=num_candidates,
-                    is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
-                    **kwargs,
+            # At this point, the request should be for DeepSeek or OpenAI, which use the same API.
+            if not isinstance(model_class, OpenAIChatModel):
+                raise RuntimeError(
+                    f"Got unexpected model class: {model_class}."
+                    "Make sure to implement logic to handle __call__ for your custom ChatModel."
                 )
+            if model_class.base_url == DEEPSEEK_BASE_URL:
+                candidate_responses = []
+                for _ in range(num_candidates):  # DeepSeek doesn't support multiple completions.
+                    async with self.deepseek_semaphore:
+                        self.n_calls += 1
+                        response = await model_class(
+                            model_id,
+                            prompt,
+                            self.print_prompt_and_response or print_prompt_and_response,
+                            max_attempts_per_api_call,
+                            is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                            **kwargs,
+                        )
+                        candidate_responses.extend(response)
+
+            else:
+                async with self.openai_semaphore:
+                    candidate_responses = await model_class(
+                        model_id,
+                        prompt,
+                        self.print_prompt_and_response or print_prompt_and_response,
+                        max_attempts_per_api_call,
+                        n=num_candidates,
+                        is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                        **kwargs,
+                    )
 
         # Save cache
         if self.cache_manager is not None:
@@ -589,9 +626,9 @@ class InferenceAPI:
                 insufficient_valids_behaviour,
             )
         else:
-            assert (
-                insufficient_valids_behaviour == "retry"
-            ), f"We don't support {insufficient_valids_behaviour} for BatchPrompt"
+            assert insufficient_valids_behaviour == "retry", (
+                f"We don't support {insufficient_valids_behaviour} for BatchPrompt"
+            )
             responses = candidate_responses
 
         # update running cost and model timings
