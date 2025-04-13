@@ -39,7 +39,7 @@ class LLMParams(HashableBaseModel):
         super().__init__(**known_kwargs)
 
 
-class StopReason(Enum):
+class StopReason(str, Enum):
     MAX_TOKENS = "max_tokens"
     STOP_SEQUENCE = "stop_sequence"
     CONTENT_FILTER = "content_filter"
