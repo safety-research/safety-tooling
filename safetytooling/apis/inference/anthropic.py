@@ -83,10 +83,10 @@ class AnthropicChatModel(InferenceAPIModel):
         response: anthropic.types.Message | None = None
         duration = None
 
-        error_list = []
-        for i in range(max_attempts):
-            try:
-                async with self.available_requests:
+        async with self.available_requests:
+            error_list = []
+            for i in range(max_attempts):
+                try:
                     api_start = time.time()
 
                     response = await self.aclient.messages.create(
@@ -100,16 +100,18 @@ class AnthropicChatModel(InferenceAPIModel):
                     api_duration = time.time() - api_start
                     if not is_valid(response):
                         raise RuntimeError(f"Invalid response according to is_valid {response}")
-            except (TypeError, anthropic.NotFoundError) as e:
-                raise e
-            except Exception as e:
-                error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
-                error_list.append(error_info)
-                api_duration = time.time() - api_start
-                await asyncio.sleep(1.5**i)
-            else:
-                break
+                except (TypeError, anthropic.NotFoundError) as e:
+                    raise e
+                except Exception as e:
+                    error_info = (
+                        f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
+                    )
+                    LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                    error_list.append(error_info)
+                    api_duration = time.time() - api_start
+                    await asyncio.sleep(1.5**i)
+                else:
+                    break
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")

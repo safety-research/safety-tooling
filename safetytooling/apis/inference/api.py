@@ -323,9 +323,9 @@ class InferenceAPI:
         avg_rpm = self.n_calls / total_runtime
 
         try:
-            assert avg_rpm <= self.gpt4o_s2s_rpm_cap, (
-                f"Average RPM {avg_rpm} is above rate limit of {self.gpt4o_s2s_rpm_cap}!"
-            )
+            assert (
+                avg_rpm <= self.gpt4o_s2s_rpm_cap
+            ), f"Average RPM {avg_rpm} is above rate limit of {self.gpt4o_s2s_rpm_cap}!"
         except Exception:
             LOGGER.warning(
                 f"Average RPM {avg_rpm} with {self.n_calls} calls made in {total_runtime} minutes is above rate limit of {self.gpt4o_s2s_rpm_cap}! Sleeping for {wait_time} seconds"
@@ -448,9 +448,9 @@ class InferenceAPI:
             if all(cached_results):
                 # Assert there is only one result in cached_result if prompt is a regular Prompt (i.e. not BatchPrompt)
                 if isinstance(prompt, Prompt):
-                    assert len(cached_results) == len(cached_responses) == 1, (
-                        "prompt is not a BatchPrompt but cached results contain more than one entry!"
-                    )
+                    assert (
+                        len(cached_results) == len(cached_responses) == 1
+                    ), "prompt is not a BatchPrompt but cached results contain more than one entry!"
                     return cached_responses[0]
                 else:
                     return cached_responses
@@ -626,9 +626,9 @@ class InferenceAPI:
                 insufficient_valids_behaviour,
             )
         else:
-            assert insufficient_valids_behaviour == "retry", (
-                f"We don't support {insufficient_valids_behaviour} for BatchPrompt"
-            )
+            assert (
+                insufficient_valids_behaviour == "retry"
+            ), f"We don't support {insufficient_valids_behaviour} for BatchPrompt"
             responses = candidate_responses
 
         # update running cost and model timings
