@@ -45,6 +45,7 @@ from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
+from .deepinfra import DEEPINFRA_MODELS, DeepInfraModel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ class InferenceAPI:
         together_num_threads: int = 80,
         vllm_num_threads: int = 8,
         deepseek_num_threads: int = 20,
+        deepinfra_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
         use_redis: bool = False,
@@ -111,6 +113,7 @@ class InferenceAPI:
         self.huggingface_num_threads = huggingface_num_threads
         self.vllm_num_threads = vllm_num_threads
         self.deepseek_num_threads = deepseek_num_threads
+        self.deepinfra_num_threads = deepinfra_num_threads
         self.empty_completion_threshold = empty_completion_threshold
         self.gpt4o_s2s_rpm_cap = gpt4o_s2s_rpm_cap
         self.init_time = time.time()
@@ -209,6 +212,12 @@ class InferenceAPI:
             prompt_history_dir=self.prompt_history_dir,
             api_key=os.environ.get("DEEPSEEK_API_KEY", None),
         )
+        
+        self._deepinfra = DeepInfraModel(
+            num_threads=self.deepinfra_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+            api_key=os.environ.get("OPENROUTER_API_KEY", None),
+        )
 
         self._batch_models = {}
 
@@ -242,6 +251,7 @@ class InferenceAPI:
             "together": self._together,
             "vllm": self._vllm,
             "deepseek": self._deepseek,
+            "deepinfra": self._deepinfra,
         }
 
     @classmethod
@@ -288,6 +298,8 @@ class InferenceAPI:
             return class_for_model
         elif model_id in S2S_MODELS:
             return self._openai_s2s
+        elif model_id in DEEPINFRA_MODELS: # Prefer DeepInfra over Together for some models
+            return self._deepinfra
         elif model_id in TOGETHER_MODELS or model_id.startswith("scalesafetyresearch"):
             return self._together
         elif model_id in VLLM_MODELS:

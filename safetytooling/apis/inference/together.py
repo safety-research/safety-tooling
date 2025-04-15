@@ -12,30 +12,50 @@ from safetytooling.data_models import LLMResponse, Prompt
 from .model import InferenceAPIModel
 
 TOGETHER_MODELS = {
-    "meta-llama/Llama-3.2-1B-Instruct",
-    "meta-llama/Meta-Llama-3-8B-Instruct",
-    "meta-llama/Meta-Llama-3.1-8B-Instruct-Reference",
-    "meta-llama/Meta-Llama-3.1-70B-Instruct-Reference",
-    "meta-llama/Llama-3.3-70B-Instruct-Reference",
-    "meta-llama/Meta-Llama-3-8B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3-70B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
+    # Meta/Llama models
     "meta-llama/Llama-2-13b-chat-hf",
+    "meta-llama/Llama-3.2-1B-Instruct",
     "meta-llama/Llama-3.2-3B-Instruct-Turbo",
+    "meta-llama/Llama-3.3-70B-Instruct-Reference",
+    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+    "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+    "meta-llama/Meta-Llama-3-8B-Instruct",
+    "meta-llama/Meta-Llama-3-8B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3-70B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3.1-8B-Instruct-Reference",
+    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3.1-70B-Instruct-Reference",
+    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
+    
+    # Mistral models
     "mistralai/Mistral-7B-v0.1",
     "mistralai/Mixtral-8x7B-Instruct-v0.1",
     "mistralai/Mixtral-8x22B-Instruct-v0.1",
+    
+    # Google models
     "google/gemma-2-9b-it",
     "google/gemma-2-27b-it",
+    
+    # DeepSeek models
     "deepseek-ai/DeepSeek-R1",
     "deepseek-ai/DeepSeek-V3",
     "deepseek-ai/deepseek-llm-67b-chat",
+    
+    # Qwen models
     "Qwen/Qwen2.5-Coder-32B-Instruct",
     "Qwen/Qwen2.5-72B-Instruct-Turbo",
     "Qwen/QwQ-32B-Preview",
+    
+    # OpenAI models
+    "gpt-4.5-preview-2025-02-27",
+    
+    # Anthropic models
+    "claude-3-7-sonnet-20250219",
+    
+    # NVIDIA models
+    "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
 }
 LOGGER = logging.getLogger(__name__)
 
