@@ -558,6 +558,15 @@ class InferenceAPI:
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                 **kwargs,
             )
+        elif isinstance(model_class, TogetherChatModel):
+            candidate_responses = await model_class(
+                model_id,
+                prompt,
+                self.print_prompt_and_response or print_prompt_and_response,
+                max_attempts_per_api_call,
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                **kwargs,
+            )
         else:
             # At this point, the request should be for DeepSeek or OpenAI, which use the same API.
             expected_chat_models = [OpenAIChatModel, OpenAICompletionModel]
