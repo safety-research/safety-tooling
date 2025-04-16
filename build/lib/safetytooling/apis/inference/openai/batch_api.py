@@ -113,9 +113,17 @@ class OpenAIModelBatch:
         for result in results:
             if result["response"]["status_code"] == 200:
                 body = result["response"]["body"]
-                assert body["model"] == model_id
+                choice = body["choices"][0]
                 assert result["custom_id"] in set_custom_ids
-                responses_dict[result["custom_id"]] = self.parse_result(result)
+                responses_dict[result["custom_id"]] = LLMResponse(
+                    model_id=model_id,
+                    completion=choice["message"]["content"],
+                    stop_reason=choice["finish_reason"],
+                    duration=None,  # Batch does not track individual durations
+                    api_duration=None,
+                    cost=0,
+                    batch_custom_id=result["custom_id"],
+                )
 
         responses = []
         for custom_id in custom_ids:
@@ -125,18 +133,3 @@ class OpenAIModelBatch:
         LOGGER.debug(f"Completed batch call in {duration}s")
 
         return responses, batch_object.id
-
-    @classmethod
-    def parse_result(cls, result: dict) -> LLMResponse:
-        body = result["response"]["body"]
-        choice = body["choices"][0]
-        return LLMResponse(
-            model_id=body["model"],
-            completion=choice["message"]["content"],
-            stop_reason=choice["finish_reason"],
-            duration=None,  # Batch does not track individual durations
-            api_duration=None,
-            cost=0,
-            batch_custom_id=result["custom_id"],
-        )
-
