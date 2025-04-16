@@ -69,6 +69,7 @@ class BatchInferenceAPI:
             anthropic_api_key: Optional API key for Anthropic. If not provided, will try to load from environment.
             openai_api_key: Optional API key for OpenAI. If not provided, will try to load from environment.
             no_cache: If True, disable caching regardless of other settings.
+            chunk: Maximum number of prompts to send in a single batch. If None, send all prompts in one batch.
         """
 
         # Check NO_CACHE in os.environ
@@ -119,8 +120,7 @@ class BatchInferenceAPI:
             prompts: List of prompts to send to the model.
             log_dir: Directory to store logs. If None, will use prompt_history_dir.
             use_cache: Whether to use caching. Ignored if no_cache was set during initialization.
-            max_tokens: Maximum number of tokens to generate per prompt. Setting different max_tokens for each prompt is not yet supported here, although it is in principle supported in the underlying API.\
-            chunk: Maximum number of prompts to send in a single batch. If None, will use a default value based on the model.
+            max_tokens: Maximum number of tokens to generate per prompt. Setting different max_tokens for each prompt is not yet supported here, although it is in principle supported in the underlying API.
             **kwargs: Additional arguments to pass to the model. "seed" should be used for preventing cached responses from being used.
 
         Returns:
@@ -172,7 +172,7 @@ class BatchInferenceAPI:
         if chunk is None:
             if model_id in ANTHROPIC_MODELS:
                 chunk = 100_000
-            elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:"):
+            elif model_id in GPT_CHAT_MODELS:
                 chunk = 50_000
             else:
                 raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
@@ -191,7 +191,7 @@ class BatchInferenceAPI:
                     max_tokens=kwargs.get("max_tokens", None),
                     **{k: v for k, v in kwargs.items() if k != "seed" and k != "max_tokens"},
                 )
-            elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:"):
+            elif model_id in GPT_CHAT_MODELS:
                 return await self._openai_batch(
                     model_id=model_id,
                     prompts=chunk_prompts,
