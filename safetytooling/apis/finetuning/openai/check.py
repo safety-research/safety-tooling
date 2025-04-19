@@ -115,7 +115,11 @@ def openai_check_finetuning_data(
             print_fn=lambda *args, **__: logger.info(args[0]) if len(args) > 0 else (),
         )
 
-    encoding = tiktoken.encoding_for_model(model_id)
+    try:
+        encoding = tiktoken.encoding_for_model(model_id)
+    except KeyError as e:
+        logger.warning(f"{e} Defaulting to o200k_base token encoding.")
+        encoding = tiktoken.get_encoding("o200k_base")
     context_length = safetytooling.apis.inference.openai.utils.get_max_context_length(model_id)
 
     # Count number of tokens in file to estimate fine-tuning costs
