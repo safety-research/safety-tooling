@@ -63,7 +63,9 @@ class AnthropicChatModel(InferenceAPIModel):
         start = time.time()
 
         if prompt.contains_image():
-            assert model_id in VISION_MODELS, f"Model {model_id} does not support images"
+            assert (
+                model_id in VISION_MODELS
+            ), f"Model {model_id} does not support images"
 
         # Rename based on kwarg_change_name
         for k, v in self.kwarg_change_name.items():
@@ -77,7 +79,9 @@ class AnthropicChatModel(InferenceAPIModel):
             del kwargs["seed"]
 
         sys_prompt, chat_messages = prompt.anthropic_format()
-        prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
+        prompt_file = self.create_prompt_history_file(
+            prompt, model_id, self.prompt_history_dir
+        )
 
         LOGGER.debug(f"Making {model_id} call")
         response: anthropic.types.Message | None = None
@@ -99,14 +103,16 @@ class AnthropicChatModel(InferenceAPIModel):
 
                     api_duration = time.time() - api_start
                     if not is_valid(response):
-                        raise RuntimeError(f"Invalid response according to is_valid {response}")
+                        raise RuntimeError(
+                            f"Invalid response according to is_valid {response}"
+                        )
                 except (TypeError, anthropic.NotFoundError) as e:
                     raise e
                 except Exception as e:
-                    error_info = (
-                        f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
+                    error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
+                    LOGGER.warn(
+                        f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})"
                     )
-                    LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                     error_list.append(error_info)
                     api_duration = time.time() - api_start
                     await asyncio.sleep(1.5**i)
@@ -117,10 +123,16 @@ class AnthropicChatModel(InferenceAPIModel):
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
         if response is None:
             if model_id == "research-claude-cabernet":
-                LOGGER.error(f"Failed to get a response for {prompt} from any API after {max_attempts} attempts.")
+                LOGGER.error(
+                    f"Failed to get a response for {prompt} from any API after {max_attempts} attempts."
+                )
                 # check for numbers of different kinds of errors
-                n_prompt_blocked_errs = len([e for e in error_list if "Prompt blocked" in e])
-                n_try_again_errs = len([e for e in error_list if "try again later" in e])
+                n_prompt_blocked_errs = len(
+                    [e for e in error_list if "Prompt blocked" in e]
+                )
+                n_try_again_errs = len(
+                    [e for e in error_list if "try again later" in e]
+                )
                 LOGGER.error(
                     f"Encountered {n_prompt_blocked_errs} prompt blocked errors and {n_try_again_errs} try again later errors"
                 )
@@ -144,7 +156,9 @@ class AnthropicChatModel(InferenceAPIModel):
                         cost=0,
                     )
             else:
-                raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
+                raise RuntimeError(
+                    f"Failed to get a response from the API after {max_attempts} attempts."
+                )
 
         else:
             is_reasoning = response.content[0].type == "thinking"
@@ -154,7 +168,9 @@ class AnthropicChatModel(InferenceAPIModel):
 
             if is_reasoning:
                 if not hasattr(response.content[-1], "text"):
-                    raise RuntimeError(f"Anthropic reasoning model {model_id} returned a response with no text")
+                    raise RuntimeError(
+                        f"Anthropic reasoning model {model_id} returned a response with no text"
+                    )
                 response = LLMResponse(
                     model_id=model_id,
                     completion=response.content[-1].text,
@@ -223,8 +239,12 @@ class AnthropicModelBatch:
             if message_batch.processing_status == "ended":
                 return message_batch
             if minutes_elapsed % 60 == 59:
-                LOGGER.debug(f"Batch {batch_id} is still processing... ({minutes_elapsed} minutes elapsed)")
-                print(f"Batch {batch_id} is still processing... ({minutes_elapsed} minutes elapsed)")
+                LOGGER.debug(
+                    f"Batch {batch_id} is still processing... ({minutes_elapsed} minutes elapsed)"
+                )
+                print(
+                    f"Batch {batch_id} is still processing... ({minutes_elapsed} minutes elapsed)"
+                )
             await asyncio.sleep(60)  # Sleep for 1 minute
             minutes_elapsed += 1
 
@@ -245,7 +265,9 @@ class AnthropicModelBatch:
         hash_str = prompt.model_hash()
         return f"{index}_{hash_str}"
 
-    def prompts_to_requests(self, model_id: str, prompts: list[Prompt], max_tokens: int, **kwargs) -> list[Request]:
+    def prompts_to_requests(
+        self, model_id: str, prompts: list[Prompt], max_tokens: int, **kwargs
+    ) -> list[Request]:
         # Special case: ignore seed parameter since it's used for caching in safety-tooling
         # Other surplus parameters will still raise an error
         if "seed" in kwargs:
@@ -276,7 +298,9 @@ class AnthropicModelBatch:
         log_dir: Path | None = None,
         **kwargs,
     ) -> tuple[list[LLMResponse], str]:
-        assert max_tokens is not None, "Anthropic batch API requires max_tokens to be specified"
+        assert (
+            max_tokens is not None
+        ), "Anthropic batch API requires max_tokens to be specified"
         start = time.time()
 
         custom_ids = [self.get_custom_id(i, prompt) for i, prompt in enumerate(prompts)]
@@ -302,19 +326,21 @@ class AnthropicModelBatch:
         for result in results:
             if result.result.type == "succeeded":
                 content = result.result.message.content
-                
+
                 # Safely extract text and thinking content
                 text_content = None
-                reasoning_content = None # We can extract this even if not used by LLMResponse yet
+                reasoning_content = (
+                    None  # We can extract this even if not used by LLMResponse yet
+                )
                 if content:
                     for block in content:
-                        if block.type == 'text' and hasattr(block, 'text'):
+                        if block.type == "text" and hasattr(block, "text"):
                             text_content = block.text
-                        elif block.type == 'thinking' and hasattr(block, 'thinking'):
-                             reasoning_content = block.thinking 
-                
+                        elif block.type == "thinking" and hasattr(block, "thinking"):
+                            reasoning_content = block.thinking
+
                 text = text_content if text_content else ""
-                
+
                 assert result.custom_id in set_custom_ids
                 responses_dict[result.custom_id] = LLMResponse(
                     model_id=model_id,
@@ -324,12 +350,14 @@ class AnthropicModelBatch:
                     api_duration=None,
                     cost=0,
                     batch_custom_id=result.custom_id,
-                    reasoning_content=reasoning_content
+                    reasoning_content=reasoning_content,
                 )
 
         responses = []
         for custom_id in custom_ids:
-            responses.append(responses_dict[custom_id] if custom_id in responses_dict else None)
+            responses.append(
+                responses_dict[custom_id] if custom_id in responses_dict else None
+            )
 
         duration = time.time() - start
         LOGGER.debug(f"Completed batch call in {duration}s")
