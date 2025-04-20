@@ -302,8 +302,19 @@ class AnthropicModelBatch:
         for result in results:
             if result.result.type == "succeeded":
                 content = result.result.message.content
-                # Extract text from content array
-                text = content[0].text if content else ""
+                
+                # Safely extract text and thinking content
+                text_content = None
+                reasoning_content = None # We can extract this even if not used by LLMResponse yet
+                if content:
+                    for block in content:
+                        if block.type == 'text' and hasattr(block, 'text'):
+                            text_content = block.text
+                        elif block.type == 'thinking' and hasattr(block, 'thinking'):
+                             reasoning_content = block.thinking 
+                
+                text = text_content if text_content else ""
+                
                 assert result.custom_id in set_custom_ids
                 responses_dict[result.custom_id] = LLMResponse(
                     model_id=model_id,
@@ -313,6 +324,7 @@ class AnthropicModelBatch:
                     api_duration=None,
                     cost=0,
                     batch_custom_id=result.custom_id,
+                    reasoning_content=reasoning_content
                 )
 
         responses = []
