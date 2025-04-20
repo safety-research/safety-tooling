@@ -169,9 +169,7 @@ def get_image_file_type(image_file: str) -> str:
         raise ValueError(f"Image path {image_file} is not a valid media_type!")
 
 
-def prepare_gemini_image(
-    image_file: str, use_vertexai: bool = False
-) -> Part | genai.types.file_types.File:
+def prepare_gemini_image(image_file: str, use_vertexai: bool = False) -> Part | genai.types.file_types.File:
     if use_vertexai:
         encoded_image = image_to_base64(image_file)
         image_type = get_image_file_type(image_file)

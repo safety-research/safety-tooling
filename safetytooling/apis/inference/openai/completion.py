@@ -18,11 +18,7 @@ LOGGER = logging.getLogger(__name__)
 class OpenAICompletionModel(OpenAIModel):
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
-        url = (
-            "https://api.openai.com/v1/completions"
-            if self.base_url is None
-            else self.base_url + "/v1/completions"
-        )
+        url = "https://api.openai.com/v1/completions" if self.base_url is None else self.base_url + "/v1/completions"
         api_key = os.environ["OPENAI_API_KEY"]
         headers = {
             "Content-Type": "application/json",
@@ -32,9 +28,7 @@ class OpenAICompletionModel(OpenAIModel):
         response = requests.post(url, headers=headers, json=data)
         if "x-ratelimit-limit-tokens" not in response.headers:
             tpm, rpm = get_rate_limit(model_id)
-            print(
-                f"Failed to get dummy response header {model_id}, setting to tpm, rpm: {tpm}, {rpm}"
-            )
+            print(f"Failed to get dummy response header {model_id}, setting to tpm, rpm: {tpm}, {rpm}")
             header_dict = dict(response.headers)
             return header_dict | {
                 "x-ratelimit-limit-tokens": str(tpm),
@@ -52,13 +46,9 @@ class OpenAICompletionModel(OpenAIModel):
         prompt_tokens = self.count_tokens(str(prompt))
         return prompt_tokens + completion_tokens
 
-    async def _make_api_call(
-        self, prompt: Prompt, model_id, start_time, **params
-    ) -> list[LLMResponse]:
+    async def _make_api_call(self, prompt: Prompt, model_id, start_time, **params) -> list[LLMResponse]:
         LOGGER.debug(f"Making {model_id} call")
-        prompt_file = self.create_prompt_history_file(
-            prompt, model_id, self.prompt_history_dir
-        )
+        prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
         api_start = time.time()
         api_response: openai.types.Completion = await self.aclient.completions.create(
             prompt=str(prompt),
@@ -76,13 +66,8 @@ class OpenAICompletionModel(OpenAIModel):
                 stop_reason=choice.finish_reason,
                 api_duration=api_duration,
                 duration=duration,
-                cost=context_cost
-                + self.count_tokens(choice.text) * completion_token_cost,
-                logprobs=(
-                    choice.logprobs.top_logprobs
-                    if choice.logprobs is not None
-                    else None
-                ),
+                cost=context_cost + self.count_tokens(choice.text) * completion_token_cost,
+                logprobs=(choice.logprobs.top_logprobs if choice.logprobs is not None else None),
             )
             for choice in api_response.choices
         ]

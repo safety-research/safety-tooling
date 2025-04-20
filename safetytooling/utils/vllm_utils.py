@@ -139,9 +139,7 @@ def deployment_cleanup_context():
             _active_deployments.append(deployment)
 
 
-async def wait_for_server(
-    url: str, timeout: int = 300, check_interval: int = 5
-) -> bool:
+async def wait_for_server(url: str, timeout: int = 300, check_interval: int = 5) -> bool:
     """Wait for server to be ready by polling health endpoint.
 
     Args:
@@ -182,9 +180,7 @@ async def deploy_model_vllm_locally_auto(
     """Deploy a model locally using vLLM serve and automatically determine the base model, lora_adapters and max_lora_rank"""
     base_model, lora_adapter = resolve_lora_model(model_name)
     if base_model_override is not None:
-        LOGGER.info(
-            f"Using base model override: {base_model_override} instead of {base_model}"
-        )
+        LOGGER.info(f"Using base model override: {base_model_override} instead of {base_model}")
         base_model = base_model_override
 
     kwargs = {}
@@ -233,9 +229,7 @@ async def deploy_model_vllm_locally(
 
     # check can be run from the command line
     if not shutil.which("vllm"):
-        raise RuntimeError(
-            "vLLM is not installed. Please install it using `uv pip install vllm`"
-        )
+        raise RuntimeError("vLLM is not installed. Please install it using `uv pip install vllm`")
 
     with deployment_cleanup_context() as set_deployment:
         # Get number of available GPUs
@@ -246,9 +240,7 @@ async def deploy_model_vllm_locally(
         # Set environment variables
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(n_gpus))
-        env["HF_HUB_DOWNLOAD_TIMEOUT"] = (
-            "600"  # 10 minutes instead of default 10 seconds
-        )
+        env["HF_HUB_DOWNLOAD_TIMEOUT"] = "600"  # 10 minutes instead of default 10 seconds
         env["TRANSFORMERS_CACHE"] = f"{hf_cache_dir}/hub"
         env["HF_HOME"] = f"{hf_cache_dir}"
 
@@ -351,8 +343,6 @@ async def deploy_model_vllm_locally(
         # Wait for server to be ready
         if not await wait_for_server(base_url, timeout=server_timeout):
             deployment.close()
-            raise RuntimeError(
-                f"Server failed to start within {server_timeout} seconds. Check logs at {log_file}"
-            )
+            raise RuntimeError(f"Server failed to start within {server_timeout} seconds. Check logs at {log_file}")
 
         return deployment

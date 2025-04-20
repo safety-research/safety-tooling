@@ -49,9 +49,7 @@ class Resource:
         """
         Consumes the given amount of the resource.
         """
-        assert self.geq(
-            amount
-        ), f"Resource does not have enough capacity to consume {amount} units"
+        assert self.geq(amount), f"Resource does not have enough capacity to consume {amount} units"
         self.value -= amount
         self.total += amount
 
@@ -69,9 +67,7 @@ class OpenAIModel(InferenceAPIModel):
         self.model_ids = set()
         self.base_url = base_url
         if openai_api_key:
-            self.aclient = openai.AsyncClient(
-                api_key=openai_api_key, base_url=self.base_url
-            )
+            self.aclient = openai.AsyncClient(api_key=openai_api_key, base_url=self.base_url)
         else:
             self.aclient = openai.AsyncClient(base_url=self.base_url)
         self.openai_api_key = openai_api_key
@@ -110,24 +106,14 @@ class OpenAIModel(InferenceAPIModel):
         model_metadata = await self._get_dummy_response_header(model_id)
         token_capacity = int(model_metadata["x-ratelimit-limit-tokens"])
         request_capacity = int(model_metadata["x-ratelimit-limit-requests"])
-        print(
-            f"got capacities for model {model_id}: {token_capacity}, {request_capacity}"
-        )
-        tokens_consumed = token_capacity - int(
-            model_metadata["x-ratelimit-remaining-tokens"]
-        )
-        requests_consumed = request_capacity - int(
-            model_metadata["x-ratelimit-remaining-requests"]
-        )
-        print(
-            f"consumed capacities for model {model_id}: {tokens_consumed}, {requests_consumed}"
-        )
+        print(f"got capacities for model {model_id}: {token_capacity}, {request_capacity}")
+        tokens_consumed = token_capacity - int(model_metadata["x-ratelimit-remaining-tokens"])
+        requests_consumed = request_capacity - int(model_metadata["x-ratelimit-remaining-requests"])
+        print(f"consumed capacities for model {model_id}: {tokens_consumed}, {requests_consumed}")
         token_cap = token_capacity * self.frac_rate_limit
         request_cap = request_capacity * self.frac_rate_limit
         if model_id in COMPLETION_MODELS:
-            token_cap *= (
-                10000  # openai does not track token limit so we can increase it
-            )
+            token_cap *= 10000  # openai does not track token limit so we can increase it
 
         print(f"setting cap for model {model_id}: {token_cap}, {request_cap}")
         token_capacity = Resource(token_cap)
@@ -169,34 +155,24 @@ class OpenAIModel(InferenceAPIModel):
         async with self.lock_add:
             await self.add_model_id(model_id)
         token_count = self._count_prompt_token_capacity(prompt, **kwargs)
-        assert (
-            self.token_capacity[model_id].refresh_rate >= token_count
-        ), "Prompt is too long for any model to handle."
+        assert self.token_capacity[model_id].refresh_rate >= token_count, "Prompt is too long for any model to handle."
         responses: Optional[list[LLMResponse]] = None
         for i in range(max_attempts):
             try:
                 responses = await attempt_api_call()
-                if responses is not None and not all(
-                    is_valid(response.completion) for response in responses
-                ):
-                    raise RuntimeError(
-                        f"Invalid responses according to is_valid {responses}"
-                    )
+                if responses is not None and not all(is_valid(response.completion) for response in responses):
+                    raise RuntimeError(f"Invalid responses according to is_valid {responses}")
             except (TypeError, openai.NotFoundError) as e:
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(
-                    f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})"
-                )
+                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                 await asyncio.sleep(1.5**i)
             else:
                 break
 
         if responses is None:
-            raise RuntimeError(
-                f"Failed to get a response from the API after {max_attempts} attempts."
-            )
+            raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
 
         if print_prompt_and_response:
             prompt.pretty_print(responses)

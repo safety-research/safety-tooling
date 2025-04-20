@@ -23,9 +23,7 @@ class BatchModel(InferenceAPIModel):
         system_prompts: List[str],
         **kwargs,
     ) -> Tuple[np.ndarray, List, np.ndarray]:
-        raise NotImplementedError(
-            "Subclasses must implement run_query method with a self.model.generate call"
-        )
+        raise NotImplementedError("Subclasses must implement run_query method with a self.model.generate call")
 
     def __call__(
         self,
@@ -45,9 +43,7 @@ class BatchModel(InferenceAPIModel):
         logprobs = None
         # Run query for uncached prompts
         api_start = time.time()
-        output, decoded_output, logprobs = self.run_query(
-            batch, text_batch, system_prompts, **kwargs
-        )
+        output, decoded_output, logprobs = self.run_query(batch, text_batch, system_prompts, **kwargs)
         api_duration = time.time() - api_start
 
         # Process and cache results for uncached prompts

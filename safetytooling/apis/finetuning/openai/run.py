@@ -77,9 +77,7 @@ async def queue_finetune(
         retry=retry_if_exception_type((APIConnectionError, RateLimitError)),
         stop=stop_after_attempt(600),
         wait=wait_fixed(120),
-        before_sleep=lambda retry_state: LOGGER.error(
-            f"Error occurred: {retry_state.outcome.exception()}"
-        ),
+        before_sleep=lambda retry_state: LOGGER.error(f"Error occurred: {retry_state.outcome.exception()}"),
     ):
         with attempt:
             LOGGER.info("Attempting to start fine-tuning job...")
@@ -249,9 +247,7 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
                 LOGGER.info("Fine-tuning job succeeded.")
                 wrun.summary.update(ft_job.model_dump())
                 assert ft_job.trained_tokens is not None
-                train_cost_usd = (
-                    ft_job.trained_tokens * train_cost_est.cost_per_1k_tokens_usd / 1000
-                )
+                train_cost_usd = ft_job.trained_tokens * train_cost_est.cost_per_1k_tokens_usd / 1000
                 wrun.summary.update({"train_cost_usd": train_cost_usd})
                 break
 
@@ -296,9 +292,13 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
 
     if cfg.save_folder is not None:
         if cfg.save_folder.endswith("/"):
-            cfg.save_folder += f"{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.fine_tuned_model}"
+            cfg.save_folder += (
+                f"{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.fine_tuned_model}"
+            )
         else:
-            cfg.save_folder += f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.fine_tuned_model}"
+            cfg.save_folder += (
+                f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.fine_tuned_model}"
+            )
 
         os.makedirs(cfg.save_folder, exist_ok=True)
         if cfg.save_config:

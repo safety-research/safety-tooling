@@ -132,9 +132,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
 
     LOGGER.info("Waiting for fine-tuning job to finish...")
     while True:
-        status = client.fine_tuning.retrieve(
-            ft_job.id
-        )  # https://docs.together.ai/reference/get_fine-tunes-id
+        status = client.fine_tuning.retrieve(ft_job.id)  # https://docs.together.ai/reference/get_fine-tunes-id
         if wrun is not None:
             wrun.summary.update({"together_job_status": status.status})
         if status.status == "completed":
@@ -159,7 +157,9 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         if cfg.save_folder.endswith("/"):
             cfg.save_folder += f"{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.output_name}"
         else:
-            cfg.save_folder += f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.output_name}"
+            cfg.save_folder += (
+                f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.output_name}"
+            )
 
         os.makedirs(cfg.save_folder, exist_ok=True)
         if cfg.save_model:

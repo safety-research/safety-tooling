@@ -32,9 +32,7 @@ class FTDatasetCostEstimate:
     cost_per_1k_tokens_usd: float = dataclasses.field(init=False)
 
     # Cost estimates
-    est_trained_tokens_per_epoch: (
-        int  # Not the same as total_tokens due to batching and truncation effects
-    )
+    est_trained_tokens_per_epoch: int  # Not the same as total_tokens due to batching and truncation effects
     est_cost_per_epoch_usd: float = dataclasses.field(init=False)
 
     est_trained_tokens: int = dataclasses.field(init=False)
@@ -45,19 +43,13 @@ class FTDatasetCostEstimate:
             (
                 _,
                 self.cost_per_1k_tokens_usd,
-            ) = safetytooling.apis.inference.openai.utils.price_per_token(
-                model_id=self.model_id
-            )
+            ) = safetytooling.apis.inference.openai.utils.price_per_token(model_id=self.model_id)
         else:
-            price = safetytooling.apis.inference.openai.utils.finetune_price_per_token(
-                model_id=self.model_id
-            )
+            price = safetytooling.apis.inference.openai.utils.finetune_price_per_token(model_id=self.model_id)
             assert price is not None
             self.cost_per_1k_tokens_usd = price
 
-        self.est_cost_per_epoch_usd = (
-            self.cost_per_1k_tokens_usd / 1000 * self.est_trained_tokens_per_epoch
-        )
+        self.est_cost_per_epoch_usd = self.cost_per_1k_tokens_usd / 1000 * self.est_trained_tokens_per_epoch
 
         self.est_trained_tokens = self.est_trained_tokens_per_epoch * self.n_epochs
         self.est_cost_usd = self.est_cost_per_epoch_usd * self.n_epochs
@@ -70,9 +62,7 @@ class FTDatasetCostEstimate:
         logger.info(f"Total tokens: {self.total_tokens}")
         logger.info(f"Estimated batch size: {self.est_batch_size}")
         logger.info(f"Cost per 1k tokens: ${self.cost_per_1k_tokens_usd}")
-        logger.info(
-            f"Estimated tokens trained per epoch: {self.est_trained_tokens_per_epoch}"
-        )
+        logger.info(f"Estimated tokens trained per epoch: {self.est_trained_tokens_per_epoch}")
         logger.info(f"Estimated cost per epoch: ${self.est_cost_per_epoch_usd}")
         logger.info(f"Estimated tokens trained (all epochs): {self.est_trained_tokens}")
         logger.info(f"Estimated cost (all epochs): ${self.est_cost_usd}")
@@ -138,17 +128,13 @@ def openai_check_finetuning_data(
         )
 
     encoding = tiktoken.encoding_for_model(model_id)
-    context_length = safetytooling.apis.inference.openai.utils.get_max_context_length(
-        model_id
-    )
+    context_length = safetytooling.apis.inference.openai.utils.get_max_context_length(model_id)
 
     # Count number of tokens in file to estimate fine-tuning costs
     # Also flag if any examples are too long and would get truncated
     prompt_lengths: list[int] = []
     for i, prompt in enumerate(prompts):
-        n_prompt_tokens = sum(
-            len(encoding.encode(msg.content)) for msg in prompt.messages
-        )
+        n_prompt_tokens = sum(len(encoding.encode(msg.content)) for msg in prompt.messages)
         prompt_lengths.append(n_prompt_tokens)
 
         if n_prompt_tokens > context_length:

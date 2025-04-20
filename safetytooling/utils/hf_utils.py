@@ -30,9 +30,7 @@ def get_adapter_config(adapter_id: str, token: str = None) -> dict:
         raise ValueError(f"Failed to load adapter config for {adapter_id}: {str(e)}")
 
 
-def group_models_or_adapters_by_model(
-    models: List[str], token: str = None
-) -> Dict[str, List[str]]:
+def group_models_or_adapters_by_model(models: List[str], token: str = None) -> Dict[str, List[str]]:
     """
     Groups base models and their associated LoRA adapters after verifying their existence and access permissions.
     """
@@ -44,9 +42,7 @@ def group_models_or_adapters_by_model(
             # Check if the model or adapter exists and is accessible
             api.model_info(repo_id=model_id, token=token)
         except Exception as e:
-            raise ValueError(
-                f"Model or adapter '{model_id}' does not exist or access is denied."
-            ) from e
+            raise ValueError(f"Model or adapter '{model_id}' does not exist or access is denied.") from e
 
         try:
             # Attempt to load the adapter configuration

@@ -23,9 +23,7 @@ def create_test_prompt():
                 role=MessageRole.system,
                 content="You are a helpful assistant. Time: " + str(time.time()),
             ),
-            ChatMessage(
-                role=MessageRole.user, content="What is 2+2? Answer in a single token."
-            ),
+            ChatMessage(role=MessageRole.user, content="What is 2+2? Answer in a single token."),
         ]
     )
 
@@ -52,9 +50,7 @@ async def test_openrouter_init():
     assert isinstance(provider, OpenRouterChatModel)
 
     # Test force_provider
-    provider_forced = api.model_id_to_class(
-        "meta-llama/llama-3-8b-instruct", force_provider="openrouter"
-    )
+    provider_forced = api.model_id_to_class("meta-llama/llama-3-8b-instruct", force_provider="openrouter")
     assert isinstance(provider_forced, OpenRouterChatModel)
 
 
@@ -79,9 +75,7 @@ async def test_together_init():
     assert isinstance(provider, TogetherChatModel)
 
     # Test force_provider
-    provider_forced = api.model_id_to_class(
-        "deepseek-ai/DeepSeek-R1", force_provider="together"
-    )
+    provider_forced = api.model_id_to_class("deepseek-ai/DeepSeek-R1", force_provider="together")
     assert isinstance(provider_forced, TogetherChatModel)
 
 

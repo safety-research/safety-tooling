@@ -139,9 +139,7 @@ async def main(cfg: ExperimentConfig):
                 )
 
             _ = analyze_timing_data(timing_data)
-            print(
-                f"Repeat {repeat} complete, {repeat_duration:.2f} seconds, {repeat_throughput:.2f} prompts/second"
-            )
+            print(f"Repeat {repeat} complete, {repeat_duration:.2f} seconds, {repeat_throughput:.2f} prompts/second")
 
     else:
         responses = []
@@ -150,21 +148,13 @@ async def main(cfg: ExperimentConfig):
             repeat_start_time = time.time()
 
             for i in range(0, len(prompts), batch_size):
-                output_dir = (
-                    cfg.output_dir
-                    / "anthropic_single"
-                    / f"repeat_{repeat}"
-                    / f"batch_{i}"
-                )
+                output_dir = cfg.output_dir / "anthropic_single" / f"repeat_{repeat}" / f"batch_{i}"
                 output_dir.mkdir(parents=True, exist_ok=True)
                 batch_prompts = prompts[i : i + batch_size]
 
                 batch_start_time = time.time()
                 batch_responses = await asyncio.gather(
-                    *[
-                        cfg.api(model_id=cfg.model_id, prompt=prompt, max_tokens=200)
-                        for prompt in batch_prompts
-                    ]
+                    *[cfg.api(model_id=cfg.model_id, prompt=prompt, max_tokens=200) for prompt in batch_prompts]
                 )
                 batch_end_time = time.time()
 
@@ -189,9 +179,7 @@ async def main(cfg: ExperimentConfig):
 
             repeat_end_time = time.time()
             repeat_duration = repeat_end_time - repeat_start_time
-            repeat_total_prompts = sum(
-                r["num_prompts"] for r in timing_data if r["repeat"] == repeat
-            )
+            repeat_total_prompts = sum(r["num_prompts"] for r in timing_data if r["repeat"] == repeat)
             repeat_throughput = repeat_total_prompts / repeat_duration
 
             timing_repeat_data.append(
@@ -206,16 +194,12 @@ async def main(cfg: ExperimentConfig):
             )
 
             _ = analyze_timing_data(timing_data)
-            print(
-                f"Repeat {repeat} complete, {repeat_duration:.2f} seconds, {repeat_throughput:.2f} prompts/second"
-            )
+            print(f"Repeat {repeat} complete, {repeat_duration:.2f} seconds, {repeat_throughput:.2f} prompts/second")
 
     df = analyze_timing_data(timing_data)
     df_repeats = analyze_timing_data(timing_repeat_data)
     # Save timing data
-    output_dir = cfg.output_dir / (
-        "anthropic_batch" if cfg.batch else "anthropic_single"
-    )
+    output_dir = cfg.output_dir / ("anthropic_batch" if cfg.batch else "anthropic_single")
     df.to_csv(output_dir / "timing_analysis.csv")
     df_repeats.to_csv(output_dir / "timing_repeat_analysis.csv")
 

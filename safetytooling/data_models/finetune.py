@@ -16,8 +16,6 @@ class FinetuneConfig:
     openai_tag: str = "OPENAI_API_KEY1"
     wandb_project_name: str | None = None
     wandb_entity: str | None = None
-    tags: tuple[str, ...] = (
-        "test",
-    )  # so this tag is necessary bc wandb doesn't allow empty tags
+    tags: tuple[str, ...] = ("test",)  # so this tag is necessary bc wandb doesn't allow empty tags
     save_config: bool = False
     save_folder: str | None = None

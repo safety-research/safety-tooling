@@ -57,9 +57,7 @@ class Resource:
         """
         Consumes the given amount of the resource.
         """
-        assert self.geq(
-            amount
-        ), f"Resource does not have enough capacity to consume {amount} units"
+        assert self.geq(amount), f"Resource does not have enough capacity to consume {amount} units"
         self.value -= amount
         self.total += amount
 
@@ -106,9 +104,7 @@ class GeminiRateTracker:
 
     def can_make_request(self, new_tokens):
         self.cleanup()
-        return (self.total_requests < self.rpm_limit) and (
-            self.total_tokens + new_tokens <= self.tpm_limit
-        )
+        return (self.total_requests < self.rpm_limit) and (self.total_tokens + new_tokens <= self.tpm_limit)
 
     def __str__(self):
         return f"Requests in the last minute: {self.get_request_count()}, Tokens in the last minute: {self.get_token_count()}"

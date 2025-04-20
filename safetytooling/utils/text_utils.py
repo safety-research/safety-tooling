@@ -23,9 +23,7 @@ def get_tokenizer() -> tiktoken.core.Encoding:
     return tiktoken.get_encoding("cl100k_base")
 
 
-def get_filtered_token_ids(
-    tokenizer: tiktoken.core.Encoding, regex_pattern: Optional[str] = None
-) -> list[int]:
+def get_filtered_token_ids(tokenizer: tiktoken.core.Encoding, regex_pattern: Optional[str] = None) -> list[int]:
     """Get token IDs optionally filtered by a regex pattern.
 
     Args:
@@ -37,8 +35,7 @@ def get_filtered_token_ids(
     """
     # Special ids such as <|endoftext|> which we want to avoid sampling
     special_ids = {
-        tokenizer.encode(t, allowed_special=tokenizer.special_tokens_set)[0]
-        for t in tokenizer.special_tokens_set
+        tokenizer.encode(t, allowed_special=tokenizer.special_tokens_set)[0] for t in tokenizer.special_tokens_set
     }
 
     # These cause the tokenizer to crash due to pyo3_runtime.PanicException

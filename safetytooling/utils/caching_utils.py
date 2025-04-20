@@ -36,19 +36,10 @@ def file_cache(cache_dir: str = os.path.expanduser("~/cache_functions")) -> Call
                 elif isinstance(obj, np.ndarray):
                     return obj.tobytes()
                 elif isinstance(obj, (list, tuple)):
-                    return (
-                        b"(" + b",".join(serialize_object(item) for item in obj) + b")"
-                    )
+                    return b"(" + b",".join(serialize_object(item) for item in obj) + b")"
                 elif isinstance(obj, dict):
                     items = sorted(obj.items())
-                    return (
-                        b"{"
-                        + b",".join(
-                            serialize_object(k) + b":" + serialize_object(v)
-                            for k, v in items
-                        )
-                        + b"}"
-                    )
+                    return b"{" + b",".join(serialize_object(k) + b":" + serialize_object(v) for k, v in items) + b"}"
                 else:
                     return repr(obj).encode()
 

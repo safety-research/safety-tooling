@@ -36,8 +36,7 @@ class WAVFile:
         if self.metadata is None:
             self.metadata = {
                 "riff": b"RIFF",
-                "size": 44
-                + 2 * len(self.audio),  # 44 bytes for header, 2 bytes for each sample
+                "size": 44 + 2 * len(self.audio),  # 44 bytes for header, 2 bytes for each sample
                 "format": b"WAVE",
                 "aformat": 1,
                 "channels": 1,
@@ -76,15 +75,11 @@ class WAVFile:
             subchunkid, subchunksize = struct.unpack("<4sI", chunk_header)
 
             if subchunkid == b"fmt ":
-                aformat, channels, samplerate, byterate, blockalign, bps = (
-                    struct.unpack("<HHIIHH", fh.read(16))
-                )
+                aformat, channels, samplerate, byterate, blockalign, bps = struct.unpack("<HHIIHH", fh.read(16))
                 metadata["aformat"] = aformat
                 metadata["channels"] = channels
                 metadata["samplerate"] = samplerate
-                assert (
-                    samplerate == override_sr
-                ), f"Samplerate does not match {override_sr}, got {samplerate}"
+                assert samplerate == override_sr, f"Samplerate does not match {override_sr}, got {samplerate}"
                 metadata["byterate"] = byterate
                 metadata["blockalign"] = blockalign
                 metadata["bps"] = bps
@@ -108,9 +103,7 @@ class WAVFile:
                         try:
                             listdata_decoded = listdata.decode("ascii")
                         except UnicodeDecodeError:
-                            listdata_decoded = listdata.decode(
-                                "utf-8", errors="replace"
-                            )
+                            listdata_decoded = listdata.decode("utf-8", errors="replace")
                         list_items.append(
                             {
                                 "listitemid": listitemid.decode("ascii"),
@@ -193,14 +186,10 @@ class IntermediateAugmentation:
         return WAVFile(joined_audio)
 
     @classmethod
-    def apply(
-        cls, wav_file: WAVFile, start: float, end: float, augment_func: callable
-    ) -> WAVFile:
+    def apply(cls, wav_file: WAVFile, start: float, end: float, augment_func: callable) -> WAVFile:
         start_segment = cls.slice_wav(wav_file, 0, start)
         middle_segment = cls.slice_wav(wav_file, start, end)
-        end_segment = cls.slice_wav(
-            wav_file, end, len(wav_file.audio) / wav_file.metadata["samplerate"]
-        )
+        end_segment = cls.slice_wav(wav_file, end, len(wav_file.audio) / wav_file.metadata["samplerate"])
 
         augmented_middle = augment_func(middle_segment)
 
@@ -304,9 +293,7 @@ def convert_to_wav_ffmpeg(input_path: str, output_path: str, sample_rate=16000):
     """
 
     # assert output ends in .wav
-    assert str(output_path).endswith(
-        ".wav"
-    ), f"Output path must end with .wav, got {output_path}"
+    assert str(output_path).endswith(".wav"), f"Output path must end with .wav, got {output_path}"
     ffmpeg_command = [
         "ffmpeg",
         "-i",
@@ -326,9 +313,7 @@ def convert_to_wav_ffmpeg(input_path: str, output_path: str, sample_rate=16000):
         raise
 
 
-def prepare_audio_part(
-    audio_file: str, use_vertexai: bool = False
-) -> Part | genai.types.file_types.File:
+def prepare_audio_part(audio_file: str, use_vertexai: bool = False) -> Part | genai.types.file_types.File:
     if use_vertexai:
         audio_bytes = load_audio(audio_file)
         return Part.from_data(data=audio_bytes, mime_type=get_mime_type(audio_file))
@@ -337,9 +322,7 @@ def prepare_audio_part(
         return audio
 
 
-def get_audio_data(
-    audio_input: [str | Path | np.ndarray], return_WAVFile: bool = False
-) -> [WAVFile | np.ndarray]:
+def get_audio_data(audio_input: [str | Path | np.ndarray], return_WAVFile: bool = False) -> [WAVFile | np.ndarray]:
     sr = 16000
     if isinstance(audio_input, str) | isinstance(audio_input, Path):
         if isinstance(audio_input, str):
@@ -366,9 +349,7 @@ def get_audio_data(
             if return_WAVFile:
                 return WAVFile.from_file(audio_file, override_sr=sr)
             else:
-                return WAVFile.from_file(audio_file, override_sr=sr).audio.astype(
-                    np.int16
-                )
+                return WAVFile.from_file(audio_file, override_sr=sr).audio.astype(np.int16)
         except FileNotFoundError as f:
             print(f)
             return None
@@ -377,9 +358,7 @@ def get_audio_data(
         return audio_input.astype(np.int16)
 
 
-def prepare_openai_s2s_audio(
-    audio_file: [str | Path], target_sample_rate: int = 24000
-) -> str:
+def prepare_openai_s2s_audio(audio_file: [str | Path], target_sample_rate: int = 24000) -> str:
     """
     Format WAV or MP3 audio files for the OpenAI Realtime API.
 
@@ -396,9 +375,7 @@ def prepare_openai_s2s_audio(
     audio_24khz = resampler.apply_sox_cmd_to_audio(wav_file, override_sr=24000)
 
     # Ensure mono and 16-bit
-    audio_24khz.audio = (
-        audio_24khz.audio[:, 0] if audio_24khz.audio.ndim > 1 else audio_24khz.audio
-    )
+    audio_24khz.audio = audio_24khz.audio[:, 0] if audio_24khz.audio.ndim > 1 else audio_24khz.audio
     audio_24khz.audio = audio_24khz.audio.astype(np.int16)
     # Convert audio to bytes
     audio_bytes = audio_24khz.get_bytes()

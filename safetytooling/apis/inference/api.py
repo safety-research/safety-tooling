@@ -148,9 +148,7 @@ class InferenceAPI:
             self.cache_dir = cache_dir
 
         self.cache_manager: BaseCacheManager | None = None
-        self.use_redis = (
-            use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
-        )
+        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         if self.cache_dir is not None:
             self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
             print(f"{self.cache_manager=}")
@@ -171,9 +169,7 @@ class InferenceAPI:
 
         self._openai_moderation = OpenAIModerationModel()
 
-        self._openai_embedding = OpenAIEmbeddingModel(
-            batch_size=oai_embedding_batch_size
-        )
+        self._openai_embedding = OpenAIEmbeddingModel(batch_size=oai_embedding_batch_size)
         self._openai_s2s = OpenAIS2SModel()
 
         self._anthropic_chat = AnthropicChatModel(
@@ -206,9 +202,7 @@ class InferenceAPI:
             api_key=os.environ.get("OPENROUTER_API_KEY", None),
         )
 
-        self._gemini_vertex = GeminiVertexAIModel(
-            prompt_history_dir=self.prompt_history_dir
-        )
+        self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
         self._gemini_genai = GeminiModel(
             prompt_history_dir=self.prompt_history_dir,
             recitation_rate_check_volume=self.gemini_recitation_rate_check_volume,
@@ -249,9 +243,7 @@ class InferenceAPI:
         self.model_wait_times = {}
 
         # Check NO_CACHE in os.environ
-        self.no_cache = (
-            no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
-        )
+        self.no_cache = no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
 
         self.provider_to_class = {
             "openai_completion": self._openai_completion,
@@ -291,20 +283,14 @@ class InferenceAPI:
         force_provider: str | None = None,
     ) -> InferenceAPIModel:
         if force_provider is not None:
-            assert (
-                force_provider in self.provider_to_class
-            ), f"Invalid force_provider: {force_provider}"
+            assert force_provider in self.provider_to_class, f"Invalid force_provider: {force_provider}"
             if force_provider == "batch_gpu":
                 return self._batch_models[model_id]
             else:
                 return self.provider_to_class[force_provider]
         elif model_id in COMPLETION_MODELS:
             return self._openai_completion
-        elif (
-            model_id in GPT_CHAT_MODELS
-            or model_id.startswith("ft:gpt")
-            or model_id.startswith("gpt")
-        ):
+        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt") or model_id.startswith("gpt"):
             return self._openai_chat
         elif model_id in ANTHROPIC_MODELS or model_id.startswith("claude"):
             return self._anthropic_chat
@@ -348,26 +334,18 @@ class InferenceAPI:
                 f"Average RPM {avg_rpm} with {self.n_calls} calls made in {total_runtime} minutes is above rate limit of {self.gpt4o_s2s_rpm_cap}! Sleeping for {wait_time} seconds"
             )
             await asyncio.sleep(wait_time)
-        LOGGER.info(
-            f"Average RPM is {avg_rpm} with {self.n_calls} calls made in {total_runtime} minutes"
-        )
+        LOGGER.info(f"Average RPM is {avg_rpm} with {self.n_calls} calls made in {total_runtime} minutes")
 
     def filter_responses(
         self,
         candidate_responses: list[LLMResponse],
         n: int,
         is_valid: Callable[[str], bool],
-        insufficient_valids_behaviour: Literal[
-            "error", "continue", "pad_invalids"
-        ] = "error",
+        insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids"] = "error",
     ) -> list[LLMResponse]:
         # filter out invalid responses
         num_candidates = len(candidate_responses)
-        valid_responses = [
-            response
-            for response in candidate_responses
-            if is_valid(response.completion)
-        ]
+        valid_responses = [response for response in candidate_responses if is_valid(response.completion)]
         num_valid = len(valid_responses)
         success_rate = num_valid / num_candidates
         if success_rate < 1:
@@ -376,21 +354,13 @@ class InferenceAPI:
         # return the valid responses, or pad with invalid responses if there aren't enough
         if num_valid < n:
             if insufficient_valids_behaviour == "error":
-                raise RuntimeError(
-                    f"Only found {num_valid} valid responses from {num_candidates} candidates."
-                )
+                raise RuntimeError(f"Only found {num_valid} valid responses from {num_candidates} candidates.")
             elif insufficient_valids_behaviour == "retry":
-                raise RuntimeError(
-                    f"Only found {num_valid} valid responses from {num_candidates} candidates. n={n}"
-                )
+                raise RuntimeError(f"Only found {num_valid} valid responses from {num_candidates} candidates. n={n}")
             elif insufficient_valids_behaviour == "continue":
                 responses = valid_responses
             elif insufficient_valids_behaviour == "pad_invalids":
-                invalid_responses = [
-                    response
-                    for response in candidate_responses
-                    if not is_valid(response.completion)
-                ]
+                invalid_responses = [response for response in candidate_responses if not is_valid(response.completion)]
                 invalids_needed = n - num_valid
                 responses = [
                     *valid_responses,
@@ -400,9 +370,7 @@ class InferenceAPI:
                     f"Padded {num_valid} valid responses with {invalids_needed} invalid responses to get {len(responses)} total responses"
                 )
             else:
-                raise ValueError(
-                    f"Unknown insufficient_valids_behaviour: {insufficient_valids_behaviour}"
-                )
+                raise ValueError(f"Unknown insufficient_valids_behaviour: {insufficient_valids_behaviour}")
         else:
             responses = valid_responses
         return responses[:n]
@@ -417,9 +385,7 @@ class InferenceAPI:
         max_attempts_per_api_call: int = 10,
         num_candidates_per_completion: int = 1,
         is_valid: Callable[[str], bool] = lambda _: True,
-        insufficient_valids_behaviour: Literal[
-            "error", "continue", "pad_invalids", "retry"
-        ] = "retry",
+        insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry",
         gemini_use_vertexai: bool = False,
         huggingface_model_url: str | None = None,
         force_provider: str | None = None,
@@ -454,15 +420,11 @@ class InferenceAPI:
         if self.no_cache:
             use_cache = False
 
-        model_class = self.model_id_to_class(
-            model_id, gemini_use_vertexai, force_provider
-        )
+        model_class = self.model_id_to_class(model_id, gemini_use_vertexai, force_provider)
 
         num_candidates = num_candidates_per_completion * n
 
-        assert (
-            "top_logprobs" not in kwargs
-        ), "top_logprobs is not supported, pass an integer with `logprobs` instead"
+        assert "top_logprobs" not in kwargs, "top_logprobs is not supported, pass an integer with `logprobs` instead"
 
         # used for caching and type checking
         llm_cache_params = LLMParams(
@@ -475,16 +437,13 @@ class InferenceAPI:
         cached_responses, cached_results, failed_cache_responses = [], [], []
 
         if self.cache_manager is not None and use_cache:
-            cached_responses, cached_results, failed_cache_responses = (
-                self.cache_manager.process_cached_responses(
-                    prompt=prompt,
-                    params=llm_cache_params,
-                    n=n,
-                    insufficient_valids_behaviour=insufficient_valids_behaviour,
-                    print_prompt_and_response=self.print_prompt_and_response
-                    or print_prompt_and_response,
-                    empty_completion_threshold=self.empty_completion_threshold,
-                )
+            cached_responses, cached_results, failed_cache_responses = self.cache_manager.process_cached_responses(
+                prompt=prompt,
+                params=llm_cache_params,
+                n=n,
+                insufficient_valids_behaviour=insufficient_valids_behaviour,
+                print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
+                empty_completion_threshold=self.empty_completion_threshold,
             )
 
             # If checking the cache returns results results for all prompts, then we just return the responses and don't
@@ -502,13 +461,9 @@ class InferenceAPI:
             else:
                 if isinstance(prompt, BatchPrompt):
                     # If some prompts are not cached, we need to make API calls for those
-                    uncached_prompts = [
-                        p for p, c in zip(prompt.prompts, cached_results) if c is None
-                    ]
+                    uncached_prompts = [p for p, c in zip(prompt.prompts, cached_results) if c is None]
                     # Check that len(responses) we get from cache + len(uncached_prompts) == len(prompts)
-                    assert len([i for i in cached_responses if i is not None]) + len(
-                        uncached_prompts
-                    ) == len(
+                    assert len([i for i in cached_responses if i is not None]) + len(uncached_prompts) == len(
                         prompt.prompts
                     ), f"""Length of responses + uncached_prompts should equal length of full batched prompts!
                         Instead there are {len(cached_responses)} responses, {len(uncached_prompts)} uncached_prompts and {len(prompt.prompts)}!"""
@@ -519,9 +474,7 @@ class InferenceAPI:
                     # If prompt is a single prompt and there is no cached result, simply return the original prompt for regular processing
                     prompt = prompt
 
-        if isinstance(model_class, AnthropicChatModel) or isinstance(
-            model_class, HuggingFaceModel
-        ):
+        if isinstance(model_class, AnthropicChatModel) or isinstance(model_class, HuggingFaceModel):
             if isinstance(model_class, HuggingFaceModel):
                 kwargs["model_url"] = huggingface_model_url
             # Anthropic chat doesn't support generating multiple candidates at once, so we have to do it manually
@@ -532,14 +485,9 @@ class InferenceAPI:
                             model_class(
                                 model_id,
                                 prompt,
-                                self.print_prompt_and_response
-                                or print_prompt_and_response,
+                                self.print_prompt_and_response or print_prompt_and_response,
                                 max_attempts_per_api_call,
-                                is_valid=(
-                                    is_valid
-                                    if insufficient_valids_behaviour == "retry"
-                                    else lambda _: True
-                                ),
+                                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                                 **kwargs,
                             )
                             for _ in range(num_candidates)
@@ -547,9 +495,7 @@ class InferenceAPI:
                     )
                 )
             )
-        elif isinstance(model_class, GeminiModel) or isinstance(
-            model_class, GeminiVertexAIModel
-        ):
+        elif isinstance(model_class, GeminiModel) or isinstance(model_class, GeminiVertexAIModel):
             candidate_responses = []
 
             for _ in range(num_candidates):
@@ -561,9 +507,7 @@ class InferenceAPI:
                         max_attempts_per_api_call,
                         is_valid=(
                             lambda x: (
-                                x.completion != ""
-                                if insufficient_valids_behaviour == "retry"
-                                else lambda _: True
+                                x.completion != "" if insufficient_valids_behaviour == "retry" else lambda _: True
                             )
                         ),
                         **kwargs,
@@ -571,21 +515,14 @@ class InferenceAPI:
                     candidate_responses.extend(response)
         elif isinstance(model_class, BatchModel):
             if not isinstance(prompt, BatchPrompt):
-                raise ValueError(
-                    f"{model_class.__class__.__name__} requires a BatchPrompt input"
-                )
+                raise ValueError(f"{model_class.__class__.__name__} requires a BatchPrompt input")
             candidate_responses = model_class(
                 model_id=model_id,
                 batch_prompt=prompt,
-                print_prompt_and_response=self.print_prompt_and_response
-                or print_prompt_and_response,
+                print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call=max_attempts_per_api_call,
                 n=num_candidates,
-                is_valid=(
-                    is_valid
-                    if insufficient_valids_behaviour == "retry"
-                    else lambda _: True
-                ),
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                 **kwargs,
             )
 
@@ -593,8 +530,7 @@ class InferenceAPI:
             candidate_iter = iter(candidate_responses)
             if self.cache_manager is not None and use_cache:
                 candidate_responses = [
-                    next(candidate_iter) if response is None else response
-                    for response in cached_responses
+                    next(candidate_iter) if response is None else response for response in cached_responses
                 ]
             else:
                 candidate_responses = candidate_responses
@@ -609,14 +545,9 @@ class InferenceAPI:
                         model_id=model_id,
                         prompt=prompt,
                         audio_out_dir=audio_out_dir,
-                        print_prompt_and_response=self.print_prompt_and_response
-                        or print_prompt_and_response,
+                        print_prompt_and_response=self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call=max_attempts_per_api_call,
-                        is_valid=(
-                            is_valid
-                            if insufficient_valids_behaviour == "retry"
-                            else lambda _: True
-                        ),
+                        is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                         **kwargs,
                     )
                     candidate_responses.extend(response)
@@ -627,27 +558,19 @@ class InferenceAPI:
                 self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call,
                 n=num_candidates,
-                is_valid=(
-                    is_valid
-                    if insufficient_valids_behaviour == "retry"
-                    else lambda _: True
-                ),
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                 **kwargs,
             )
         else:
             # At this point, the request should be for DeepSeek or OpenAI, which use the same API.
             expected_chat_models = [OpenAIChatModel, OpenAICompletionModel]
-            if not any(
-                isinstance(model_class, model) for model in expected_chat_models
-            ):
+            if not any(isinstance(model_class, model) for model in expected_chat_models):
                 raise RuntimeError(
                     f"Got unexpected ChatModel class: {model_class}. Make sure to implement logic to handle InferenceAPI.__call__ for your custom ChatModel. Or, add your ChatModel class to expected_chat_models above."
                 )
             if model_class.base_url == DEEPSEEK_BASE_URL:
                 candidate_responses = []
-                for _ in range(
-                    num_candidates
-                ):  # DeepSeek doesn't support multiple completions.
+                for _ in range(num_candidates):  # DeepSeek doesn't support multiple completions.
                     async with self.deepseek_semaphore:
                         self.n_calls += 1
                         response = await model_class(
@@ -655,11 +578,7 @@ class InferenceAPI:
                             prompt,
                             self.print_prompt_and_response or print_prompt_and_response,
                             max_attempts_per_api_call,
-                            is_valid=(
-                                is_valid
-                                if insufficient_valids_behaviour == "retry"
-                                else lambda _: True
-                            ),
+                            is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                             **kwargs,
                         )
                         candidate_responses.extend(response)
@@ -672,11 +591,7 @@ class InferenceAPI:
                         self.print_prompt_and_response or print_prompt_and_response,
                         max_attempts_per_api_call,
                         n=num_candidates,
-                        is_valid=(
-                            is_valid
-                            if insufficient_valids_behaviour == "retry"
-                            else lambda _: True
-                        ),
+                        is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                         **kwargs,
                     )
 
@@ -684,9 +599,7 @@ class InferenceAPI:
         if self.cache_manager is not None:
             # Handling for empty cache due to recitation errors for Gemini
             if any(failed_cache_responses):
-                assert isinstance(
-                    prompt, Prompt
-                ), "Models that use BatchPrompt should not have a failed_cache_response"
+                assert isinstance(prompt, Prompt), "Models that use BatchPrompt should not have a failed_cache_response"
                 candidate_responses = self.cache_manager.update_failed_cache(
                     prompt=prompt,
                     responses=candidate_responses,
@@ -695,9 +608,7 @@ class InferenceAPI:
 
             # Handle cache saving and output for batch_prompts
             if isinstance(prompt, BatchPrompt):
-                for i, (p, response) in enumerate(
-                    zip(prompt.prompts, candidate_responses)
-                ):
+                for i, (p, response) in enumerate(zip(prompt.prompts, candidate_responses)):
                     self.cache_manager.save_cache(
                         prompt=p,
                         params=llm_cache_params,
@@ -728,12 +639,8 @@ class InferenceAPI:
         # update running cost and model timings
         self.running_cost += sum(response.cost for response in candidate_responses)
         for response in candidate_responses:
-            self.model_timings.setdefault(response.model_id, []).append(
-                response.api_duration
-            )
-            self.model_wait_times.setdefault(response.model_id, []).append(
-                response.duration - response.api_duration
-            )
+            self.model_timings.setdefault(response.model_id, []).append(response.api_duration)
+            self.model_wait_times.setdefault(response.model_id, []).append(response.duration - response.api_duration)
 
         return responses
 
@@ -749,9 +656,7 @@ class InferenceAPI:
             model_id=model_id,
             prompt=Prompt(
                 messages=(
-                    []
-                    if system_prompt is None
-                    else [ChatMessage(role=MessageRole.system, content=system_prompt)]
+                    [] if system_prompt is None else [ChatMessage(role=MessageRole.system, content=system_prompt)]
                 )
                 + [
                     ChatMessage(role=MessageRole.user, content=question),
@@ -939,9 +844,7 @@ async def demo():
             print_prompt_and_response=True,
         ),
     ]
-    answer = await asyncio.gather(
-        *anthropic_requests, *oai_chat_requests, *oai_requests
-    )
+    answer = await asyncio.gather(*anthropic_requests, *oai_chat_requests, *oai_requests)
 
     costs = defaultdict(int)
     for responses in answer:

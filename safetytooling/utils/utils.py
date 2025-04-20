@@ -50,9 +50,7 @@ def setup_environment(
     setup_logging(logging_level)
     load_success = dotenv.load_dotenv(override=True)
     if not load_success:
-        load_success = dotenv.load_dotenv(
-            dotenv_path="safety-tooling/.env", override=True
-        )
+        load_success = dotenv.load_dotenv(dotenv_path="safety-tooling/.env", override=True)
         if not load_success:
             LOGGER.warning(
                 "No .env file found in repo or in safety-tooling submodule, some features may not work unless you set the environment variables manually"
@@ -65,13 +63,9 @@ def setup_environment(
         os.environ["ANTHROPIC_API_KEY"] = os.environ[anthropic_tag]
     # warn if we do not have an openai api key
     if "OPENAI_API_KEY" not in os.environ:
-        LOGGER.warning(
-            "OPENAI_API_KEY not found in environment, OpenAI API will not be available"
-        )
+        LOGGER.warning("OPENAI_API_KEY not found in environment, OpenAI API will not be available")
     if "ANTHROPIC_API_KEY" not in os.environ:
-        LOGGER.warning(
-            "ANTHROPIC_API_KEY not found in environment, Anthropic API will not be available"
-        )
+        LOGGER.warning("ANTHROPIC_API_KEY not found in environment, Anthropic API will not be available")
 
     for key in [
         "HF_TOKEN",
@@ -134,9 +128,7 @@ def write_via_temp(
     This ensures that the file is never in an inconsistent state.
     """
     temp_dir = Path(file_path).parent
-    with tempfile.NamedTemporaryFile(
-        dir=temp_dir, delete=False, mode=mode
-    ) as temp_file:
+    with tempfile.NamedTemporaryFile(dir=temp_dir, delete=False, mode=mode) as temp_file:
         temp_file_path = temp_file.name
         try:
             do_write(temp_file)
@@ -274,11 +266,7 @@ def append_jsonl(
 
 def get_datetime_str() -> str:
     """Returns a UTC datetime string in the format YYYY-MM-DD-HH-MM-SSZ"""
-    return (
-        datetime.datetime.now()
-        .astimezone(datetime.timezone.utc)
-        .strftime("%Y-%m-%d-%H-%M-%S-%fZ")
-    )
+    return datetime.datetime.now().astimezone(datetime.timezone.utc).strftime("%Y-%m-%d-%H-%M-%S-%fZ")
 
 
 def hash_str(s: str) -> str:

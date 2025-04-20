@@ -43,9 +43,7 @@ def can_claude_api_take_n_more_concurrents(n: int) -> bool:
         results = [f.result() for f in futures]
 
     result = not any(results)  # if any result is true, is rate limited
-    print(
-        f"Claude currently {'can' if result else 'cannot'} take {n} more concurrent requests"
-    )
+    print(f"Claude currently {'can' if result else 'cannot'} take {n} more concurrent requests")
     return result
 
 
@@ -57,9 +55,7 @@ def binary_search_for_max_concurrent_claude_requests(
     while (
         min_max_new_concurrent_requests + 5 < max_max_new_concurrent_requests
     ):  # plus five because we don't need it accurate
-        mid_test_number = (
-            min_max_new_concurrent_requests + max_max_new_concurrent_requests
-        ) // 2
+        mid_test_number = (min_max_new_concurrent_requests + max_max_new_concurrent_requests) // 2
         if can_claude_api_take_n_more_concurrents(mid_test_number):
             min_max_new_concurrent_requests = mid_test_number
         else:

@@ -64,9 +64,7 @@ class OpenAIModelBatch:
         hash_str = prompt.model_hash()
         return f"{index}_{hash_str}"
 
-    def prompts_to_file(
-        self, model_id: str, prompts: list[Prompt], log_dir: Path, **kwargs
-    ) -> str:
+    def prompts_to_file(self, model_id: str, prompts: list[Prompt], log_dir: Path, **kwargs) -> str:
         requests = []
         for i, prompt in enumerate(prompts):
             chat_messages = prompt.openai_format()
@@ -99,9 +97,7 @@ class OpenAIModelBatch:
         set_custom_ids = set(custom_ids)
 
         input_file_path = self.prompts_to_file(model_id, prompts, log_dir, **kwargs)
-        batch_file_object = self.client.files.create(
-            file=open(input_file_path, "rb"), purpose="batch"
-        )
+        batch_file_object = self.client.files.create(file=open(input_file_path, "rb"), purpose="batch")
         batch_object = self.create_message_batch(input_file_id=batch_file_object.id)
         log_file = log_dir / f"batch_id_{batch_object.id}.json"
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -131,9 +127,7 @@ class OpenAIModelBatch:
 
         responses = []
         for custom_id in custom_ids:
-            responses.append(
-                responses_dict[custom_id] if custom_id in responses_dict else None
-            )
+            responses.append(responses_dict[custom_id] if custom_id in responses_dict else None)
 
         duration = time.time() - start
         LOGGER.debug(f"Completed batch call in {duration}s")

@@ -72,16 +72,10 @@ class OpenAIS2SModel(InferenceAPIModel):
     def log_retry(self, retry_state):
         if retry_state.attempt_number > 1:
             exception = retry_state.outcome.exception()
-            LOGGER.warning(
-                f"Retry attempt {retry_state.attempt_number} after error: {str(exception)}"
-            )
+            LOGGER.warning(f"Retry attempt {retry_state.attempt_number} after error: {str(exception)}")
 
-    def process_responses(
-        self, audio_output: List[bytes], text_response: str, audio_out_dir: Path | str
-    ):
-        audio_filename = audio_out_dir / Path(
-            deterministic_hash(text_response) + ".wav"
-        )
+    def process_responses(self, audio_output: List[bytes], text_response: str, audio_out_dir: Path | str):
+        audio_filename = audio_out_dir / Path(deterministic_hash(text_response) + ".wav")
 
         combined_audio = AudioSegment.empty()
         for audio_bytes in audio_output:
@@ -94,17 +88,13 @@ class OpenAIS2SModel(InferenceAPIModel):
             combined_audio += segment
 
         combined_audio.export(audio_filename, format="wav")
-        LOGGER.info(
-            f"Successfully saved response data with {len(audio_output)} chunks to {audio_filename}"
-        )
+        LOGGER.info(f"Successfully saved response data with {len(audio_output)} chunks to {audio_filename}")
         return audio_filename
 
     @retry(
         stop=stop_after_attempt(10),
         wait=wait_exponential(multiplier=1, min=10, max=60),
-        retry=retry_if_exception_type(
-            (TimeoutError, WebSocketException, asyncio.exceptions.CancelledError)
-        ),
+        retry=retry_if_exception_type((TimeoutError, WebSocketException, asyncio.exceptions.CancelledError)),
         after=log_retry,
     )
     async def connect(self):
@@ -120,18 +110,14 @@ class OpenAIS2SModel(InferenceAPIModel):
             max_size=self.max_size,
         )
 
-    async def send_message(
-        self, websocket: ClientConnection, message: Dict[str, Any]
-    ) -> None:
+    async def send_message(self, websocket: ClientConnection, message: Dict[str, Any]) -> None:
         await websocket.send(json.dumps(message))
 
     async def receive_message(self, websocket: ClientConnection) -> Dict[str, Any]:
         response = await websocket.recv()
         return json.loads(response)
 
-    async def send_text_input(
-        self, websocket: ClientConnection, text_input_data: List[str]
-    ) -> None:
+    async def send_text_input(self, websocket: ClientConnection, text_input_data: List[str]) -> None:
         for text_input in text_input_data:
             text_event = {
                 "type": "conversation.item.create",
@@ -143,9 +129,7 @@ class OpenAIS2SModel(InferenceAPIModel):
             }
             await self.send_message(websocket, text_event)
 
-    async def send_audio_input(
-        self, websocket: ClientConnection, audio_input_data: List[str]
-    ) -> None:
+    async def send_audio_input(self, websocket: ClientConnection, audio_input_data: List[str]) -> None:
         for audio_chunk in audio_input_data:
             audio_event = {"type": "input_audio_buffer.append", "audio": audio_chunk}
             await self.send_message(websocket, audio_event)
@@ -156,9 +140,7 @@ class OpenAIS2SModel(InferenceAPIModel):
     @retry(
         stop=stop_after_attempt(10),
         wait=wait_exponential(multiplier=1, min=10, max=60),
-        retry=retry_if_exception_type(
-            (TimeoutError, WebSocketException, asyncio.exceptions.CancelledError)
-        ),
+        retry=retry_if_exception_type((TimeoutError, WebSocketException, asyncio.exceptions.CancelledError)),
         after=log_retry,
     )
     async def run_query(
@@ -207,16 +189,12 @@ class OpenAIS2SModel(InferenceAPIModel):
             timeout = 5.0  # Set the timeout in seconds
             while True:
                 try:
-                    response = await asyncio.wait_for(
-                        self.receive_message(websocket), timeout=timeout
-                    )
+                    response = await asyncio.wait_for(self.receive_message(websocket), timeout=timeout)
                     last_event_time = time.time()
 
                     if response["type"] == "response.done":
                         LOGGER.info(response)
-                        transcript = response["response"]["output"][0]["content"][0][
-                            "transcript"
-                        ]
+                        transcript = response["response"]["output"][0]["content"][0]["transcript"]
                         text_out = transcript
                         done_received = True
                     elif response["type"] == "response.audio.delta":
@@ -225,14 +203,10 @@ class OpenAIS2SModel(InferenceAPIModel):
                         LOGGER.info(response)
                 except asyncio.TimeoutError:
                     if done_received and (time.time() - last_event_time) >= timeout:
-                        LOGGER.info(
-                            f"No events received for {timeout} seconds after 'response.done'. Ending loop."
-                        )
+                        LOGGER.info(f"No events received for {timeout} seconds after 'response.done'. Ending loop.")
                         break
 
-            audio_out_file = self.process_responses(
-                audio_responses, text_out, audio_out_dir
-            )
+            audio_out_file = self.process_responses(audio_responses, text_out, audio_out_dir)
             LOGGER.info(text_out)
             return audio_out_file, text_out
         finally:
@@ -265,9 +239,7 @@ class OpenAIS2SModel(InferenceAPIModel):
             )
             api_duration = time.time() - api_start
         except Exception as e:
-            LOGGER.error(
-                f"Failed to complete query after {self.max_attempts} attempts: {str(e)}"
-            )
+            LOGGER.error(f"Failed to complete query after {self.max_attempts} attempts: {str(e)}")
             return [
                 LLMResponse(
                     model_id=model_id,

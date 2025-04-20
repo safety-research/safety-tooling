@@ -88,14 +88,10 @@ class BaseCacheManager:
     def get_embeddings_file(self, params: EmbeddingParams) -> tuple[Path, str]:
         raise NotImplementedError
 
-    def maybe_load_embeddings(
-        self, params: EmbeddingParams
-    ) -> EmbeddingResponseBase64 | None:
+    def maybe_load_embeddings(self, params: EmbeddingParams) -> EmbeddingResponseBase64 | None:
         raise NotImplementedError
 
-    def save_embeddings(
-        self, params: EmbeddingParams, response: EmbeddingResponseBase64
-    ):
+    def save_embeddings(self, params: EmbeddingParams, response: EmbeddingResponseBase64):
         raise NotImplementedError
 
 
@@ -108,9 +104,7 @@ class FileBasedCacheManager(BaseCacheManager):
 
     def get_cache_file(self, prompt: Prompt, params: LLMParams) -> tuple[Path, str]:
         # Use the SHA-1 hash of the prompt for the dictionary key
-        prompt_hash = (
-            prompt.model_hash()
-        )  # Assuming this gives a SHA-1 hash as a hex string
+        prompt_hash = prompt.model_hash()  # Assuming this gives a SHA-1 hash as a hex string
         bin_number = self.get_bin_number(prompt_hash, self.num_bins)
 
         # Construct the file name using the bin number
@@ -124,12 +118,8 @@ class FileBasedCacheManager(BaseCacheManager):
         if not cache_file.exists():
             return None
 
-        if (cache_file not in self.in_memory_cache) or (
-            prompt_hash not in self.in_memory_cache[cache_file]
-        ):
-            LOGGER.info(
-                f"Cache miss, loading from disk: {cache_file=}, {prompt_hash=}, {params}"
-            )
+        if (cache_file not in self.in_memory_cache) or (prompt_hash not in self.in_memory_cache[cache_file]):
+            LOGGER.info(f"Cache miss, loading from disk: {cache_file=}, {prompt_hash=}, {params}")
             with filelock.FileLock(str(cache_file) + ".lock"):
                 self.in_memory_cache[cache_file] = load_json(cache_file)
 
@@ -188,27 +178,19 @@ class FileBasedCacheManager(BaseCacheManager):
         prompts = prompt.prompts if isinstance(prompt, BatchPrompt) else [prompt]
 
         for individual_prompt in prompts:
-            cached_result = self.maybe_load_cache(
-                prompt=individual_prompt, params=params
-            )
+            cached_result = self.maybe_load_cache(prompt=individual_prompt, params=params)
 
             if cached_result is not None:
-                cache_file, _ = self.get_cache_file(
-                    prompt=individual_prompt, params=params
-                )
+                cache_file, _ = self.get_cache_file(prompt=individual_prompt, params=params)
                 LOGGER.info(f"Loaded cache for prompt from {cache_file}")
 
                 prop_empty_completions = sum(
-                    1
-                    for response in cached_result.responses
-                    if response.completion == ""
+                    1 for response in cached_result.responses if response.completion == ""
                 ) / len(cached_result.responses)
 
                 if prop_empty_completions > empty_completion_threshold:
                     if len(cached_result.responses) == 1:
-                        LOGGER.warning(
-                            "Cache does not contain completion; likely due to recitation"
-                        )
+                        LOGGER.warning("Cache does not contain completion; likely due to recitation")
                     else:
                         LOGGER.warning(
                             f"Proportion of cache responses that contain empty completions ({prop_empty_completions}) is greater than threshold {empty_completion_threshold}. Likely due to recitation"
@@ -237,10 +219,7 @@ class FileBasedCacheManager(BaseCacheManager):
             failed_cache_responses.append(failed_cache_response)
 
         assert (
-            len(cached_results)
-            == len(prompts)
-            == len(cached_responses)
-            == len(failed_cache_responses)
+            len(cached_results) == len(prompts) == len(cached_responses) == len(failed_cache_responses)
         ), f"""Different number of cached_results, prompts, cached_responses and failed_cached_responses when they should all be length {len(prompts)}!
                 Number of prompts: {len(prompts)} \n Number of cached_results: {len(cached_results)} \n Number of cached_responses: {len(cached_responses)} \n Number of failed_cache_responses: {len(failed_cache_responses)}"""
 
@@ -333,9 +312,7 @@ class FileBasedCacheManager(BaseCacheManager):
 
         return cache_file, hash
 
-    def maybe_load_embeddings(
-        self, params: EmbeddingParams
-    ) -> EmbeddingResponseBase64 | None:
+    def maybe_load_embeddings(self, params: EmbeddingParams) -> EmbeddingResponseBase64 | None:
         cache_file, hash = self.get_embeddings_file(params)
         if cache_file.exists():
             all_data = load_json(cache_file)
@@ -344,9 +321,7 @@ class FileBasedCacheManager(BaseCacheManager):
                 return EmbeddingResponseBase64.model_validate_json(data)
         return None
 
-    def save_embeddings(
-        self, params: EmbeddingParams, response: EmbeddingResponseBase64
-    ):
+    def save_embeddings(self, params: EmbeddingParams, response: EmbeddingResponseBase64):
         cache_file, hash = self.get_embeddings_file(params)
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         with filelock.FileLock(str(cache_file) + ".lock"):
@@ -364,9 +339,7 @@ class FileBasedCacheManager(BaseCacheManager):
 class RedisCacheManager(BaseCacheManager):
     """Redis-based cache manager implementation."""
 
-    def __init__(
-        self, cache_dir: Path, num_bins: int = 20, redis_config: dict | None = None
-    ):
+    def __init__(self, cache_dir: Path, num_bins: int = 20, redis_config: dict | None = None):
         super().__init__(cache_dir, num_bins)
         self.redis_config = redis_config if redis_config else REDIS_CONFIG_DEFAULT
         self.db = self._connect()
@@ -413,27 +386,19 @@ class RedisCacheManager(BaseCacheManager):
         prompts = prompt.prompts if isinstance(prompt, BatchPrompt) else [prompt]
 
         for individual_prompt in prompts:
-            cached_result = self.maybe_load_cache(
-                prompt=individual_prompt, params=params
-            )
+            cached_result = self.maybe_load_cache(prompt=individual_prompt, params=params)
 
             if cached_result is not None:
-                cache_dir, _ = self.get_cache_file(
-                    prompt=individual_prompt, params=params
-                )
+                cache_dir, _ = self.get_cache_file(prompt=individual_prompt, params=params)
                 LOGGER.info(f"Loaded cache for prompt from {cache_dir}")
 
                 prop_empty_completions = sum(
-                    1
-                    for response in cached_result.responses
-                    if response.completion == ""
+                    1 for response in cached_result.responses if response.completion == ""
                 ) / len(cached_result.responses)
 
                 if prop_empty_completions > empty_completion_threshold:
                     if len(cached_result.responses) == 1:
-                        LOGGER.warning(
-                            "Cache does not contain completion; likely due to recitation"
-                        )
+                        LOGGER.warning("Cache does not contain completion; likely due to recitation")
                     else:
                         LOGGER.warning(
                             f"Proportion of cache responses that contain empty completions ({prop_empty_completions}) is greater than threshold {empty_completion_threshold}. Likely due to recitation"
@@ -460,10 +425,7 @@ class RedisCacheManager(BaseCacheManager):
             failed_cache_responses.append(failed_cache_response)
 
         assert (
-            len(cached_results)
-            == len(prompts)
-            == len(cached_responses)
-            == len(failed_cache_responses)
+            len(cached_results) == len(prompts) == len(cached_responses) == len(failed_cache_responses)
         ), f"""Different number of cached_results, prompts, cached_responses and failed_cached_responses when they should all be length {len(prompts)}!
                 Number of prompts: {len(prompts)} \n Number of cached_results: {len(cached_results)} \n Number of cached_responses: {len(cached_responses)} \n Number of failed_cache_responses: {len(failed_cache_responses)}"""
 
@@ -528,9 +490,7 @@ class RedisCacheManager(BaseCacheManager):
         key = f"embeddings/bin{str(bin_number)}"
         return Path(key), hash
 
-    def maybe_load_embeddings(
-        self, params: EmbeddingParams
-    ) -> EmbeddingResponseBase64 | None:
+    def maybe_load_embeddings(self, params: EmbeddingParams) -> EmbeddingResponseBase64 | None:
         _, hash = self.get_embeddings_file(params)
         key = self._make_key(f"embeddings/{hash}")
         data = self.db.get(key)
@@ -538,17 +498,13 @@ class RedisCacheManager(BaseCacheManager):
             return None
         return EmbeddingResponseBase64.model_validate_json(data.decode("utf-8"))
 
-    def save_embeddings(
-        self, params: EmbeddingParams, response: EmbeddingResponseBase64
-    ):
+    def save_embeddings(self, params: EmbeddingParams, response: EmbeddingResponseBase64):
         _, hash = self.get_embeddings_file(params)
         key = self._make_key(f"embeddings/{hash}")
         self.db.set(key, response.model_dump_json())
 
 
-def get_cache_manager(
-    cache_dir: Path, use_redis: bool = False, num_bins: int = 20
-) -> BaseCacheManager:
+def get_cache_manager(cache_dir: Path, use_redis: bool = False, num_bins: int = 20) -> BaseCacheManager:
     """Factory function to get the appropriate cache manager based on environment variable."""
     print(f"{cache_dir=}, {use_redis=}, {num_bins=}")
     if use_redis:

@@ -48,14 +48,10 @@ class VLLMChatModel(InferenceAPIModel):
         session: aiohttp.ClientSession,
         timeout: int = 1000,
     ) -> dict:
-        async with session.post(
-            model_url, headers=self.headers, json=payload, timeout=timeout
-        ) as response:
+        async with session.post(model_url, headers=self.headers, json=payload, timeout=timeout) as response:
             if response.status != 200:
                 error_text = await response.text()
-                if "<!DOCTYPE html>" in str(error_text) and "<title>" in str(
-                    error_text
-                ):
+                if "<!DOCTYPE html>" in str(error_text) and "<title>" in str(error_text):
                     reason = str(error_text).split("<title>")[1].split("</title>")[0]
                 else:
                     reason = " ".join(str(error_text).split()[:20])
@@ -91,16 +87,9 @@ class VLLMChatModel(InferenceAPIModel):
             # See experiments/sample-notebooks/api-tests/logprob-dup-tokens.ipynb for details
             possibly_duplicated_top_logprobs = collections.defaultdict(list)
             for top_logprob in item["top_logprobs"]:
-                possibly_duplicated_top_logprobs[top_logprob["token"]].append(
-                    top_logprob["logprob"]
-                )
+                possibly_duplicated_top_logprobs[top_logprob["token"]].append(top_logprob["logprob"])
 
-            top_logprobs.append(
-                {
-                    k: math_utils.logsumexp(vs)
-                    for k, vs in possibly_duplicated_top_logprobs.items()
-                }
-            )
+            top_logprobs.append({k: math_utils.logsumexp(vs) for k, vs in possibly_duplicated_top_logprobs.items()})
 
         return top_logprobs
 
@@ -117,9 +106,7 @@ class VLLMChatModel(InferenceAPIModel):
 
         model_url = VLLM_MODELS.get(model_id, self.vllm_base_url)
 
-        prompt_file = self.create_prompt_history_file(
-            prompt, model_id, self.prompt_history_dir
-        )
+        prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
         LOGGER.debug(f"Making {model_id} call")
         response_data = None
@@ -147,33 +134,20 @@ class VLLMChatModel(InferenceAPIModel):
                         LOGGER.error(f"Invalid response format: {response_data}")
                         raise RuntimeError(f"Invalid response format: {response_data}")
 
-                    if not all(
-                        is_valid(choice["message"]["content"])
-                        for choice in response_data["choices"]
-                    ):
-                        LOGGER.error(
-                            f"Invalid responses according to is_valid {response_data}"
-                        )
-                        raise RuntimeError(
-                            f"Invalid responses according to is_valid {response_data}"
-                        )
+                    if not all(is_valid(choice["message"]["content"]) for choice in response_data["choices"]):
+                        LOGGER.error(f"Invalid responses according to is_valid {response_data}")
+                        raise RuntimeError(f"Invalid responses according to is_valid {response_data}")
             except TypeError as e:
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(
-                    f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})"
-                )
+                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                 await asyncio.sleep(1.5**i)
             else:
                 break
         else:
-            LOGGER.error(
-                f"Failed to get a response from the API after {max_attempts} attempts."
-            )
-            raise RuntimeError(
-                f"Failed to get a response from the API after {max_attempts} attempts."
-            )
+            LOGGER.error(f"Failed to get a response from the API after {max_attempts} attempts.")
+            raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
@@ -191,9 +165,7 @@ class VLLMChatModel(InferenceAPIModel):
                 duration=duration,
                 cost=0,
                 logprobs=(
-                    self.convert_top_logprobs(choice["logprobs"])
-                    if choice.get("logprobs") is not None
-                    else None
+                    self.convert_top_logprobs(choice["logprobs"]) if choice.get("logprobs") is not None else None
                 ),
             )
             for choice in response_data["choices"]
