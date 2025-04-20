@@ -6,8 +6,6 @@ import pathlib
 import random
 from typing import Literal
 
-import tiktoken
-
 import safetytooling.apis.inference.openai.utils
 from safetytooling.data_models import ChatMessage, MessageRole, Prompt
 from safetytooling.utils import utils
@@ -115,18 +113,13 @@ def openai_check_finetuning_data(
             print_fn=lambda *args, **__: logger.info(args[0]) if len(args) > 0 else (),
         )
 
-    try:
-        encoding = tiktoken.encoding_for_model(model_id)
-    except KeyError as e:
-        logger.warning(f"{e} Defaulting to o200k_base token encoding.")
-        encoding = tiktoken.get_encoding("o200k_base")
     context_length = safetytooling.apis.inference.openai.utils.get_max_context_length(model_id)
 
     # Count number of tokens in file to estimate fine-tuning costs
     # Also flag if any examples are too long and would get truncated
     prompt_lengths: list[int] = []
     for i, prompt in enumerate(prompts):
-        n_prompt_tokens = sum(len(encoding.encode(msg.content)) for msg in prompt.messages)
+        n_prompt_tokens = sum(utils.count_tokens(msg.content, model_id) for msg in prompt.messages)
         prompt_lengths.append(n_prompt_tokens)
 
         if n_prompt_tokens > context_length:

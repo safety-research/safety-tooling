@@ -15,13 +15,12 @@ from safetytooling.data_models import LLMResponse, Prompt
 from safetytooling.utils import math_utils
 
 from .base import OpenAIModel
-from .utils import get_rate_limit, price_per_token
+from .utils import count_tokens, get_rate_limit, price_per_token
 
 LOGGER = logging.getLogger(__name__)
 
 
 class OpenAIChatModel(OpenAIModel):
-
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
         url = (
@@ -159,7 +158,7 @@ class OpenAIChatModel(OpenAIModel):
                     stop_reason=choice.finish_reason,
                     api_duration=api_duration,
                     duration=duration,
-                    cost=context_cost + self.count_tokens(choice.message.content) * completion_token_cost,
+                    cost=context_cost + count_tokens(choice.message.content, model_id) * completion_token_cost,
                     logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
                 )
             )

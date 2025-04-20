@@ -95,8 +95,13 @@ OAI_FINETUNE_MODELS = (
 S2S_MODELS = "gpt-4o-s2s"
 
 
-def count_tokens(text: str) -> int:
-    return len(tiktoken.get_encoding("cl100k_base").encode(text))
+def count_tokens(text: str, model_id: str) -> int:
+    try:
+        encoding = tiktoken.encoding_for_model(model_id)
+    except KeyError:
+        encoding = tiktoken.get_encoding("o200k_base")
+
+    return len(encoding.encode(text))
 
 
 def get_max_context_length(model_id: str) -> int:
@@ -303,7 +308,7 @@ def finetune_price_per_token(model_id: str) -> float | None:
         return 0.005
     elif "gpt-4o-mini" in model_id:
         return 0.003
-    elif "gpt-4o" in model_id or "gpt-4.1-" in model_id:
+    elif "gpt-4o" in model_id or "gpt-4.1" in model_id:
         return 0.025
     elif "ft:gpt-3.5-turbo" in model_id:
         return 0.008

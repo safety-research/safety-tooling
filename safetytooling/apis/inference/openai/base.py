@@ -6,7 +6,6 @@ from traceback import format_exc
 from typing import Optional
 
 import openai
-import tiktoken
 
 from safetytooling.data_models import LLMResponse
 
@@ -76,7 +75,6 @@ class OpenAIModel(InferenceAPIModel):
         self.request_capacity = dict()
         self.lock_add = asyncio.Lock()
         self.lock_consume = asyncio.Lock()
-        self.tokenizer = tiktoken.get_encoding("cl100k_base")
 
     @staticmethod
     async def _get_dummy_response_header(model_id: str):
@@ -92,9 +90,6 @@ class OpenAIModel(InferenceAPIModel):
     @staticmethod
     def _print_prompt_and_response(prompt, responses):
         raise NotImplementedError
-
-    def count_tokens(self, text: str) -> int:
-        return len(self.tokenizer.encode(text))
 
     async def add_model_id(self, model_id: str):
         if model_id in self.model_ids:
