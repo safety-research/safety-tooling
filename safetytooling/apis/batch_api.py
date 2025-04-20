@@ -13,7 +13,9 @@ from safetytooling.data_models import LLMParams, LLMResponse, Prompt
 LOGGER = logging.getLogger(__name__)
 
 
-def chunk_prompts_for_anthropic(prompts: list[Prompt], chunk_size: int = 100_000) -> list[list[Prompt]]:
+def chunk_prompts_for_anthropic(
+    prompts: list[Prompt], chunk_size: int = 100_000
+) -> list[list[Prompt]]:
     # Calculate size per prompt in MB
     sizes = [len(str(prompt).encode("utf-8")) / (1024 * 1024) for prompt in prompts]
 
@@ -29,7 +31,9 @@ def chunk_prompts_for_anthropic(prompts: list[Prompt], chunk_size: int = 100_000
         ):  # 256 MB is the max size for Anthropic, but 250 MB is a safe limit
             if current_chunk:
                 chunks.append(current_chunk)
-            print(f"Chunked prompts for Anthropic: {len(current_chunk)} prompts, {current_size} MB")
+            print(
+                f"Chunked prompts for Anthropic: {len(current_chunk)} prompts, {current_size} MB"
+            )
             current_chunk = [prompt]
             current_size = size
             current_count = 1
@@ -72,7 +76,9 @@ class BatchInferenceAPI:
         """
 
         # Check NO_CACHE in os.environ
-        self.no_cache = no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
+        self.no_cache = (
+            no_cache or os.environ.get("NO_CACHE", "false").lower() == "true"
+        )
 
         if log_dir == "default":
             if "PROMPT_HISTORY_DIR" in os.environ:
@@ -93,7 +99,9 @@ class BatchInferenceAPI:
             self.cache_dir = cache_dir
 
         # Check REDIS_CACHE in os.environ
-        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
+        self.use_redis = (
+            use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
+        )
         self.cache_manager = None
         if self.cache_dir is not None and not self.no_cache:
             self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
@@ -139,7 +147,9 @@ class BatchInferenceAPI:
             log_dir.mkdir(parents=True, exist_ok=True)
 
         if model_id in ANTHROPIC_MODELS:
-            assert max_tokens is not None, "max_tokens must be provided for Anthropic models"
+            assert (
+                max_tokens is not None
+            ), "max_tokens must be provided for Anthropic models"
             kwargs["max_tokens"] = max_tokens
 
         llm_params = LLMParams(model=model_id, **kwargs)
@@ -153,9 +163,13 @@ class BatchInferenceAPI:
             if "n" in kwargs:
                 assert kwargs["n"] == 1, "n must be 1 for batch inference + cache"
             for i, prompt in enumerate(prompts):
-                cached_result = self.cache_manager.maybe_load_cache(prompt=prompt, params=llm_params)
+                cached_result = self.cache_manager.maybe_load_cache(
+                    prompt=prompt, params=llm_params
+                )
                 if cached_result is not None:
-                    cached_responses.append(cached_result.responses[0])  # Assuming single response per prompt
+                    cached_responses.append(
+                        cached_result.responses[0]
+                    )  # Assuming single response per prompt
                     cached_indices.append(i)
                 else:
                     uncached_prompts.append(prompt)
@@ -175,12 +189,17 @@ class BatchInferenceAPI:
             elif model_id in GPT_CHAT_MODELS:
                 chunk = 50_000
             else:
-                raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
+                raise ValueError(
+                    f"Model {model_id} is not supported. Only Claude and OpenAI models are supported."
+                )
 
         if model_id in ANTHROPIC_MODELS:
             chunks = chunk_prompts_for_anthropic(uncached_prompts, chunk_size=chunk)
         else:
-            chunks = [uncached_prompts[i : i + chunk] for i in range(0, len(uncached_prompts), chunk)]
+            chunks = [
+                uncached_prompts[i : i + chunk]
+                for i in range(0, len(uncached_prompts), chunk)
+            ]
 
         async def process_chunk(chunk_prompts) -> tuple[list[LLMResponse], str]:
             print(f"Batch kwargs: {kwargs}")
@@ -189,7 +208,11 @@ class BatchInferenceAPI:
                     model_id=model_id,
                     prompts=chunk_prompts,
                     max_tokens=kwargs.get("max_tokens", None),
-                    **{k: v for k, v in kwargs.items() if k != "seed" and k != "max_tokens"},
+                    **{
+                        k: v
+                        for k, v in kwargs.items()
+                        if k != "seed" and k != "max_tokens"
+                    },
                 )
             elif model_id in GPT_CHAT_MODELS:
                 return await self._openai_batch(
@@ -200,7 +223,9 @@ class BatchInferenceAPI:
                     **{k: v for k, v in kwargs.items() if k != "max_tokens"},
                 )
             else:
-                raise ValueError(f"Model {model_id} is not supported. Only Claude and OpenAI models are supported.")
+                raise ValueError(
+                    f"Model {model_id} is not supported. Only Claude and OpenAI models are supported."
+                )
 
         # Process uncached prompts in chunks if specified
         if len(chunks) > 1:
@@ -217,7 +242,9 @@ class BatchInferenceAPI:
                 if self.cache_manager is not None and use_cache:
                     for prompt, response in zip(chunk_prompts, responses):
                         if response is not None:
-                            self.cache_manager.save_cache(prompt=prompt, params=llm_params, responses=[response])
+                            self.cache_manager.save_cache(
+                                prompt=prompt, params=llm_params, responses=[response]
+                            )
 
         else:
             # Process all uncached prompts in a single batch
@@ -229,7 +256,9 @@ class BatchInferenceAPI:
         if self.cache_manager is not None and use_cache:
             for prompt, response in zip(uncached_prompts, responses):
                 if response is not None:
-                    self.cache_manager.save_cache(prompt=prompt, params=llm_params, responses=[response])
+                    self.cache_manager.save_cache(
+                        prompt=prompt, params=llm_params, responses=[response]
+                    )
 
         # Merge cached and new responses
         final_responses = [None] * len(prompts)

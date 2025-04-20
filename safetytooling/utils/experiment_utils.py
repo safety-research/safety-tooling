@@ -109,7 +109,9 @@ class ExperimentConfigBase:
         # Set up logging
         if self.log_to_file:
             (self.output_dir / "logs").mkdir(parents=True, exist_ok=True)
-            logfile = self.output_dir / "logs" / f"{log_file_prefix}-{self.datetime_str}.log"
+            logfile = (
+                self.output_dir / "logs" / f"{log_file_prefix}-{self.datetime_str}.log"
+            )
             print(f"\nLogging to {logfile}")
             print(f"You can tail the log file with: tail -f {logfile.resolve()}\n")
         else:
@@ -126,7 +128,9 @@ class ExperimentConfigBase:
 
         # Do remaining environment setup after we set up our logging, so that
         # our basicConfig is the one that gets used.
-        utils.setup_environment(openai_tag=self.openai_tag, anthropic_tag=self.anthropic_tag)
+        utils.setup_environment(
+            openai_tag=self.openai_tag, anthropic_tag=self.anthropic_tag
+        )
 
     def log_api_cost(self, metadata: dict[str, str] | None = None):
         if metadata is None:
@@ -136,5 +140,7 @@ class ExperimentConfigBase:
 
         api_cost_file = self.output_dir / "api-costs.jsonl"
         with jsonlines.open(api_cost_file, mode="a") as writer:
-            writer.write({"cost": self.api.running_cost - self._last_api_cost} | metadata)
+            writer.write(
+                {"cost": self.api.running_cost - self._last_api_cost} | metadata
+            )
         self._last_api_cost = self.api.running_cost

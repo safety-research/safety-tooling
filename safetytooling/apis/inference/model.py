@@ -21,7 +21,9 @@ class InferenceAPIModel(Protocol):
         raise NotImplementedError
 
     @staticmethod
-    def create_prompt_history_file(prompt: Prompt, model: str, prompt_history_dir: Path | None):
+    def create_prompt_history_file(
+        prompt: Prompt, model: str, prompt_history_dir: Path | None
+    ):
         if prompt_history_dir is None:
             return None
         filename = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}.txt"
@@ -43,6 +45,8 @@ class InferenceAPIModel(Protocol):
             return
         with open(prompt_file, "a") as f:
             f.write("\n\n======RESPONSE======\n\n")
-            json_str = json.dumps([response.to_dict() for response in responses], indent=4)
+            json_str = json.dumps(
+                [response.to_dict() for response in responses], indent=4
+            )
             json_str = json_str.replace("\\n", "\n")
             f.write(json_str)

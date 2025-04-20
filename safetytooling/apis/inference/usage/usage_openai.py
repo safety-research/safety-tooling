@@ -45,7 +45,9 @@ def fetch_ratelimit_usage(api_key, model_name) -> float:
         "model": model_name,
         "messages": [{"role": "user", "content": "Say 1"}],
     }
-    return get_ratelimit_usage(data, api_key, "https://api.openai.com/v1/chat/completions")
+    return get_ratelimit_usage(
+        data, api_key, "https://api.openai.com/v1/chat/completions"
+    )
 
 
 def fetch_ratelimit_usage_base(api_key, model_name) -> float:
@@ -77,7 +79,9 @@ class Config:
             "o3-mini-2025-01-31",
         ]
     )
-    openai_tags: list[str] = dataclasses.field(default_factory=lambda: ["OPENAI_API_KEY1", "OPENAI_API_KEY2"])
+    openai_tags: list[str] = dataclasses.field(
+        default_factory=lambda: ["OPENAI_API_KEY1", "OPENAI_API_KEY2"]
+    )
 
 
 if __name__ == "__main__":

@@ -64,10 +64,14 @@ class OpenRouterChatModel(InferenceAPIModel):
     ) -> list[LLMResponse]:
 
         if self.aclient is None:
-            raise RuntimeError("OPENROUTER_API_KEY environment variable must be set in .env before running your script")
+            raise RuntimeError(
+                "OPENROUTER_API_KEY environment variable must be set in .env before running your script"
+            )
         start = time.time()
 
-        prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
+        prompt_file = self.create_prompt_history_file(
+            prompt, model_id, self.prompt_history_dir
+        )
 
         # OpenRouter handles logprobs the same as OpenAI
         if "logprobs" in kwargs:
@@ -94,16 +98,24 @@ class OpenRouterChatModel(InferenceAPIModel):
                         response_data.choices[0].message.content is None
                         or response_data.choices[0].message.content == ""
                     ):
-                        raise RuntimeError(f"Empty response from {model_id} (common for openrouter so retrying)")
+                        raise RuntimeError(
+                            f"Empty response from {model_id} (common for openrouter so retrying)"
+                        )
                     if response_data.choices[0].finish_reason is None:
-                        raise RuntimeError(f"No finish reason from {model_id} (common for openrouter so retrying)")
+                        raise RuntimeError(
+                            f"No finish reason from {model_id} (common for openrouter so retrying)"
+                        )
                     if not is_valid(response_data):
-                        raise RuntimeError(f"Invalid response according to is_valid {response_data}")
+                        raise RuntimeError(
+                            f"Invalid response according to is_valid {response_data}"
+                        )
             except (TypeError, BadRequestError) as e:
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                LOGGER.warn(
+                    f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})"
+                )
                 error_list.append(error_info)
                 api_duration = time.time() - api_start
                 await asyncio.sleep(1.5**i)
@@ -116,8 +128,13 @@ class OpenRouterChatModel(InferenceAPIModel):
         if response_data is None:
             raise RuntimeError("No response data received")
 
-        if response_data.choices[0].message.content is None or response_data.choices[0].message.content == "":
-            raise RuntimeError(f"Empty response from {model_id} (even after retries, perhaps decrease concurrency)")
+        if (
+            response_data.choices[0].message.content is None
+            or response_data.choices[0].message.content == ""
+        ):
+            raise RuntimeError(
+                f"Empty response from {model_id} (even after retries, perhaps decrease concurrency)"
+            )
 
         assert len(response_data.choices) == kwargs.get(
             "n", 1

@@ -34,7 +34,10 @@ class OpenAIChatModel(OpenAIModel):
         else:
             api_key = self.openai_api_key
 
-        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
         data = {
             "model": model_id,
             "messages": [{"role": "user", "content": "Say 1"}],
@@ -42,7 +45,9 @@ class OpenAIChatModel(OpenAIModel):
         response = requests.post(url, headers=headers, json=data)
         if "x-ratelimit-limit-tokens" not in response.headers:
             tpm, rpm = get_rate_limit(model_id)
-            print(f"Failed to get dummy response header {model_id}, setting to tpm, rpm: {tpm}, {rpm}")
+            print(
+                f"Failed to get dummy response header {model_id}, setting to tpm, rpm: {tpm}, {rpm}"
+            )
             header_dict = dict(response.headers)
             return header_dict | {
                 "x-ratelimit-limit-tokens": str(tpm),
@@ -84,13 +89,22 @@ class OpenAIChatModel(OpenAIModel):
             # <|end|> is known to be duplicated on gpt-4-turbo-2024-04-09
             possibly_duplicated_top_logprobs = collections.defaultdict(list)
             for top_logprob in item.top_logprobs:
-                possibly_duplicated_top_logprobs[top_logprob.token].append(top_logprob.logprob)
+                possibly_duplicated_top_logprobs[top_logprob.token].append(
+                    top_logprob.logprob
+                )
 
-            top_logprobs.append({k: math_utils.logsumexp(vs) for k, vs in possibly_duplicated_top_logprobs.items()})
+            top_logprobs.append(
+                {
+                    k: math_utils.logsumexp(vs)
+                    for k, vs in possibly_duplicated_top_logprobs.items()
+                }
+            )
 
         return top_logprobs
 
-    async def _make_api_call(self, prompt: Prompt, model_id, start_time, **kwargs) -> list[LLMResponse]:
+    async def _make_api_call(
+        self, prompt: Prompt, model_id, start_time, **kwargs
+    ) -> list[LLMResponse]:
         LOGGER.debug(f"Making {model_id} call")
 
         # convert completion logprobs api to chat logprobs api
@@ -103,7 +117,9 @@ class OpenAIChatModel(OpenAIModel):
             kwargs["max_completion_tokens"] = kwargs["max_tokens"]
             del kwargs["max_tokens"]
 
-        prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
+        prompt_file = self.create_prompt_history_file(
+            prompt, model_id, self.prompt_history_dir
+        )
         api_start = time.time()
 
         # Choose between parse and create based on response format
@@ -124,7 +140,8 @@ class OpenAIChatModel(OpenAIModel):
             **kwargs,
         )
         if hasattr(api_response, "error") and (
-            "Rate limit exceeded" in api_response.error["message"] or api_response.error["code"] == 429
+            "Rate limit exceeded" in api_response.error["message"]
+            or api_response.error["code"] == 429
         ):  # OpenRouter routes through the error messages from the different providers, so we catch them here
             dummy_request = httpx.Request(
                 method="POST",
@@ -134,11 +151,16 @@ class OpenAIChatModel(OpenAIModel):
             )
             raise openai.RateLimitError(
                 api_response.error["message"],
-                response=httpx.Response(status_code=429, text=api_response.error["message"], request=dummy_request),
+                response=httpx.Response(
+                    status_code=429,
+                    text=api_response.error["message"],
+                    request=dummy_request,
+                ),
                 body=api_response.error,
             )
         if (
-            api_response.choices is None or api_response.usage.prompt_tokens == api_response.usage.total_tokens
+            api_response.choices is None
+            or api_response.usage.prompt_tokens == api_response.usage.total_tokens
         ):  # this sometimes happens on OpenRouter; we want to raise an error
             raise RuntimeError(f"No tokens were generated for {model_id}")
         api_duration = time.time() - api_start
@@ -159,8 +181,13 @@ class OpenAIChatModel(OpenAIModel):
                     stop_reason=choice.finish_reason,
                     api_duration=api_duration,
                     duration=duration,
-                    cost=context_cost + self.count_tokens(choice.message.content) * completion_token_cost,
-                    logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
+                    cost=context_cost
+                    + self.count_tokens(choice.message.content) * completion_token_cost,
+                    logprobs=(
+                        self.convert_top_logprobs(choice.logprobs)
+                        if choice.logprobs is not None
+                        else None
+                    ),
                 )
             )
         self.add_response_to_prompt_file(prompt_file, responses)

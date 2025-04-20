@@ -77,10 +77,14 @@ class TogetherChatModel(InferenceAPIModel):
         **kwargs,
     ) -> list[LLMResponse]:
         if self.aclient is None:
-            raise RuntimeError("TOGETHER_API_KEY environment variable must be set in .env before running your script")
+            raise RuntimeError(
+                "TOGETHER_API_KEY environment variable must be set in .env before running your script"
+            )
         start = time.time()
 
-        prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
+        prompt_file = self.create_prompt_history_file(
+            prompt, model_id, self.prompt_history_dir
+        )
 
         if "logprobs" in kwargs:
             kwargs["top_logprobs"] = kwargs["logprobs"]
@@ -103,7 +107,9 @@ class TogetherChatModel(InferenceAPIModel):
                     )
                     api_duration = time.time() - api_start
                     if not is_valid(response_data):
-                        raise RuntimeError(f"Invalid response according to is_valid {response_data}")
+                        raise RuntimeError(
+                            f"Invalid response according to is_valid {response_data}"
+                        )
             except (TypeError, InvalidRequestError) as e:
                 raise e
             except ServiceUnavailableError:
@@ -111,7 +117,9 @@ class TogetherChatModel(InferenceAPIModel):
                 await asyncio.sleep(10)
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                LOGGER.warn(
+                    f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})"
+                )
                 error_list.append(error_info)
                 api_duration = time.time() - api_start
                 await asyncio.sleep(1.5**i)
@@ -136,7 +144,11 @@ class TogetherChatModel(InferenceAPIModel):
                 api_duration=api_duration,
                 duration=duration,
                 cost=0,
-                logprobs=self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None,
+                logprobs=(
+                    self.convert_top_logprobs(choice.logprobs)
+                    if choice.logprobs is not None
+                    else None
+                ),
             )
             for choice in response_data.choices
         ]

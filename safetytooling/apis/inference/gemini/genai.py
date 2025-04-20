@@ -75,7 +75,9 @@ class GeminiModel(InferenceAPIModel):
             raise ValueError(f"Unsupported model: {model_id}")
         if model_id not in self.model_ids:
             self.model_ids.add(model_id)
-            self.rate_trackers[model_id] = GeminiRateTracker(rpm_limit=GEMINI_RPM[model_id], tpm_limit=GEMINI_TPM)
+            self.rate_trackers[model_id] = GeminiRateTracker(
+                rpm_limit=GEMINI_RPM[model_id], tpm_limit=GEMINI_TPM
+            )
 
     def get_generation_config(self, kwargs):
         for k, v in self.kwarg_change_name.items():
@@ -109,20 +111,30 @@ class GeminiModel(InferenceAPIModel):
             )
         if generation_config:
             model = genai.GenerativeModel(
-                model_name=model_id, generation_config=generation_config, safety_settings=safety_settings
+                model_name=model_id,
+                generation_config=generation_config,
+                safety_settings=safety_settings,
             )
         else:
-            model = genai.GenerativeModel(model_name=model_id, safety_settings=safety_settings)
+            model = genai.GenerativeModel(
+                model_name=model_id, safety_settings=safety_settings
+            )
 
         content = prompt.gemini_format()
-        upload_files = [i for i in content if isinstance(i, genai.types.file_types.File)]
+        upload_files = [
+            i for i in content if isinstance(i, genai.types.file_types.File)
+        ]
         response = await model.generate_content_async(contents=content)
         return response, upload_files
 
     async def check_recitation_rates(self):
         if self.total_processed_prompts >= self.recitation_rate_check_volume:
-            self.recitation_retry_rate = self.total_recitation_retries / self.total_generate_calls
-            self.recitation_failure_rate = self.total_recitation_failures / self.total_processed_prompts
+            self.recitation_retry_rate = (
+                self.total_recitation_retries / self.total_generate_calls
+            )
+            self.recitation_failure_rate = (
+                self.total_recitation_failures / self.total_processed_prompts
+            )
             # We've hit the threshold of prompts processed required to start checking if we're
             # Hitting high recitation rates
 
@@ -151,7 +163,10 @@ class GeminiModel(InferenceAPIModel):
         safety_settings = self.get_safety_settings(safety_threshold)
 
         async_response, upload_files = await self.run_query(
-            model_id=model_id, prompt=prompt, safety_settings=safety_settings, generation_config=generation_config
+            model_id=model_id,
+            prompt=prompt,
+            safety_settings=safety_settings,
+            generation_config=generation_config,
         )
 
         api_duration = time.time() - api_start
@@ -159,7 +174,9 @@ class GeminiModel(InferenceAPIModel):
         response_data = async_response._result
 
         if response_data is None:
-            raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
+            raise RuntimeError(
+                f"Failed to get a response from the API after {max_attempts} attempts."
+            )
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
@@ -202,7 +219,9 @@ class GeminiModel(InferenceAPIModel):
                         model_id=model_id,
                         completion=response_data.candidates[0].content.parts[0].text,
                         stop_reason=get_stop_reason(stop_reason),
-                        safety_ratings=parse_safety_ratings(safety_ratings=response_data.candidates[0].safety_ratings),
+                        safety_ratings=parse_safety_ratings(
+                            safety_ratings=response_data.candidates[0].safety_ratings
+                        ),
                         duration=duration,
                         api_duration=api_duration,
                         cost=0,
@@ -269,14 +288,21 @@ class GeminiModel(InferenceAPIModel):
                 rate_tracker = self.rate_trackers[model_id]
                 if rate_tracker.can_make_request(GEMINI_RPM[model_id]):
                     rate_tracker.add_request(
-                        genai.GenerativeModel(model_name=model_id).count_tokens(prompt.gemini_format()).total_tokens
+                        genai.GenerativeModel(model_name=model_id)
+                        .count_tokens(prompt.gemini_format())
+                        .total_tokens
                     )
                 else:
                     return None
 
             # try:
             return await self._make_api_call(
-                model_id, prompt, print_prompt_and_response, max_attempts, is_valid, **kwargs
+                model_id,
+                prompt,
+                print_prompt_and_response,
+                max_attempts,
+                is_valid,
+                **kwargs,
             )
             # except Exception as e:
             #     LOGGER.warning(f"Error calling {model_id}: {str(e)}")
@@ -291,15 +317,20 @@ class GeminiModel(InferenceAPIModel):
                 responses = await attempt_api_call(model_id)
                 if (
                     responses is not None
-                    and len([response for response in responses if is_valid(response)]) / len(responses)
+                    and len([response for response in responses if is_valid(response)])
+                    / len(responses)
                     < self.empty_completion_threshold
                 ):
-                    raise RuntimeError(f"All invalid responses according to is_valid {responses}")
+                    raise RuntimeError(
+                        f"All invalid responses according to is_valid {responses}"
+                    )
             except (TypeError, InvalidArgument) as e:
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying in {1.5**i} seconds. (Attempt {i})")
+                LOGGER.warn(
+                    f"Encountered API error: {error_info}.\nRetrying in {1.5**i} seconds. (Attempt {i})"
+                )
                 await asyncio.sleep(1.5**i)
             else:
                 break
@@ -310,9 +341,15 @@ class GeminiModel(InferenceAPIModel):
             raise RecitationRateFailureError("Recitation rate failure is too high!")
         if responses is None:
             self.total_recitation_failures += 1
-            LOGGER.error(f"Failed to get a response for {prompt} from any API after {max_attempts} attempts.")
-            LOGGER.info(f"Current recitation retry rate: {self.recitation_retry_rate* 100:.2f}")
-            LOGGER.info(f"Current recitation failure rate: {self.recitation_failure_rate* 100:.2f}")
+            LOGGER.error(
+                f"Failed to get a response for {prompt} from any API after {max_attempts} attempts."
+            )
+            LOGGER.info(
+                f"Current recitation retry rate: {self.recitation_retry_rate* 100:.2f}"
+            )
+            LOGGER.info(
+                f"Current recitation failure rate: {self.recitation_failure_rate* 100:.2f}"
+            )
             return [
                 LLMResponse(
                     model_id=model_id,
@@ -341,10 +378,20 @@ class GeminiModel(InferenceAPIModel):
             # Check the current recitation retries and failure rates
             recitation_error = await self.check_recitation_rates()
             LOGGER.info(f"Current total generate calls: {self.total_generate_calls}")
-            LOGGER.info(f"Current total processed prompts: {self.total_processed_prompts}")
-            LOGGER.info(f"Current total recitation retries: {self.total_recitation_retries}")
-            LOGGER.info(f"Current total recitation failures: {self.total_recitation_failures}")
-            LOGGER.info(f"Current recitation retry rate: {self.recitation_retry_rate* 100:.2f}")
-            LOGGER.info(f"Current recitation failure rate: {self.recitation_failure_rate* 100:.2f}")
+            LOGGER.info(
+                f"Current total processed prompts: {self.total_processed_prompts}"
+            )
+            LOGGER.info(
+                f"Current total recitation retries: {self.total_recitation_retries}"
+            )
+            LOGGER.info(
+                f"Current total recitation failures: {self.total_recitation_failures}"
+            )
+            LOGGER.info(
+                f"Current recitation retry rate: {self.recitation_retry_rate* 100:.2f}"
+            )
+            LOGGER.info(
+                f"Current recitation failure rate: {self.recitation_failure_rate* 100:.2f}"
+            )
 
             return responses

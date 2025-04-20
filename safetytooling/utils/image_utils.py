@@ -103,7 +103,16 @@ def add_text_to_image(
         y = y0 + i * dy
         if y + h > image.shape[0]:
             return None
-        cv2.putText(image, line, (position[0], y), font, font_scale, color, thickness, cv2.LINE_AA)
+        cv2.putText(
+            image,
+            line,
+            (position[0], y),
+            font,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
 
     return image
 
@@ -160,7 +169,9 @@ def get_image_file_type(image_file: str) -> str:
         raise ValueError(f"Image path {image_file} is not a valid media_type!")
 
 
-def prepare_gemini_image(image_file: str, use_vertexai: bool = False) -> Part | genai.types.file_types.File:
+def prepare_gemini_image(
+    image_file: str, use_vertexai: bool = False
+) -> Part | genai.types.file_types.File:
     if use_vertexai:
         encoded_image = image_to_base64(image_file)
         image_type = get_image_file_type(image_file)

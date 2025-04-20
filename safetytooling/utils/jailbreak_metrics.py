@@ -8,7 +8,9 @@ from tqdm.asyncio import tqdm_asyncio
 
 from safetytooling.apis.inference.api import InferenceAPI
 from safetytooling.apis.inference.openai.utils import GPT_CHAT_MODELS
-from safetytooling.classifiers.run_classifier import get_model_response as get_classifier_response
+from safetytooling.classifiers.run_classifier import (
+    get_model_response as get_classifier_response,
+)
 from safetytooling.data_models.hashable import deterministic_hash
 from safetytooling.data_models.messages import ChatMessage, MessageRole, Prompt
 from safetytooling.utils.image_utils import get_default_image, save_image_from_array
@@ -60,17 +62,24 @@ class JailbreakMetrics:
             for llm_response in responses:
                 # Filter out no responses from recitations for Gemini
                 if llm_response.completion != "":
-                    input_obj = {"behavior_str": behavior_str, "response": llm_response.completion}
+                    input_obj = {
+                        "behavior_str": behavior_str,
+                        "response": llm_response.completion,
+                    }
                     classifier_response = await get_classifier_response(
                         input_obj=input_obj,
                         classifier_model="gpt-4o",
                         api=self.api,
                         classifier_template="harmbench/harmbench-gpt-4.jinja",
-                        classifier_fields=dict(behavior="behavior_str", assistant_response="response"),
+                        classifier_fields=dict(
+                            behavior="behavior_str", assistant_response="response"
+                        ),
                         temperature=0,
                         max_tokens=5,
                     )
-                    classifier_responses.append(classifier_response["classifier_outputs"][0])
+                    classifier_responses.append(
+                        classifier_response["classifier_outputs"][0]
+                    )
                 else:
                     classifier_responses.append("Recitation")
             return responses, classifier_responses
@@ -88,7 +97,9 @@ class JailbreakMetrics:
         assert (
             audio_key is not None or input_key is not None or image_key is not None
         ), "Either audio_key or input_key or image_key must not be None"
-        assert image_key is None or audio_key is None, "Cannot have both audio and image keys"
+        assert (
+            image_key is None or audio_key is None
+        ), "Cannot have both audio and image keys"
 
         messages = []
         if system_prompt is not None:
@@ -112,7 +123,9 @@ class JailbreakMetrics:
         if input_key is not None:
             messages.append(ChatMessage(role=MessageRole.user, content=row[input_key]))
         if extra_user_message is not None:
-            messages.append(ChatMessage(role=MessageRole.user, content=extra_user_message))
+            messages.append(
+                ChatMessage(role=MessageRole.user, content=extra_user_message)
+            )
 
         return Prompt(messages=messages)
 
@@ -137,7 +150,12 @@ class JailbreakMetrics:
         async def process_row(idx, row):
             async with self.semaphore:
                 prompt = self.create_prompt_from_df_row(
-                    row, input_key, system_prompt, audio_key, image_key, extra_user_message
+                    row,
+                    input_key,
+                    system_prompt,
+                    audio_key,
+                    image_key,
+                    extra_user_message,
                 )
                 responses, classifier_responses = await self.run_inference_over_prompt(
                     prompt=prompt,
@@ -159,7 +177,10 @@ class JailbreakMetrics:
                     row["classifier_outputs"] = classifier_responses
                     if len(classifier_responses) > 0:
                         row[output_key] = sum(
-                            [classifier_response.lower() in "yes" for classifier_response in classifier_responses]
+                            [
+                                classifier_response.lower() in "yes"
+                                for classifier_response in classifier_responses
+                            ]
                         ) / len(classifier_responses)
                     else:
                         row[output_key] = 0
@@ -186,7 +207,10 @@ class JailbreakMetrics:
             denominator = token_a_prob + token_b_prob
             return token_a_prob / denominator if denominator != 0 else 0.5
 
-        proportions = [token_a_token_b_proportion(logprobs, token_a, token_b) for logprobs in row["logprobs"]]
+        proportions = [
+            token_a_token_b_proportion(logprobs, token_a, token_b)
+            for logprobs in row["logprobs"]
+        ]
         return sum(proportions) / len(proportions) if proportions else 0
 
     async def logprobs_pairwise_token_proportion(
@@ -222,7 +246,10 @@ class JailbreakMetrics:
         )
 
         dataset[f"{token_a}_{token_b}_proportion"] = dataset.apply(
-            self.get_avg_token_a_token_b_proportion, token_a=token_a, token_b=token_b, axis=1
+            self.get_avg_token_a_token_b_proportion,
+            token_a=token_a,
+            token_b=token_b,
+            axis=1,
         )
 
         return dataset

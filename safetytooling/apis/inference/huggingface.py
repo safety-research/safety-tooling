@@ -59,12 +59,16 @@ class HuggingFaceModel(InferenceAPIModel):
 
     def count_tokens(self, text, model_name):
         if model_name not in self.tokenizers:
-            self.tokenizers[model_name] = AutoTokenizer.from_pretrained(model_name, use_auth_token=self.token)
+            self.tokenizers[model_name] = AutoTokenizer.from_pretrained(
+                model_name, use_auth_token=self.token
+            )
         tokenizer = self.tokenizers[model_name]
         return len(tokenizer.tokenize(text))
 
     async def query(self, model_url, payload, session):
-        async with session.post(model_url, headers=self.headers, json=payload) as response:
+        async with session.post(
+            model_url, headers=self.headers, json=payload
+        ) as response:
             return await response.json()
 
     async def run_query(self, model_url, input_text, params):
@@ -78,7 +82,10 @@ class HuggingFaceModel(InferenceAPIModel):
                 # sometimes models break on specific inputs so this helps debug that
                 print(response)
                 LOGGER.error(response)
-                if response["error"] == "Request failed during generation: Server error: CANCELLED":
+                if (
+                    response["error"]
+                    == "Request failed during generation: Server error: CANCELLED"
+                ):
                     if not pathlib.Path("error_input_text.txt").exists():
                         with open("error_input_text.txt", "w") as f:
                             f.write(payload["inputs"])
@@ -95,9 +102,16 @@ class HuggingFaceModel(InferenceAPIModel):
         for logprobs_at_pos in response_details["top_tokens"]:
             possibly_duplicated_logprobs = collections.defaultdict(list)
             for token_info in logprobs_at_pos:
-                possibly_duplicated_logprobs[token_info["text"]].append(token_info["logprob"])
+                possibly_duplicated_logprobs[token_info["text"]].append(
+                    token_info["logprob"]
+                )
 
-            logprobs.append({k: math_utils.logsumexp(vs) for k, vs in possibly_duplicated_logprobs.items()})
+            logprobs.append(
+                {
+                    k: math_utils.logsumexp(vs)
+                    for k, vs in possibly_duplicated_logprobs.items()
+                }
+            )
 
         return logprobs
 
@@ -111,7 +125,9 @@ class HuggingFaceModel(InferenceAPIModel):
         model_url: str | None = None,
         **kwargs,
     ) -> list[LLMResponse]:
-        assert self.token is not None and self.token.startswith("hf_"), f"Invalid token {self.token}"
+        assert self.token is not None and self.token.startswith(
+            "hf_"
+        ), f"Invalid token {self.token}"
 
         start = time.time()
 
@@ -120,7 +136,9 @@ class HuggingFaceModel(InferenceAPIModel):
         else:
             model_url = HUGGINGFACE_MODELS[model_id]
 
-        prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
+        prompt_file = self.create_prompt_history_file(
+            prompt, model_id, self.prompt_history_dir
+        )
 
         for k, v in self.kwarg_change_name.items():
             if k in kwargs:
@@ -156,29 +174,41 @@ class HuggingFaceModel(InferenceAPIModel):
                     if isinstance(response_data, dict):
                         response_data = [response_data]
                     if not is_valid(response_data[0]["generated_text"]):
-                        raise RuntimeError(f"Invalid response according to is_valid {response_data}")
+                        raise RuntimeError(
+                            f"Invalid response according to is_valid {response_data}"
+                        )
             except TypeError as e:
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
 
-                if ("API Error: Input validation error: `inputs` must have less than" in str(e)) or (
-                    "API Error: Input validation error: `inputs` tokens + `max_new_tokens` must be <=" in str(e)
+                if (
+                    "API Error: Input validation error: `inputs` must have less than"
+                    in str(e)
+                ) or (
+                    "API Error: Input validation error: `inputs` tokens + `max_new_tokens` must be <="
+                    in str(e)
                 ):
                     # Early exit on context length errors.
                     raise e
 
                 if "503 Service Unavailable" in str(e):
-                    LOGGER.warn(f"503 Service Unavailable error. Waiting 60 seconds before retrying. (Attempt {i})")
+                    LOGGER.warn(
+                        f"503 Service Unavailable error. Waiting 60 seconds before retrying. (Attempt {i})"
+                    )
                     await asyncio.sleep(60)
                 else:
-                    LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                    LOGGER.warn(
+                        f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})"
+                    )
                     await asyncio.sleep(1.5**i)
             else:
                 break
 
         if response_data is None:
-            raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
+            raise RuntimeError(
+                f"Failed to get a response from the API after {max_attempts} attempts."
+            )
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")

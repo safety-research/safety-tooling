@@ -47,16 +47,23 @@ async def test_batch_api_claude(batch_api, test_prompts, tmp_path):
 
     assert len(responses) == len(test_prompts)
     assert all(response is not None for response in responses)
-    assert all(response.model_id == "claude-3-5-haiku-20241022" for response in responses)
+    assert all(
+        response.model_id == "claude-3-5-haiku-20241022" for response in responses
+    )
     assert all(response.batch_custom_id is not None for response in responses)
-    assert all(str(i + 1) in response.completion for i, response in enumerate(responses))
+    assert all(
+        str(i + 1) in response.completion for i, response in enumerate(responses)
+    )
     assert isinstance(batch_id, str)
 
 
 @pytest.mark.asyncio
 async def test_batch_api_unsupported_model(batch_api, test_prompts):
     """Test that BatchInferenceAPI raises error for unsupported models."""
-    with pytest.raises(ValueError, match="is not supported. Only Claude and OpenAI models are supported"):
+    with pytest.raises(
+        ValueError,
+        match="is not supported. Only Claude and OpenAI models are supported",
+    ):
         await batch_api(
             model_id="unsupported-model",
             prompts=test_prompts,
@@ -71,7 +78,12 @@ async def test_batch_api_cache(batch_api, tmp_path):
     # Create 3 test prompts with random numbers to ensure unique cache keys
     rand_suffix = random.randint(0, 1000000)
     test_prompts = [
-        Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
+        Prompt(
+            messages=[
+                ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)
+            ]
+        )
+        for i in range(1, 4)
     ]
 
     # First request - should hit the API
@@ -115,7 +127,12 @@ async def test_batch_api_no_cache_flag(batch_api, tmp_path):
     # Create 3 test prompts with random numbers to ensure unique cache keys
     rand_suffix = random.randint(0, 1000000)
     test_prompts = [
-        Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
+        Prompt(
+            messages=[
+                ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)
+            ]
+        )
+        for i in range(1, 4)
     ]
 
     # Create a new BatchInferenceAPI instance with no_cache=True
@@ -161,7 +178,12 @@ async def test_batch_api_chunking(batch_api, tmp_path):
     # Create 5 test prompts with random numbers to ensure unique cache keys
     rand_suffix = random.randint(0, 1000000)
     test_prompts = [
-        Prompt(messages=[ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)]) for i in range(1, 4)
+        Prompt(
+            messages=[
+                ChatMessage(content=f"Say {i} {rand_suffix}", role=MessageRole.user)
+            ]
+        )
+        for i in range(1, 4)
     ]
 
     # Run with chunking specified in the API call
@@ -176,7 +198,9 @@ async def test_batch_api_chunking(batch_api, tmp_path):
     # Verify we got responses for all prompts
     assert len(responses) == len(test_prompts)
     assert all(response is not None for response in responses)
-    assert all(response.model_id == "claude-3-5-haiku-20241022" for response in responses)
+    assert all(
+        response.model_id == "claude-3-5-haiku-20241022" for response in responses
+    )
     assert all(response.batch_custom_id is not None for response in responses)
 
     # Verify that we got multiple batch IDs (since it was chunked)

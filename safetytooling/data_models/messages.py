@@ -43,7 +43,9 @@ class MessageRole(str, Enum):
     none = "none"
 
 
-class ChatCompletionDeepSeekAssistantMessageParam(openai.types.chat.ChatCompletionAssistantMessageParam):
+class ChatCompletionDeepSeekAssistantMessageParam(
+    openai.types.chat.ChatCompletionAssistantMessageParam
+):
     """
     Inherited from openai.types.chat.ChatCompletionAssistantMessageParam
     to add prefix field for DeepSeek API
@@ -67,9 +69,10 @@ class ChatMessage(HashableBaseModel):
     def openai_format(self) -> openai.types.chat.ChatCompletionMessageParam:
         return {"role": self.role.value, "content": self.content}
 
-    def deepseek_format(
-        self, is_prefix: bool = False
-    ) -> Union[openai.types.chat.ChatCompletionMessageParam, ChatCompletionDeepSeekAssistantMessageParam]:
+    def deepseek_format(self, is_prefix: bool = False) -> Union[
+        openai.types.chat.ChatCompletionMessageParam,
+        ChatCompletionDeepSeekAssistantMessageParam,
+    ]:
         if is_prefix:
             return {"role": self.role.value, "content": self.content, "prefix": True}
         else:
@@ -99,7 +102,14 @@ class ChatMessage(HashableBaseModel):
             base64_image = image_to_base64(self.content)
             image_type = get_image_file_type(self.content)
             media_type = f"image/{image_type}"
-            return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": base64_image}}
+            return {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64_image,
+                },
+            }
         elif self.role == MessageRole.user:
             return {"type": "text", "text": self.content}
         else:
@@ -219,17 +229,25 @@ class Prompt(HashableBaseModel):
                 if i + 1 >= len(self.messages):
                     raise ValueError("Each image must be followed by a user message")
                 if self.messages[i + 1].role != MessageRole.user:
-                    raise ValueError(f"Image must be followed by user message, got {self.messages[i + 1].role}")
+                    raise ValueError(
+                        f"Image must be followed by user message, got {self.messages[i + 1].role}"
+                    )
         return any(msg.role == MessageRole.image for msg in self.messages)
 
     def add_assistant_message(self, message: str) -> "Prompt":
-        return self + Prompt(messages=[ChatMessage(role=MessageRole.assistant, content=message)])
+        return self + Prompt(
+            messages=[ChatMessage(role=MessageRole.assistant, content=message)]
+        )
 
     def add_user_message(self, message: str) -> "Prompt":
-        return self + Prompt(messages=[ChatMessage(role=MessageRole.user, content=message)])
+        return self + Prompt(
+            messages=[ChatMessage(role=MessageRole.user, content=message)]
+        )
 
     def add_audio_message(self, message: str) -> "Prompt":
-        return self + Prompt(messages=[ChatMessage(role=MessageRole.audio, content=message)])
+        return self + Prompt(
+            messages=[ChatMessage(role=MessageRole.audio, content=message)]
+        )
 
     def hf_format(self, hf_model_id: str) -> str:
         match hf_model_id:
@@ -255,21 +273,34 @@ class Prompt(HashableBaseModel):
                     case MessageRole.user:
                         rendered_prompt += "<|assistant|>\n"
                     case _:
-                        raise ValueError("Last message in prompt must be user. " f"Got {self.messages[-1].role}")
+                        raise ValueError(
+                            "Last message in prompt must be user. "
+                            f"Got {self.messages[-1].role}"
+                        )
 
                 return rendered_prompt
 
-            case "meta-llama/Meta-Llama-3-8B-Instruct" | "GraySwanAI/Llama-3-8B-Instruct-RR" | "llama":
+            case (
+                "meta-llama/Meta-Llama-3-8B-Instruct"
+                | "GraySwanAI/Llama-3-8B-Instruct-RR"
+                | "llama"
+            ):
                 # See Llama 3 Model Card for prompt format.
                 rendered_prompt = "<|begin_of_text|>"
                 for msg in self.messages:
                     match msg.role:
                         case MessageRole.system:
-                            rendered_prompt += "<|start_header_id|>system<|end_header_id|>"
+                            rendered_prompt += (
+                                "<|start_header_id|>system<|end_header_id|>"
+                            )
                         case MessageRole.user:
-                            rendered_prompt += "<|start_header_id|>user<|end_header_id|>"
+                            rendered_prompt += (
+                                "<|start_header_id|>user<|end_header_id|>"
+                            )
                         case MessageRole.assistant:
-                            rendered_prompt += "<|start_header_id|>assistant<|end_header_id|>"
+                            rendered_prompt += (
+                                "<|start_header_id|>assistant<|end_header_id|>"
+                            )
                         case _:
                             raise ValueError(f"Invalid role {msg.role} in prompt")
 
@@ -277,9 +308,14 @@ class Prompt(HashableBaseModel):
 
                 match self.messages[-1].role:
                     case MessageRole.user:
-                        rendered_prompt += "\n<|start_header_id|>assistant<|end_header_id|>"
+                        rendered_prompt += (
+                            "\n<|start_header_id|>assistant<|end_header_id|>"
+                        )
                     case _:
-                        raise ValueError("Last message in prompt must be user. " f"Got {self.messages[-1].role}")
+                        raise ValueError(
+                            "Last message in prompt must be user. "
+                            f"Got {self.messages[-1].role}"
+                        )
 
                 return rendered_prompt
 
@@ -294,7 +330,9 @@ class Prompt(HashableBaseModel):
                 f"OpenAI chat prompts cannot end with an assistant message. Got {self.messages[-1].role}: {self.messages[-1].content}"
             )
         if self.is_none_in_messages():
-            raise ValueError(f"OpenAI chat prompts cannot have a None role. Got {self.messages}")
+            raise ValueError(
+                f"OpenAI chat prompts cannot have a None role. Got {self.messages}"
+            )
         if self.contains_image():
             return self.openai_image_format()
         return [msg.openai_format() for msg in self.messages]
@@ -303,7 +341,9 @@ class Prompt(HashableBaseModel):
         self,
     ) -> list[openai.types.chat.ChatCompletionMessageParam]:
         if self.is_none_in_messages():
-            raise ValueError(f"Together chat prompts cannot have a None role. Got {self.messages}")
+            raise ValueError(
+                f"Together chat prompts cannot have a None role. Got {self.messages}"
+            )
         if self.contains_image():
             return self.openai_image_format()
         return [msg.openai_format() for msg in self.messages]
@@ -316,14 +356,18 @@ class Prompt(HashableBaseModel):
                 self.messages[-1].deepseek_format(is_prefix=True)
             ]
         if self.is_none_in_messages():
-            raise ValueError(f"DeepSeek chat prompts cannot have a None role. Got {self.messages}")
+            raise ValueError(
+                f"DeepSeek chat prompts cannot have a None role. Got {self.messages}"
+            )
         if self.contains_image():
             return self.openai_image_format()
         return [msg.deepseek_format() for msg in self.messages]
 
     def gemini_format(self, use_vertexai: bool = False) -> List[str]:
         if self.is_none_in_messages():
-            raise ValueError(f"Gemini chat prompts cannot have a None role. Got {self.messages}")
+            raise ValueError(
+                f"Gemini chat prompts cannot have a None role. Got {self.messages}"
+            )
 
         messages = []
 
@@ -383,12 +427,19 @@ class Prompt(HashableBaseModel):
 
             if msg.role == MessageRole.image:
                 # Ensure image is followed by a user message
-                assert i + 1 < len(messages_to_process), "Image must be followed by a user message as caption"
+                assert i + 1 < len(
+                    messages_to_process
+                ), "Image must be followed by a user message as caption"
                 next_msg = messages_to_process[i + 1]
-                assert next_msg.role == MessageRole.user, f"Image must be followed by user message, got {next_msg.role}"
+                assert (
+                    next_msg.role == MessageRole.user
+                ), f"Image must be followed by user message, got {next_msg.role}"
 
                 # Add image and user message as a combined message
-                content = [msg.openai_image_format(), {"type": "text", "text": next_msg.content}]
+                content = [
+                    msg.openai_image_format(),
+                    {"type": "text", "text": next_msg.content},
+                ]
                 messages.append({"role": "user", "content": content})
                 i += 2  # Skip both image and user message
 
@@ -406,7 +457,9 @@ class Prompt(HashableBaseModel):
     ) -> tuple[str | None, list[anthropic.types.MessageParam]]:
         """Returns (system_message (optional), chat_messages)"""
         if self.is_none_in_messages():
-            raise ValueError(f"Anthropic chat prompts cannot have a None role. Got {self.messages}")
+            raise ValueError(
+                f"Anthropic chat prompts cannot have a None role. Got {self.messages}"
+            )
 
         if len(self.messages) == 0:
             return None, []
@@ -416,11 +469,15 @@ class Prompt(HashableBaseModel):
             return system_msg, messages
 
         if self.messages[0].role == MessageRole.system:
-            return self.messages[0].content, [msg.anthropic_format() for msg in self.messages[1:]]
+            return self.messages[0].content, [
+                msg.anthropic_format() for msg in self.messages[1:]
+            ]
 
         return None, [msg.anthropic_format() for msg in self.messages]
 
-    def anthropic_image_format(self) -> Tuple[str | None, List[anthropic.types.MessageParam]]:
+    def anthropic_image_format(
+        self,
+    ) -> Tuple[str | None, List[anthropic.types.MessageParam]]:
         """Returns (system_message (optional), chat_messages)"""
         system_message = None
         messages = []
@@ -438,13 +495,22 @@ class Prompt(HashableBaseModel):
 
             if msg.role == MessageRole.image:
                 # Ensure image is followed by a user message
-                assert i + 1 < len(messages_to_process), "Image must be followed by a user message as caption"
+                assert i + 1 < len(
+                    messages_to_process
+                ), "Image must be followed by a user message as caption"
                 next_msg = messages_to_process[i + 1]
-                assert next_msg.role == MessageRole.user, f"Image must be followed by user message, got {next_msg.role}"
+                assert (
+                    next_msg.role == MessageRole.user
+                ), f"Image must be followed by user message, got {next_msg.role}"
 
                 # Add image and user message as a combined message
-                content = [msg.anthropic_image_format(), {"type": "text", "text": next_msg.content}]
-                messages.append(anthropic.types.MessageParam(role="user", content=content))
+                content = [
+                    msg.anthropic_image_format(),
+                    {"type": "text", "text": next_msg.content},
+                ]
+                messages.append(
+                    anthropic.types.MessageParam(role="user", content=content)
+                )
                 i += 2  # Skip both image and user message
 
             elif msg.role in (MessageRole.user, MessageRole.assistant):
@@ -475,7 +541,9 @@ class Prompt(HashableBaseModel):
         out += "<GOPHER>"
         return Prompt(messages=[ChatMessage(role=MessageRole.none, content=out)])
 
-    def pretty_print(self, responses: list[LLMResponse], print_fn: Callable | None = None) -> None:
+    def pretty_print(
+        self, responses: list[LLMResponse], print_fn: Callable | None = None
+    ) -> None:
         if print_fn is None:
             print_fn = cprint
 
@@ -510,13 +578,23 @@ class BatchPrompt(pydantic.BaseModel):
         if audio_inputs is None and user_prompts is None:
             raise ValueError("Either audio_inputs or user_prompts must be provided")
 
-        if audio_inputs is not None and user_prompts is not None and len(audio_inputs) != len(user_prompts):
+        if (
+            audio_inputs is not None
+            and user_prompts is not None
+            and len(audio_inputs) != len(user_prompts)
+        ):
             raise ValueError("audio_inputs and user_prompts must have the same length")
 
         prompts = []
-        for audio, user_prompt, system_prompt in zip(audio_inputs, user_prompts, system_prompts):
+        for audio, user_prompt, system_prompt in zip(
+            audio_inputs, user_prompts, system_prompts
+        ):
             prompts.append(
-                Prompt.from_alm_input(audio_file=audio, user_prompt=user_prompt, system_prompt=system_prompt)
+                Prompt.from_alm_input(
+                    audio_file=audio,
+                    user_prompt=user_prompt,
+                    system_prompt=system_prompt,
+                )
             )
         return cls(prompts=prompts)
 
@@ -532,15 +610,21 @@ class BatchPrompt(pydantic.BaseModel):
             for msg in prompt.messages:
                 if msg.role == MessageRole.audio:
                     if audio_msg is not None:
-                        raise ValueError("Multiple audio messages found in a single prompt")
+                        raise ValueError(
+                            "Multiple audio messages found in a single prompt"
+                        )
                     audio_msg = get_audio_data(msg.content)
                 elif msg.role == MessageRole.user:
                     if user_msg is not None:
-                        raise ValueError("Multiple user messages found in a single prompt")
+                        raise ValueError(
+                            "Multiple user messages found in a single prompt"
+                        )
                     user_msg = msg.content if msg.content and msg.content != "" else " "
                 elif msg.role == MessageRole.system:
                     if system_msg is not None:
-                        raise ValueError("Multiple system messages found in a single prompt")
+                        raise ValueError(
+                            "Multiple system messages found in a single prompt"
+                        )
                     system_msg = msg.content
 
             if audio_msg is None:
@@ -552,7 +636,9 @@ class BatchPrompt(pydantic.BaseModel):
 
             audio_messages.append(audio_msg)
             text_messages.append(user_msg)
-            system_messages.append(system_msg)  # This can be None if no system message was present
+            system_messages.append(
+                system_msg
+            )  # This can be None if no system message was present
 
         # Now process audio_messages to ensure they're all the same length
         max_length = max(audio.shape[0] for audio in audio_messages)

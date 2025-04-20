@@ -10,7 +10,12 @@ import google.generativeai as genai
 import googleapiclient
 import vertexai
 from google.api_core.exceptions import InvalidArgument
-from vertexai.generative_models import GenerationConfig, GenerativeModel, HarmBlockThreshold, HarmCategory
+from vertexai.generative_models import (
+    GenerationConfig,
+    GenerativeModel,
+    HarmBlockThreshold,
+    HarmCategory,
+)
 
 from safetytooling.data_models import GeminiStopReason, LLMResponse, Prompt
 
@@ -58,7 +63,10 @@ class GeminiVertexAIModel(InferenceAPIModel):
 
         self.is_initialized = False
         if "GOOGLE_PROJECT_ID" in os.environ and "GOOGLE_PROJECT_REGION" in os.environ:
-            vertexai.init(project=os.environ["GOOGLE_PROJECT_ID"], location=os.environ["GOOGLE_PROJECT_REGION"])
+            vertexai.init(
+                project=os.environ["GOOGLE_PROJECT_ID"],
+                location=os.environ["GOOGLE_PROJECT_REGION"],
+            )
             self.is_initialized = True
 
     @staticmethod
@@ -70,7 +78,9 @@ class GeminiVertexAIModel(InferenceAPIModel):
             raise ValueError(f"Unsupported model: {model_id}")
         if model_id not in self.model_ids:
             self.model_ids.add(model_id)
-            self.rate_trackers[model_id] = GeminiRateTracker(rpm_limit=GEMINI_RPM[model_id], tpm_limit=GEMINI_TPM)
+            self.rate_trackers[model_id] = GeminiRateTracker(
+                rpm_limit=GEMINI_RPM[model_id], tpm_limit=GEMINI_TPM
+            )
 
     def get_generation_config(self, kwargs):
         for k, v in self.kwarg_change_name.items():
@@ -99,13 +109,17 @@ class GeminiVertexAIModel(InferenceAPIModel):
     ) -> str:
 
         if generation_config:
-            model = GenerativeModel(model_name=model_id, generation_config=generation_config)
+            model = GenerativeModel(
+                model_name=model_id, generation_config=generation_config
+            )
         else:
             model = GenerativeModel(model_name=model_id)
 
         # Get audio file to delete later
         content = prompt.gemini_format()
-        audio_input_files = [i for i in content if isinstance(i, genai.types.file_types.File)]
+        audio_input_files = [
+            i for i in content if isinstance(i, genai.types.file_types.File)
+        ]
         response = await model.generate_content_async(contents=content)
         return response, audio_input_files
 
@@ -115,7 +129,8 @@ class GeminiVertexAIModel(InferenceAPIModel):
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
-        is_valid: Callable[[str], bool] = lambda x: x.stop_reason != GeminiStopReason.RECITATION,
+        is_valid: Callable[[str], bool] = lambda x: x.stop_reason
+        != GeminiStopReason.RECITATION,
         **kwargs,
     ) -> list[LLMResponse]:
         if not self.is_initialized:
@@ -134,7 +149,9 @@ class GeminiVertexAIModel(InferenceAPIModel):
         api_duration = time.time() - api_start
 
         if response_data is None:
-            raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
+            raise RuntimeError(
+                f"Failed to get a response from the API after {max_attempts} attempts."
+            )
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
@@ -165,18 +182,26 @@ class GeminiVertexAIModel(InferenceAPIModel):
                         model_id=model_id,
                         completion=completion,
                         stop_reason=get_stop_reason(stop_reason),
-                        safety_ratings=parse_safety_ratings(safety_ratings=response_data.candidates[0].safety_ratings),
+                        safety_ratings=parse_safety_ratings(
+                            safety_ratings=response_data.candidates[0].safety_ratings
+                        ),
                         duration=duration,
                         api_duration=api_duration,
                         cost=0,
                     )
                 except Exception:
-                    LOGGER.info("CANDIDATE RESPONSE DOES NOT CONTAIN COMPLETION. JUST EXTRACTING SAFETY RATINGS")
+                    LOGGER.info(
+                        "CANDIDATE RESPONSE DOES NOT CONTAIN COMPLETION. JUST EXTRACTING SAFETY RATINGS"
+                    )
                     response = LLMResponse(
                         model_id=model_id,
                         completion="",
-                        stop_reason=get_stop_reason(response_data.candidates[0].finish_reason),
-                        safety_ratings=parse_safety_ratings(response_data.candidates[0].safety_ratings),
+                        stop_reason=get_stop_reason(
+                            response_data.candidates[0].finish_reason
+                        ),
+                        safety_ratings=parse_safety_ratings(
+                            response_data.candidates[0].safety_ratings
+                        ),
                         duration=duration,
                         api_duration=api_duration,
                         cost=0,
@@ -202,7 +227,8 @@ class GeminiVertexAIModel(InferenceAPIModel):
         prompt: Prompt,
         print_prompt_and_response: bool,
         max_attempts: int,
-        is_valid: Callable[[str], bool] = lambda x: x.stop_reason != GeminiStopReason.RECITATION,
+        is_valid: Callable[[str], bool] = lambda x: x.stop_reason
+        != GeminiStopReason.RECITATION,
         safety_threshold: str = None,
         **kwargs,
     ) -> List[LLMResponse]:
@@ -224,7 +250,12 @@ class GeminiVertexAIModel(InferenceAPIModel):
 
             # try:
             return await self._make_api_call(
-                model_id, prompt, print_prompt_and_response, max_attempts, is_valid, **kwargs
+                model_id,
+                prompt,
+                print_prompt_and_response,
+                max_attempts,
+                is_valid,
+                **kwargs,
             )
             # except Exception as e:
             #     LOGGER.warning(f"Error calling {model_id}: {str(e)}")
@@ -235,8 +266,12 @@ class GeminiVertexAIModel(InferenceAPIModel):
         for i in range(max_attempts):
             try:
                 responses = await attempt_api_call(model_id)
-                if responses is not None and not all(is_valid(response) for response in responses):
-                    raise RuntimeError(f"Invalid responses according to is_valid {responses}")
+                if responses is not None and not all(
+                    is_valid(response) for response in responses
+                ):
+                    raise RuntimeError(
+                        f"Invalid responses according to is_valid {responses}"
+                    )
             except (TypeError, InvalidArgument) as e:
                 raise e
             except googleapiclient.errors.ResumableUploadError as e:
@@ -250,17 +285,23 @@ class GeminiVertexAIModel(InferenceAPIModel):
                     files_to_delete = files[-DELETE_FILE_QUOTA:]
                     await async_delete_genai_files(files_to_delete)
                     files_new = [f for f in genai.list_files()]
-                    print(f"Successfully deleted files. Current file system usage: {len(files_new)}")
+                    print(
+                        f"Successfully deleted files. Current file system usage: {len(files_new)}"
+                    )
 
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                LOGGER.warn(
+                    f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})"
+                )
                 await asyncio.sleep(1.5**i)
             else:
                 break
 
         if responses is None:
-            LOGGER.error(f"Failed to get a response for {prompt} from any API after {max_attempts} attempts.")
+            LOGGER.error(
+                f"Failed to get a response for {prompt} from any API after {max_attempts} attempts."
+            )
             return [{}]
         else:
             # Add number of attempts to response object for recitation retries

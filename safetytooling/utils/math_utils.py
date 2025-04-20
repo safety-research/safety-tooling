@@ -43,7 +43,9 @@ def logsumexp(logprobs: Sequence[float]) -> float:
     return scipy.special.logsumexp(logprobs)
 
 
-def roc_curve_with_auc(y_true: np.ndarray, y_score: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+def roc_curve_with_auc(
+    y_true: np.ndarray, y_score: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, float]:
     """
     Compute ROC curve and AUC.
     """
@@ -55,7 +57,9 @@ def roc_curve_with_auc(y_true: np.ndarray, y_score: np.ndarray) -> tuple[np.ndar
     return fpr, tpr, auc
 
 
-def two_set_roc(benign_scores: np.ndarray, adv_scores: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+def two_set_roc(
+    benign_scores: np.ndarray, adv_scores: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, float]:
     y_score = np.concatenate([benign_scores, adv_scores])
     y_true = np.concatenate(
         [

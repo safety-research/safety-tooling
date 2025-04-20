@@ -188,7 +188,13 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
             return 150_000, 1_000
         case "gpt-4-base":
             return 10_000, 200
-        case "gpt-3.5-turbo" | "gpt-3.5-turbo-0125" | "gpt-3.5-turbo-1106" | "gpt-3.5-turbo-0613" | "gpt-3.5-turbo-16k":
+        case (
+            "gpt-3.5-turbo"
+            | "gpt-3.5-turbo-0125"
+            | "gpt-3.5-turbo-1106"
+            | "gpt-3.5-turbo-0613"
+            | "gpt-3.5-turbo-16k"
+        ):
             return 50_000_000, 10_000
         case "gpt-3.5-turbo-instruct" | "gpt-3.5-turbo-instruct-0914":
             return 90_000, 3_500
@@ -267,7 +273,10 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         prices = 0.13, 0.13
     elif model_id == "text-embedding-ada-002":
         prices = 0.10, 0.10
-    elif model_id == "gpt-3.5-turbo-instruct" or model_id == "gpt-3.5-turbo-instruct-0914":
+    elif (
+        model_id == "gpt-3.5-turbo-instruct"
+        or model_id == "gpt-3.5-turbo-instruct-0914"
+    ):
         prices = 1.5, 2
     else:
         prices = 0, 0  # default to 0 price for unknown models

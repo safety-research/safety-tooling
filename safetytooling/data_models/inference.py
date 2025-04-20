@@ -5,7 +5,11 @@ from typing import Any, Literal, Union
 import openai
 import pydantic
 
-from safetytooling.data_models.utils import GeminiBlockReason, GeminiStopReason, SafetyRatings
+from safetytooling.data_models.utils import (
+    GeminiBlockReason,
+    GeminiStopReason,
+    SafetyRatings,
+)
 
 from .hashable import HashableBaseModel
 
@@ -14,7 +18,9 @@ class LLMParams(HashableBaseModel):
     model: str
     n: int = 1
     num_candidates_per_completion: int = 1
-    insufficient_valids_behaviour: Literal["error", "continue", "pad_invalids", "retry"] = "retry"
+    insufficient_valids_behaviour: Literal[
+        "error", "continue", "pad_invalids", "retry"
+    ] = "retry"
     temperature: float | None = None
     top_p: float | None = None
     max_tokens: int | None = None
@@ -23,17 +29,23 @@ class LLMParams(HashableBaseModel):
     seed: int | None = None
     logit_bias: dict[int, float] | None = None
     stop: list[str] | None = None
-    model_config = pydantic.ConfigDict(extra="allow")  # Allow unknown kwargs e.g. response_format for OpenAI
+    model_config = pydantic.ConfigDict(
+        extra="allow"
+    )  # Allow unknown kwargs e.g. response_format for OpenAI
     unknown_kwargs: dict[str, Any] = pydantic.Field(default_factory=dict)
 
     def __init__(self, **kwargs):
         # convert response_format to a string if it's a class so it can be serialized during hashing
         response_format = kwargs.get("response_format")
         if isinstance(response_format, type):
-            kwargs["response_format"] = f"{response_format.__name__} {list(response_format.__annotations__.keys())}"
+            kwargs["response_format"] = (
+                f"{response_format.__name__} {list(response_format.__annotations__.keys())}"
+            )
 
         known_kwargs = {k: v for k, v in kwargs.items() if k in self.__annotations__}
-        unknown_kwargs = {k: v for k, v in kwargs.items() if k not in self.__annotations__}
+        unknown_kwargs = {
+            k: v for k, v in kwargs.items() if k not in self.__annotations__
+        }
         known_kwargs.update({"unknown_kwargs": unknown_kwargs})
 
         super().__init__(**known_kwargs)
