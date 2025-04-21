@@ -471,7 +471,11 @@ class InferenceAPI:
                     # If prompt is a single prompt and there is no cached result, simply return the original prompt for regular processing
                     prompt = prompt
 
-        if isinstance(model_class, AnthropicChatModel) or isinstance(model_class, HuggingFaceModel):
+        if (
+            isinstance(model_class, AnthropicChatModel)
+            or isinstance(model_class, HuggingFaceModel)
+            or isinstance(model_class, OpenRouterChatModel)
+        ):
             if isinstance(model_class, HuggingFaceModel):
                 kwargs["model_url"] = huggingface_model_url
             # Anthropic chat doesn't support generating multiple candidates at once, so we have to do it manually
@@ -548,22 +552,13 @@ class InferenceAPI:
                         **kwargs,
                     )
                     candidate_responses.extend(response)
-        elif isinstance(model_class, OpenRouterChatModel):
-            candidate_responses = await model_class(
-                model_id,
-                prompt,
-                self.print_prompt_and_response or print_prompt_and_response,
-                max_attempts_per_api_call,
-                n=num_candidates,
-                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
-                **kwargs,
-            )
         elif isinstance(model_class, TogetherChatModel):
             candidate_responses = await model_class(
                 model_id,
                 prompt,
                 self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call,
+                n=num_candidates,
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                 **kwargs,
             )
