@@ -172,10 +172,7 @@ async def wait_for_server(url: str, timeout: int = 300, check_interval: int = 5)
 
 
 async def deploy_model_vllm_locally_auto(
-    model_name: str,
-    max_model_len: int = 8192,
-    max_num_seqs: int = 32,
-    base_model_override: str | None = None,
+    model_name: str, max_model_len: int = 8192, max_num_seqs: int = 32, base_model_override: str | None = None
 ) -> VLLMDeployment:
     """Deploy a model locally using vLLM serve and automatically determine the base model, lora_adapters and max_lora_rank"""
     base_model, lora_adapter = resolve_lora_model(model_name)
@@ -189,11 +186,7 @@ async def deploy_model_vllm_locally_auto(
         kwargs["max_lora_rank"] = get_lora_rank(lora_adapter)
 
     return await deploy_model_vllm_locally(
-        base_model,
-        model_name,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        **kwargs,
+        base_model, model_name, max_model_len=max_model_len, max_num_seqs=max_num_seqs, **kwargs
     )
 
 

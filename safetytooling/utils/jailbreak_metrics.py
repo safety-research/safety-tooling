@@ -8,9 +8,7 @@ from tqdm.asyncio import tqdm_asyncio
 
 from safetytooling.apis.inference.api import InferenceAPI
 from safetytooling.apis.inference.openai.utils import GPT_CHAT_MODELS
-from safetytooling.classifiers.run_classifier import (
-    get_model_response as get_classifier_response,
-)
+from safetytooling.classifiers.run_classifier import get_model_response as get_classifier_response
 from safetytooling.data_models.hashable import deterministic_hash
 from safetytooling.data_models.messages import ChatMessage, MessageRole, Prompt
 from safetytooling.utils.image_utils import get_default_image, save_image_from_array
@@ -62,10 +60,7 @@ class JailbreakMetrics:
             for llm_response in responses:
                 # Filter out no responses from recitations for Gemini
                 if llm_response.completion != "":
-                    input_obj = {
-                        "behavior_str": behavior_str,
-                        "response": llm_response.completion,
-                    }
+                    input_obj = {"behavior_str": behavior_str, "response": llm_response.completion}
                     classifier_response = await get_classifier_response(
                         input_obj=input_obj,
                         classifier_model="gpt-4o",
@@ -142,12 +137,7 @@ class JailbreakMetrics:
         async def process_row(idx, row):
             async with self.semaphore:
                 prompt = self.create_prompt_from_df_row(
-                    row,
-                    input_key,
-                    system_prompt,
-                    audio_key,
-                    image_key,
-                    extra_user_message,
+                    row, input_key, system_prompt, audio_key, image_key, extra_user_message
                 )
                 responses, classifier_responses = await self.run_inference_over_prompt(
                     prompt=prompt,
@@ -232,10 +222,7 @@ class JailbreakMetrics:
         )
 
         dataset[f"{token_a}_{token_b}_proportion"] = dataset.apply(
-            self.get_avg_token_a_token_b_proportion,
-            token_a=token_a,
-            token_b=token_b,
-            axis=1,
+            self.get_avg_token_a_token_b_proportion, token_a=token_a, token_b=token_b, axis=1
         )
 
         return dataset

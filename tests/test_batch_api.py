@@ -56,10 +56,7 @@ async def test_batch_api_claude(batch_api, test_prompts, tmp_path):
 @pytest.mark.asyncio
 async def test_batch_api_unsupported_model(batch_api, test_prompts):
     """Test that BatchInferenceAPI raises error for unsupported models."""
-    with pytest.raises(
-        ValueError,
-        match="is not supported. Only Claude and OpenAI models are supported",
-    ):
+    with pytest.raises(ValueError, match="is not supported. Only Claude and OpenAI models are supported"):
         await batch_api(
             model_id="unsupported-model",
             prompts=test_prompts,

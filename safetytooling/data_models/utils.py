@@ -205,8 +205,7 @@ def parse_safety_ratings(safety_ratings):
         else:
             ratings.append(
                 SafetyRating(
-                    category=HARM_CATEGORIES_MAP[rating.category],
-                    probability=HARM_PROBABILITY_MAP[rating.probability],
+                    category=HARM_CATEGORIES_MAP[rating.category], probability=HARM_PROBABILITY_MAP[rating.probability]
                 )  # .to_dict()
             )
     return SafetyRatings(ratings=ratings).to_dict()

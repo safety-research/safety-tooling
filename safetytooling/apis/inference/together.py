@@ -136,7 +136,7 @@ class TogetherChatModel(InferenceAPIModel):
                 api_duration=api_duration,
                 duration=duration,
                 cost=0,
-                logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
+                logprobs=self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None,
             )
             for choice in response_data.choices
         ]

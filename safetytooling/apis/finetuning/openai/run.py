@@ -145,11 +145,7 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
 
     LOGGER.info("Checking training data")
     train_cost_est = openai_check_finetuning_data(
-        dataset_path=cfg.train_file,
-        model_id=cfg.model,
-        n_epochs=cfg.n_epochs,
-        verbose=verbose,
-        method=cfg.method,
+        dataset_path=cfg.train_file, model_id=cfg.model, n_epochs=cfg.n_epochs, verbose=verbose, method=cfg.method
     )
     if verbose:
         train_cost_est.log_cost_summary()

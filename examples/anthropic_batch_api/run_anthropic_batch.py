@@ -50,10 +50,7 @@ async def main(cfg: ExperimentConfig):
     prompts = [
         Prompt(
             messages=[
-                ChatMessage(
-                    role=MessageRole.system,
-                    content="Think step by step before answering.",
-                ),
+                ChatMessage(role=MessageRole.system, content="Think step by step before answering."),
                 ChatMessage(role=MessageRole.user, content=instruction),
             ]
         )
@@ -82,10 +79,7 @@ async def main(cfg: ExperimentConfig):
                     batch_start_time = time.time()
                     print(f"Starting batch {batch_dir}")
                     responses, batch_id = await batch_model(
-                        model_id=model_id,
-                        prompts=prompts,
-                        max_tokens=200,
-                        log_dir=batch_dir,
+                        model_id=model_id, prompts=prompts, max_tokens=200, log_dir=batch_dir
                     )
                     batch_end_time = time.time()
                     batch_duration = batch_end_time - batch_start_time

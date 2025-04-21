@@ -9,12 +9,7 @@ from typing import Any, Dict, List
 
 import websockets
 from pydub import AudioSegment
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import WebSocketException
 
@@ -37,10 +32,7 @@ class S2SRateLimiter:
         async with self.lock:
             now = time.time()
             time_passed = now - self.last_refill_time
-            self.tokens = min(
-                self.calls_per_minute,
-                self.tokens + time_passed * (self.calls_per_minute / 60),
-            )
+            self.tokens = min(self.calls_per_minute, self.tokens + time_passed * (self.calls_per_minute / 60))
             self.last_refill_time = now
 
             if self.tokens < 1:
@@ -62,12 +54,7 @@ class OpenAIS2SModel(InferenceAPIModel):
         self.max_wait = 60
         self.max_attempts = 10
 
-        self.allowed_kwargs = {
-            "temperature",
-            "max_output_tokens",
-            "voice",
-            "audio_format",
-        }
+        self.allowed_kwargs = {"temperature", "max_output_tokens", "voice", "audio_format"}
 
     def log_retry(self, retry_state):
         if retry_state.attempt_number > 1:
@@ -79,12 +66,7 @@ class OpenAIS2SModel(InferenceAPIModel):
 
         combined_audio = AudioSegment.empty()
         for audio_bytes in audio_output:
-            segment = AudioSegment(
-                data=base64.b64decode(audio_bytes),
-                sample_width=2,
-                frame_rate=24000,
-                channels=1,
-            )
+            segment = AudioSegment(data=base64.b64decode(audio_bytes), sample_width=2, frame_rate=24000, channels=1)
             combined_audio += segment
 
         combined_audio.export(audio_filename, format="wav")
@@ -105,9 +87,7 @@ class OpenAIS2SModel(InferenceAPIModel):
         }
         LOGGER.info("CONNECTION REQUEST STARTED")
         return await websockets.connect(
-            f"{self.base_url}?model={self.model}",
-            extra_headers=headers,
-            max_size=self.max_size,
+            f"{self.base_url}?model={self.model}", extra_headers=headers, max_size=self.max_size
         )
 
     async def send_message(self, websocket: ClientConnection, message: Dict[str, Any]) -> None:
@@ -121,11 +101,7 @@ class OpenAIS2SModel(InferenceAPIModel):
         for text_input in text_input_data:
             text_event = {
                 "type": "conversation.item.create",
-                "item": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": text_input}],
-                },
+                "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text_input}]},
             }
             await self.send_message(websocket, text_event)
 
@@ -144,10 +120,7 @@ class OpenAIS2SModel(InferenceAPIModel):
         after=log_retry,
     )
     async def run_query(
-        self,
-        input_data: List[bytes] | List[str],
-        audio_out_dir: str | Path,
-        params: Dict[str, Any],
+        self, input_data: List[bytes] | List[str], audio_out_dir: str | Path, params: Dict[str, Any]
     ) -> List[Any]:
         websocket = await self.connect()
         try:

@@ -103,16 +103,7 @@ def add_text_to_image(
         y = y0 + i * dy
         if y + h > image.shape[0]:
             return None
-        cv2.putText(
-            image,
-            line,
-            (position[0], y),
-            font,
-            font_scale,
-            color,
-            thickness,
-            cv2.LINE_AA,
-        )
+        cv2.putText(image, line, (position[0], y), font, font_scale, color, thickness, cv2.LINE_AA)
 
     return image
 

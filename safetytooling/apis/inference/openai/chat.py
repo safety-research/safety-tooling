@@ -34,10 +34,7 @@ class OpenAIChatModel(OpenAIModel):
         else:
             api_key = self.openai_api_key
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         data = {
             "model": model_id,
             "messages": [{"role": "user", "content": "Say 1"}],
@@ -137,11 +134,7 @@ class OpenAIChatModel(OpenAIModel):
             )
             raise openai.RateLimitError(
                 api_response.error["message"],
-                response=httpx.Response(
-                    status_code=429,
-                    text=api_response.error["message"],
-                    request=dummy_request,
-                ),
+                response=httpx.Response(status_code=429, text=api_response.error["message"], request=dummy_request),
                 body=api_response.error,
             )
         if (

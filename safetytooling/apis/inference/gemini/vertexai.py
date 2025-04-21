@@ -10,12 +10,7 @@ import google.generativeai as genai
 import googleapiclient
 import vertexai
 from google.api_core.exceptions import InvalidArgument
-from vertexai.generative_models import (
-    GenerationConfig,
-    GenerativeModel,
-    HarmBlockThreshold,
-    HarmCategory,
-)
+from vertexai.generative_models import GenerationConfig, GenerativeModel, HarmBlockThreshold, HarmCategory
 
 from safetytooling.data_models import GeminiStopReason, LLMResponse, Prompt
 
@@ -63,10 +58,7 @@ class GeminiVertexAIModel(InferenceAPIModel):
 
         self.is_initialized = False
         if "GOOGLE_PROJECT_ID" in os.environ and "GOOGLE_PROJECT_REGION" in os.environ:
-            vertexai.init(
-                project=os.environ["GOOGLE_PROJECT_ID"],
-                location=os.environ["GOOGLE_PROJECT_REGION"],
-            )
+            vertexai.init(project=os.environ["GOOGLE_PROJECT_ID"], location=os.environ["GOOGLE_PROJECT_REGION"])
             self.is_initialized = True
 
     @staticmethod
@@ -232,12 +224,7 @@ class GeminiVertexAIModel(InferenceAPIModel):
 
             # try:
             return await self._make_api_call(
-                model_id,
-                prompt,
-                print_prompt_and_response,
-                max_attempts,
-                is_valid,
-                **kwargs,
+                model_id, prompt, print_prompt_and_response, max_attempts, is_valid, **kwargs
             )
             # except Exception as e:
             #     LOGGER.warning(f"Error calling {model_id}: {str(e)}")

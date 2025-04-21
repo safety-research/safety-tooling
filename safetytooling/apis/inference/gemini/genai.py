@@ -109,9 +109,7 @@ class GeminiModel(InferenceAPIModel):
             )
         if generation_config:
             model = genai.GenerativeModel(
-                model_name=model_id,
-                generation_config=generation_config,
-                safety_settings=safety_settings,
+                model_name=model_id, generation_config=generation_config, safety_settings=safety_settings
             )
         else:
             model = genai.GenerativeModel(model_name=model_id, safety_settings=safety_settings)
@@ -153,10 +151,7 @@ class GeminiModel(InferenceAPIModel):
         safety_settings = self.get_safety_settings(safety_threshold)
 
         async_response, upload_files = await self.run_query(
-            model_id=model_id,
-            prompt=prompt,
-            safety_settings=safety_settings,
-            generation_config=generation_config,
+            model_id=model_id, prompt=prompt, safety_settings=safety_settings, generation_config=generation_config
         )
 
         api_duration = time.time() - api_start
@@ -281,12 +276,7 @@ class GeminiModel(InferenceAPIModel):
 
             # try:
             return await self._make_api_call(
-                model_id,
-                prompt,
-                print_prompt_and_response,
-                max_attempts,
-                is_valid,
-                **kwargs,
+                model_id, prompt, print_prompt_and_response, max_attempts, is_valid, **kwargs
             )
             # except Exception as e:
             #     LOGGER.warning(f"Error calling {model_id}: {str(e)}")

@@ -8,12 +8,7 @@ import httpx
 import pandas as pd
 from elevenlabs import save
 from elevenlabs.client import AsyncElevenLabs
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_random_exponential,
-)
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_random_exponential
 from tqdm.asyncio import tqdm
 
 from safetytooling.data_models.hashable import deterministic_hash
@@ -77,7 +72,7 @@ async def generate_tts_audio_from_text(
     async def generate_audio_with_retry():
         audio = await client.generate(
             text=text,
-            voice=(VOICE_DICT[VOICE_ALIASES[voice]]["id"] if voice in VOICE_ALIASES else VOICE_DICT[voice]["id"]),
+            voice=VOICE_DICT[VOICE_ALIASES[voice]]["id"] if voice in VOICE_ALIASES else VOICE_DICT[voice]["id"],
             model=model,
         )
         audio_bytes = b""
@@ -132,12 +127,7 @@ async def generate_tts_audio_from_dataframe(
             text = row[transcription_col]
             try:
                 file_path = await generate_tts_audio_from_text(
-                    text,
-                    output_dir,
-                    voice,
-                    model,
-                    client=client,
-                    convert_to_wav=convert_to_wav,
+                    text, output_dir, voice, model, client=client, convert_to_wav=convert_to_wav
                 )
                 LOGGER.info(f"Generated audio for row {index}")
             except Exception as e:

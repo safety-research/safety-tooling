@@ -16,10 +16,7 @@ def get_adapter_config(adapter_id: str, token: str = None) -> dict:
     try:
         # Try to download the LoRA config file
         config_file = hf_hub_download(
-            repo_id=adapter_id,
-            filename="adapter_config.json",
-            token=token,
-            local_files_only=False,
+            repo_id=adapter_id, filename="adapter_config.json", token=token, local_files_only=False
         )
 
         with open(config_file, "r") as f:

@@ -86,14 +86,8 @@ def openai_check_finetuning_data(
         preferred_prompts = [
             Prompt(
                 messages=[
-                    ChatMessage(
-                        role=MessageRole.user,
-                        content=x["input"]["messages"][0]["content"],
-                    ),
-                    ChatMessage(
-                        role=MessageRole.assistant,
-                        content=x["preferred_output"][0]["content"],
-                    ),
+                    ChatMessage(role=MessageRole.user, content=x["input"]["messages"][0]["content"]),
+                    ChatMessage(role=MessageRole.assistant, content=x["preferred_output"][0]["content"]),
                 ]
             )
             for x in utils.load_jsonl(dataset_path)
@@ -101,14 +95,8 @@ def openai_check_finetuning_data(
         non_preferred_prompts = [
             Prompt(
                 messages=[
-                    ChatMessage(
-                        role=MessageRole.user,
-                        content=x["input"]["messages"][0]["content"],
-                    ),
-                    ChatMessage(
-                        role=MessageRole.assistant,
-                        content=x["non_preferred_output"][0]["content"],
-                    ),
+                    ChatMessage(role=MessageRole.user, content=x["input"]["messages"][0]["content"]),
+                    ChatMessage(role=MessageRole.assistant, content=x["non_preferred_output"][0]["content"]),
                 ]
             )
             for x in utils.load_jsonl(dataset_path)

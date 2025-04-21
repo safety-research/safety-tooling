@@ -277,10 +277,7 @@ class InferenceAPI:
             return self._gemini_genai
 
     def model_id_to_class(
-        self,
-        model_id: str,
-        gemini_use_vertexai: bool = False,
-        force_provider: str | None = None,
+        self, model_id: str, gemini_use_vertexai: bool = False, force_provider: str | None = None
     ) -> InferenceAPIModel:
         if force_provider is not None:
             assert force_provider in self.provider_to_class, f"Invalid force_provider: {force_provider}"
@@ -601,9 +598,7 @@ class InferenceAPI:
             if any(failed_cache_responses):
                 assert isinstance(prompt, Prompt), "Models that use BatchPrompt should not have a failed_cache_response"
                 candidate_responses = self.cache_manager.update_failed_cache(
-                    prompt=prompt,
-                    responses=candidate_responses,
-                    failed_cache_responses=failed_cache_responses,
+                    prompt=prompt, responses=candidate_responses, failed_cache_responses=failed_cache_responses
                 )
 
             # Handle cache saving and output for batch_prompts

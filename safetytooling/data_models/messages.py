@@ -67,10 +67,9 @@ class ChatMessage(HashableBaseModel):
     def openai_format(self) -> openai.types.chat.ChatCompletionMessageParam:
         return {"role": self.role.value, "content": self.content}
 
-    def deepseek_format(self, is_prefix: bool = False) -> Union[
-        openai.types.chat.ChatCompletionMessageParam,
-        ChatCompletionDeepSeekAssistantMessageParam,
-    ]:
+    def deepseek_format(
+        self, is_prefix: bool = False
+    ) -> Union[openai.types.chat.ChatCompletionMessageParam, ChatCompletionDeepSeekAssistantMessageParam]:
         if is_prefix:
             return {"role": self.role.value, "content": self.content, "prefix": True}
         else:
@@ -100,14 +99,7 @@ class ChatMessage(HashableBaseModel):
             base64_image = image_to_base64(self.content)
             image_type = get_image_file_type(self.content)
             media_type = f"image/{image_type}"
-            return {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": media_type,
-                    "data": base64_image,
-                },
-            }
+            return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": base64_image}}
         elif self.role == MessageRole.user:
             return {"type": "text", "text": self.content}
         else:
@@ -396,10 +388,7 @@ class Prompt(HashableBaseModel):
                 assert next_msg.role == MessageRole.user, f"Image must be followed by user message, got {next_msg.role}"
 
                 # Add image and user message as a combined message
-                content = [
-                    msg.openai_image_format(),
-                    {"type": "text", "text": next_msg.content},
-                ]
+                content = [msg.openai_image_format(), {"type": "text", "text": next_msg.content}]
                 messages.append({"role": "user", "content": content})
                 i += 2  # Skip both image and user message
 
@@ -431,9 +420,7 @@ class Prompt(HashableBaseModel):
 
         return None, [msg.anthropic_format() for msg in self.messages]
 
-    def anthropic_image_format(
-        self,
-    ) -> Tuple[str | None, List[anthropic.types.MessageParam]]:
+    def anthropic_image_format(self) -> Tuple[str | None, List[anthropic.types.MessageParam]]:
         """Returns (system_message (optional), chat_messages)"""
         system_message = None
         messages = []
@@ -456,10 +443,7 @@ class Prompt(HashableBaseModel):
                 assert next_msg.role == MessageRole.user, f"Image must be followed by user message, got {next_msg.role}"
 
                 # Add image and user message as a combined message
-                content = [
-                    msg.anthropic_image_format(),
-                    {"type": "text", "text": next_msg.content},
-                ]
+                content = [msg.anthropic_image_format(), {"type": "text", "text": next_msg.content}]
                 messages.append(anthropic.types.MessageParam(role="user", content=content))
                 i += 2  # Skip both image and user message
 
@@ -532,11 +516,7 @@ class BatchPrompt(pydantic.BaseModel):
         prompts = []
         for audio, user_prompt, system_prompt in zip(audio_inputs, user_prompts, system_prompts):
             prompts.append(
-                Prompt.from_alm_input(
-                    audio_file=audio,
-                    user_prompt=user_prompt,
-                    system_prompt=system_prompt,
-                )
+                Prompt.from_alm_input(audio_file=audio, user_prompt=user_prompt, system_prompt=system_prompt)
             )
         return cls(prompts=prompts)
 
