@@ -32,7 +32,8 @@ from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
 from .cache_manager import BaseCacheManager, get_cache_manager
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
-from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
+
+# from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
 from .huggingface import HUGGINGFACE_MODELS, HuggingFaceModel
 from .model import InferenceAPIModel
 from .openai.chat import OpenAIChatModel
@@ -184,11 +185,11 @@ class InferenceAPI:
             token=os.environ.get("HF_TOKEN", None),
         )
 
-        self._gray_swan = GraySwanChatModel(
-            num_threads=self.gray_swan_num_threads,
-            prompt_history_dir=self.prompt_history_dir,
-            api_key=os.environ.get("GRAYSWAN_API_KEY", None),
-        )
+        # self._gray_swan = GraySwanChatModel(
+        #     num_threads=self.gray_swan_num_threads,
+        #     prompt_history_dir=self.prompt_history_dir,
+        #     api_key=os.environ.get("GRAYSWAN_API_KEY", None),
+        # )
 
         self._together = TogetherChatModel(
             num_threads=self.together_num_threads,
@@ -293,8 +294,8 @@ class InferenceAPI:
             return self._anthropic_chat
         elif model_id in HUGGINGFACE_MODELS:
             return self._huggingface
-        elif model_id in GRAYSWAN_MODELS:
-            return self._gray_swan
+        # elif model_id in GRAYSWAN_MODELS:
+        #     return self._gray_swan
         elif model_id in GEMINI_MODELS or model_id.startswith("gemini"):
             return self.select_gemini_model(gemini_use_vertexai)
         elif model_id in BATCHED_MODELS:
