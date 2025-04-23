@@ -83,10 +83,10 @@ class AnthropicChatModel(InferenceAPIModel):
         response: anthropic.types.Message | None = None
         duration = None
 
-        error_list = []
-        for i in range(max_attempts):
-            try:
-                async with self.available_requests:
+        async with self.available_requests:
+            error_list = []
+            for i in range(max_attempts):
+                try:
                     api_start = time.time()
 
                     response = await self.aclient.messages.create(
@@ -100,16 +100,18 @@ class AnthropicChatModel(InferenceAPIModel):
                     api_duration = time.time() - api_start
                     if not is_valid(response):
                         raise RuntimeError(f"Invalid response according to is_valid {response}")
-            except (TypeError, anthropic.NotFoundError) as e:
-                raise e
-            except Exception as e:
-                error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
-                error_list.append(error_info)
-                api_duration = time.time() - api_start
-                await asyncio.sleep(1.5**i)
-            else:
-                break
+                except (TypeError, anthropic.NotFoundError) as e:
+                    raise e
+                except Exception as e:
+                    error_info = (
+                        f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
+                    )
+                    LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                    error_list.append(error_info)
+                    api_duration = time.time() - api_start
+                    await asyncio.sleep(1.5**i)
+                else:
+                    break
 
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
@@ -151,9 +153,11 @@ class AnthropicChatModel(InferenceAPIModel):
             ), "Anthropic reasoning models don't support multiple completions"
 
             if is_reasoning:
+                if not hasattr(response.content[-1], "text"):
+                    raise RuntimeError(f"Anthropic reasoning model {model_id} returned a response with no text")
                 response = LLMResponse(
                     model_id=model_id,
-                    completion=response.content[1].text,
+                    completion=response.content[-1].text,
                     stop_reason=response.stop_reason,
                     duration=duration,
                     api_duration=api_duration,
@@ -298,8 +302,19 @@ class AnthropicModelBatch:
         for result in results:
             if result.result.type == "succeeded":
                 content = result.result.message.content
-                # Extract text from content array
-                text = content[0].text if content else ""
+
+                # Safely extract text and thinking content
+                text_content = None
+                reasoning_content = None  # We can extract this even if not used by LLMResponse yet
+                if content:
+                    for block in content:
+                        if block.type == "text" and hasattr(block, "text"):
+                            text_content = block.text
+                        elif block.type == "thinking" and hasattr(block, "thinking"):
+                            reasoning_content = block.thinking
+
+                text = text_content if text_content else ""
+
                 assert result.custom_id in set_custom_ids
                 responses_dict[result.custom_id] = LLMResponse(
                     model_id=model_id,
@@ -309,6 +324,7 @@ class AnthropicModelBatch:
                     api_duration=None,
                     cost=0,
                     batch_custom_id=result.custom_id,
+                    reasoning_content=reasoning_content,
                 )
 
         responses = []

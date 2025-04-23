@@ -4,63 +4,21 @@ import time
 from pathlib import Path
 from traceback import format_exc
 
-from together import AsyncTogether
-from together.error import InvalidRequestError, ServiceUnavailableError
+from openai import AsyncOpenAI, BadRequestError
 
 from safetytooling.data_models import LLMResponse, Prompt
 
 from .model import InferenceAPIModel
 
-TOGETHER_MODELS = {
-    # Meta/Llama models
-    "meta-llama/Llama-2-13b-chat-hf",
-    "meta-llama/Llama-3.2-1B-Instruct",
-    "meta-llama/Llama-3.2-3B-Instruct-Turbo",
-    "meta-llama/Llama-3.3-70B-Instruct-Reference",
-    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-    "meta-llama/Llama-4-Scout-17B-16E-Instruct",
-    "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-    "meta-llama/Meta-Llama-3-8B-Instruct",
-    "meta-llama/Meta-Llama-3-8B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3-70B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.1-8B-Instruct-Reference",
-    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.1-70B-Instruct-Reference",
-    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
-    
-    # Mistral models
-    "mistralai/Mistral-7B-v0.1",
-    "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    "mistralai/Mixtral-8x22B-Instruct-v0.1",
-    
-    # Google models
-    "google/gemma-2-9b-it",
-    "google/gemma-2-27b-it",
-    
-    # DeepSeek models
-    "deepseek-ai/DeepSeek-R1",
-    "deepseek-ai/DeepSeek-V3",
-    "deepseek-ai/deepseek-llm-67b-chat",
-    
-    # Qwen models
-    "Qwen/Qwen2.5-Coder-32B-Instruct",
-    "Qwen/Qwen2.5-72B-Instruct-Turbo",
-    "Qwen/QwQ-32B-Preview",
-    
-    # OpenAI models
-    "gpt-4.5-preview-2025-02-27",
-    
-    # Anthropic models
-    "claude-3-7-sonnet-20250219",
-    
-    # NVIDIA models
-    "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
+OPENROUTER_MODELS = {
+    "x-ai/grok-3-beta",
+    "mistral/ministral-8b",
+    "mistralai/mistral-large-2411",
 }
 LOGGER = logging.getLogger(__name__)
 
 
-class TogetherChatModel(InferenceAPIModel):
+class OpenRouterChatModel(InferenceAPIModel):
     def __init__(
         self,
         num_threads: int,
@@ -70,20 +28,28 @@ class TogetherChatModel(InferenceAPIModel):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
         if api_key is not None:
-            self.aclient = AsyncTogether(api_key=api_key)
+            self.aclient = AsyncOpenAI(
+                api_key=api_key,
+                base_url="https://openrouter.ai/api/v1",
+            )
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
 
     @staticmethod
     def convert_top_logprobs(data) -> list[dict]:
-        # convert TogetherAI chat version of logprobs response to match OpenAI completion version
-        # note that TogetherAI only supports one logprob per token
-
+        # convert logprobs response to match OpenAI completion version
+        # OpenRouter uses the same format as OpenAI Chat API
         top_logprobs = []
 
-        for token, logprob in zip(data.tokens, data.token_logprobs):
-            top_logprobs.append({token: logprob})
+        if not hasattr(data, "content") or data.content is None:
+            return []
+
+        for item in data.content:
+            item_logprobs = {}
+            for top_logprob in item.top_logprobs:
+                item_logprobs[top_logprob.token] = top_logprob.logprob
+            top_logprobs.append(item_logprobs)
 
         return top_logprobs
 
@@ -96,12 +62,14 @@ class TogetherChatModel(InferenceAPIModel):
         is_valid=lambda x: True,
         **kwargs,
     ) -> list[LLMResponse]:
+
         if self.aclient is None:
-            raise RuntimeError("TOGETHER_API_KEY environment variable must be set in .env before running your script")
+            raise RuntimeError("OPENROUTER_API_KEY environment variable must be set in .env before running your script")
         start = time.time()
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
+        # OpenRouter handles logprobs the same as OpenAI
         if "logprobs" in kwargs:
             kwargs["top_logprobs"] = kwargs["logprobs"]
             kwargs["logprobs"] = True
@@ -117,18 +85,22 @@ class TogetherChatModel(InferenceAPIModel):
                     api_start = time.time()
 
                     response_data = await self.aclient.chat.completions.create(
-                        messages=prompt.together_format(),
+                        messages=prompt.openai_format(),
                         model=model_id,
                         **kwargs,
                     )
                     api_duration = time.time() - api_start
+                    if (
+                        response_data.choices[0].message.content is None
+                        or response_data.choices[0].message.content == ""
+                    ):
+                        raise RuntimeError(f"Empty response from {model_id} (common for openrouter so retrying)")
+                    if response_data.choices[0].finish_reason is None:
+                        raise RuntimeError(f"No finish reason from {model_id} (common for openrouter so retrying)")
                     if not is_valid(response_data):
                         raise RuntimeError(f"Invalid response according to is_valid {response_data}")
-            except (TypeError, InvalidRequestError) as e:
+            except (TypeError, BadRequestError) as e:
                 raise e
-            except ServiceUnavailableError:
-                LOGGER.warn(f"Service Unavailable or Rate Limited for {model_id}")
-                await asyncio.sleep(10)
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
@@ -144,6 +116,9 @@ class TogetherChatModel(InferenceAPIModel):
         if response_data is None:
             raise RuntimeError("No response data received")
 
+        if response_data.choices[0].message.content is None or response_data.choices[0].message.content == "":
+            raise RuntimeError(f"Empty response from {model_id} (even after retries, perhaps decrease concurrency)")
+
         assert len(response_data.choices) == kwargs.get(
             "n", 1
         ), f"Expected {kwargs.get('n', 1)} choices, got {len(response_data.choices)}"
@@ -156,7 +131,11 @@ class TogetherChatModel(InferenceAPIModel):
                 api_duration=api_duration,
                 duration=duration,
                 cost=0,
-                logprobs=self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None,
+                logprobs=(
+                    self.convert_top_logprobs(choice.logprobs)
+                    if hasattr(choice, "logprobs") and choice.logprobs is not None
+                    else None
+                ),
             )
             for choice in response_data.choices
         ]

@@ -19,6 +19,7 @@ from ..utils.image_utils import (
     image_to_base64,
     prepare_gemini_image,
 )
+from ..utils.special_prompts import gopher_base_model_prompt
 from .hashable import HashableBaseModel
 from .inference import LLMResponse
 
@@ -160,26 +161,47 @@ class Prompt(HashableBaseModel):
         sep: str = 8 * "=",
         strip_content: bool = False,
     ) -> Self:
-        if not text.startswith(sep):
-            return cls(
-                messages=[
-                    ChatMessage(
-                        role=MessageRole.user,
-                        content=text.strip() if strip_content else text,
-                    )
-                ]
-            )
+        import re
 
+        # Pattern to match exactly 8 = signs, followed by a role name, followed by exactly 8 = signs
+        role_pattern = rf"^{sep}([a-zA-Z]+){sep}$"
+
+        # Split text into lines
+        lines = text.split("\n")
         messages = []
-        for role_content_str in ("\n" + text).split("\n" + sep):
-            if role_content_str == "":
-                continue
+        current_role = MessageRole.user  # Default role
+        current_content = []
 
-            role, content = role_content_str.split(sep + "\n")
+        for line in lines:
+            match = re.match(role_pattern, line)
+            if match:
+                # If we have accumulated content, save it as a message if it's not empty
+                if current_content:
+                    content = "\n".join(current_content)
+                    if strip_content:
+                        content = content.strip()
+                    # Only add message if content is not empty (not just whitespace)
+                    if content.strip():
+                        messages.append(ChatMessage(role=current_role, content=content))
+                    current_content = []
+
+                # Update role for next content
+                try:
+                    current_role = MessageRole[match.group(1)]
+                except KeyError:
+                    # If role is invalid, treat this line as content with previous role
+                    current_content.append(line)
+            else:
+                current_content.append(line)
+
+        # Don't forget to add the last message if it's not empty
+        if current_content:
+            content = "\n".join(current_content)
             if strip_content:
                 content = content.strip()
-
-            messages.append(ChatMessage(role=MessageRole[role], content=content))
+            # Only add message if content is not empty (not just whitespace)
+            if content.strip():
+                messages.append(ChatMessage(role=current_role, content=content))
 
         return cls(messages=messages)
 
@@ -433,6 +455,25 @@ class Prompt(HashableBaseModel):
                 raise ValueError(f"Invalid role {msg.role} in prompt")
 
         return system_message, messages
+
+    def gopher_format(self) -> "Prompt":
+        """
+        Uses the prompt from this paper: https://arxiv.org/pdf/2202.03286
+        This is useful if you want to prompt base models in a chat format.
+        """
+        out = gopher_base_model_prompt
+        for msg in self.messages:
+            match msg.role:
+                case MessageRole.user:
+                    out += f"<USER>{msg.content}</USER>\n"
+                case MessageRole.assistant:
+                    out += f"<GOPHER>{msg.content}</GOPHER>\n"
+                case MessageRole.system:
+                    out += f"<SYSTEM>{msg.content}</SYSTEM>\n"
+                case _:
+                    raise ValueError(f"Invalid role {msg.role} in gopher prompt")
+        out += "<GOPHER>"
+        return Prompt(messages=[ChatMessage(role=MessageRole.none, content=out)])
 
     def pretty_print(self, responses: list[LLMResponse], print_fn: Callable | None = None) -> None:
         if print_fn is None:

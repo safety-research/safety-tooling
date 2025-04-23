@@ -10,7 +10,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 from safetytooling.data_models import LLMResponse, Prompt
 
 from .base import OpenAIModel
-from .utils import get_rate_limit, price_per_token
+from .utils import count_tokens, get_rate_limit, price_per_token
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class OpenAICompletionModel(OpenAIModel):
         n = kwargs.get("n", 1)
         completion_tokens = n * max_tokens
 
-        prompt_tokens = self.count_tokens(str(prompt))
+        prompt_tokens = self.count_tokens(str(prompt), "default_tokenizer")
         return prompt_tokens + completion_tokens
 
     async def _make_api_call(self, prompt: Prompt, model_id, start_time, **params) -> list[LLMResponse]:
@@ -66,7 +66,7 @@ class OpenAICompletionModel(OpenAIModel):
                 stop_reason=choice.finish_reason,
                 api_duration=api_duration,
                 duration=duration,
-                cost=context_cost + self.count_tokens(choice.text) * completion_token_cost,
+                cost=context_cost + count_tokens(choice.text, model_id) * completion_token_cost,
                 logprobs=(choice.logprobs.top_logprobs if choice.logprobs is not None else None),
             )
             for choice in api_response.choices

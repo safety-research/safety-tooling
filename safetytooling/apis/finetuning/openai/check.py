@@ -6,9 +6,7 @@ import pathlib
 import random
 from typing import Literal
 
-import tiktoken
-
-import safetytooling.apis.inference.openai.utils
+import safetytooling.apis.inference.openai.utils as openai_utils
 from safetytooling.data_models import ChatMessage, MessageRole, Prompt
 from safetytooling.utils import utils
 
@@ -43,9 +41,9 @@ class FTDatasetCostEstimate:
             (
                 _,
                 self.cost_per_1k_tokens_usd,
-            ) = safetytooling.apis.inference.openai.utils.price_per_token(model_id=self.model_id)
+            ) = openai_utils.price_per_token(model_id=self.model_id)
         else:
-            price = safetytooling.apis.inference.openai.utils.finetune_price_per_token(model_id=self.model_id)
+            price = openai_utils.finetune_price_per_token(model_id=self.model_id)
             assert price is not None
             self.cost_per_1k_tokens_usd = price
 
@@ -115,14 +113,13 @@ def openai_check_finetuning_data(
             print_fn=lambda *args, **__: logger.info(args[0]) if len(args) > 0 else (),
         )
 
-    encoding = tiktoken.encoding_for_model(model_id)
-    context_length = safetytooling.apis.inference.openai.utils.get_max_context_length(model_id)
+    context_length = openai_utils.get_max_context_length(model_id)
 
     # Count number of tokens in file to estimate fine-tuning costs
     # Also flag if any examples are too long and would get truncated
     prompt_lengths: list[int] = []
     for i, prompt in enumerate(prompts):
-        n_prompt_tokens = sum(len(encoding.encode(msg.content)) for msg in prompt.messages)
+        n_prompt_tokens = sum(openai_utils.count_tokens(msg.content, model_id) for msg in prompt.messages)
         prompt_lengths.append(n_prompt_tokens)
 
         if n_prompt_tokens > context_length:

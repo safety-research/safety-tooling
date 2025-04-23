@@ -30,7 +30,6 @@ from safetytooling.utils.utils import get_repo_root
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
 from .cache_manager import BaseCacheManager, get_cache_manager
-from .deepseek import DEEPSEEK_MODELS, DeepSeekChatModel
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
@@ -42,6 +41,7 @@ from .openai.embedding import OpenAIEmbeddingModel
 from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
+from .openrouter import OPENROUTER_MODELS, OpenRouterChatModel
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
@@ -51,6 +51,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 _DEFAULT_GLOBAL_INFERENCE_API: InferenceAPI | None = None
+
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_MODELS = {"deepseek-chat", "deepseek-reasoner"}
 
 
 class InferenceAPI:
@@ -73,6 +76,7 @@ class InferenceAPI:
         gray_swan_num_threads: int = 80,
         huggingface_num_threads: int = 100,
         together_num_threads: int = 80,
+        openrouter_num_threads: int = 80,
         vllm_num_threads: int = 8,
         deepseek_num_threads: int = 20,
         deepinfra_num_threads: int = 40,
@@ -103,6 +107,7 @@ class InferenceAPI:
         self.openai_fraction_rate_limit = openai_fraction_rate_limit
         self.openai_base_url = openai_base_url
         # limit openai api calls to stop async jamming
+        self.deepseek_semaphore = asyncio.Semaphore(deepseek_num_threads)
         self.openai_semaphore = asyncio.Semaphore(openai_num_threads)
         self.gemini_semaphore = asyncio.Semaphore(gemini_num_threads)
         self.openai_s2s_semaphore = asyncio.Semaphore(openai_s2s_num_threads)
@@ -110,6 +115,7 @@ class InferenceAPI:
         self.gemini_recitation_rate_threshold = gemini_recitation_rate_threshold
         self.gray_swan_num_threads = gray_swan_num_threads
         self.together_num_threads = together_num_threads
+        self.openrouter_num_threads = openrouter_num_threads
         self.huggingface_num_threads = huggingface_num_threads
         self.vllm_num_threads = vllm_num_threads
         self.deepseek_num_threads = deepseek_num_threads
@@ -193,6 +199,12 @@ class InferenceAPI:
             api_key=os.environ.get("TOGETHER_API_KEY", None),
         )
 
+        self._openrouter = OpenRouterChatModel(
+            num_threads=self.openrouter_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+            api_key=os.environ.get("OPENROUTER_API_KEY", None),
+        )
+
         self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
         self._gemini_genai = GeminiModel(
             prompt_history_dir=self.prompt_history_dir,
@@ -207,10 +219,12 @@ class InferenceAPI:
             vllm_base_url=self.vllm_base_url,
         )
 
-        self._deepseek = DeepSeekChatModel(
-            num_threads=self.deepseek_num_threads,
+        # DeepSeek uses the OpenAI API
+        self._deepseek = OpenAIChatModel(
+            frac_rate_limit=1,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=os.environ.get("DEEPSEEK_API_KEY", None),
+            base_url=DEEPSEEK_BASE_URL,
+            openai_api_key=os.environ.get("DEEPSEEK_API_KEY", None),
         )
         
         self._deepinfra = DeepInfraModel(
@@ -249,6 +263,7 @@ class InferenceAPI:
             "batch_gpu": self._batch_models,
             "openai_s2s": self._openai_s2s,
             "together": self._together,
+            "openrouter": self._openrouter,
             "vllm": self._vllm,
             "deepseek": self._deepseek,
             "deepinfra": self._deepinfra,
@@ -302,6 +317,8 @@ class InferenceAPI:
             return self._deepinfra
         elif model_id in TOGETHER_MODELS or model_id.startswith("scalesafetyresearch"):
             return self._together
+        elif model_id in OPENROUTER_MODELS or model_id.startswith("openrouter/"):
+            return self._openrouter
         elif model_id in VLLM_MODELS:
             return self._vllm
         elif model_id in DEEPSEEK_MODELS:
@@ -309,7 +326,7 @@ class InferenceAPI:
         elif self.use_vllm_if_model_not_found:
             return self._vllm
         raise ValueError(
-            f"Invalid model id: {model_id}. Pass openai_completion, openai_chat, anthropic, huggingface, gemini, batch_gpu, openai_s2s, together, vllm, or deepseek to force a provider."
+            f"Invalid model id: {model_id}. Pass openai_completion, openai_chat, anthropic, huggingface, gemini, batch_gpu, openai_s2s, together, openrouter, vllm, or deepseek to force a provider."
         )
 
     async def check_rate_limit(self, wait_time=60):
@@ -466,7 +483,11 @@ class InferenceAPI:
                     # If prompt is a single prompt and there is no cached result, simply return the original prompt for regular processing
                     prompt = prompt
 
-        if isinstance(model_class, AnthropicChatModel) or isinstance(model_class, HuggingFaceModel):
+        if (
+            isinstance(model_class, AnthropicChatModel)
+            or isinstance(model_class, HuggingFaceModel)
+            or isinstance(model_class, OpenRouterChatModel)
+        ):
             if isinstance(model_class, HuggingFaceModel):
                 kwargs["model_url"] = huggingface_model_url
             # Anthropic chat doesn't support generating multiple candidates at once, so we have to do it manually
@@ -543,17 +564,49 @@ class InferenceAPI:
                         **kwargs,
                     )
                     candidate_responses.extend(response)
+        elif isinstance(model_class, TogetherChatModel):
+            candidate_responses = await model_class(
+                model_id,
+                prompt,
+                self.print_prompt_and_response or print_prompt_and_response,
+                max_attempts_per_api_call,
+                n=num_candidates,
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                **kwargs,
+            )
         else:
-            async with self.openai_semaphore:
-                candidate_responses = await model_class(
-                    model_id,
-                    prompt,
-                    self.print_prompt_and_response or print_prompt_and_response,
-                    max_attempts_per_api_call,
-                    n=num_candidates,
-                    is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
-                    **kwargs,
+            # At this point, the request should be for DeepSeek or OpenAI, which use the same API.
+            expected_chat_models = [OpenAIChatModel, OpenAICompletionModel]
+            if not any(isinstance(model_class, model) for model in expected_chat_models):
+                raise RuntimeError(
+                    f"Got unexpected ChatModel class: {model_class}. Make sure to implement logic to handle InferenceAPI.__call__ for your custom ChatModel. Or, add your ChatModel class to expected_chat_models above."
                 )
+            if model_class.base_url == DEEPSEEK_BASE_URL:
+                candidate_responses = []
+                for _ in range(num_candidates):  # DeepSeek doesn't support multiple completions.
+                    async with self.deepseek_semaphore:
+                        self.n_calls += 1
+                        response = await model_class(
+                            model_id,
+                            prompt,
+                            self.print_prompt_and_response or print_prompt_and_response,
+                            max_attempts_per_api_call,
+                            is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                            **kwargs,
+                        )
+                        candidate_responses.extend(response)
+
+            else:
+                async with self.openai_semaphore:
+                    candidate_responses = await model_class(
+                        model_id,
+                        prompt,
+                        self.print_prompt_and_response or print_prompt_and_response,
+                        max_attempts_per_api_call,
+                        n=num_candidates,
+                        is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                        **kwargs,
+                    )
 
         # Save cache
         if self.cache_manager is not None:
