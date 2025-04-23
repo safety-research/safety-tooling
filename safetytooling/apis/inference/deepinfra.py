@@ -6,7 +6,7 @@ from traceback import format_exc
 
 from openai import AsyncOpenAI
 
-from safetytooling.data_models import LLMResponse, Prompt, MessageRole
+from safetytooling.data_models import LLMResponse, Prompt, MessageRole, ChatMessage
 
 from .model import InferenceAPIModel
 
@@ -23,24 +23,32 @@ def preprocess_prompt(prompt: Prompt) -> Prompt:
     """
     Preprocess the prompt to ensure it is in the correct format.
     """
-    # Swap <SCRATCHPAD_REASONING> with <think>
-    if prompt.messages[-1].role == MessageRole.assistant:
-        if "<SCRATCHPAD_REASONING>" in prompt.messages[-1].content:
-            prompt.messages[-1].content = prompt.messages[-1].content.replace("<SCRATCHPAD_REASONING>", "<think>")
-        if "</SCRATCHPAD_REASONING>" in prompt.messages[-1].content:
-            prompt.messages[-1].content = prompt.messages[-1].content.replace("</SCRATCHPAD_REASONING>", "</think>")
-    return prompt
-
-def postprocess_response(response: LLMResponse) -> LLMResponse:
-    """
-    Postprocess the response to ensure it is in the correct format.
-    """
-    # Convert <think> to <SCRATCHPAD_REASONING>
-    if response.completion.startswith("<think>"):
-        response.completion = response.completion.replace("<think>", "<SCRATCHPAD_REASONING>")
-    if response.completion.endswith("</think>"):
-        response.completion = response.completion.replace("</think>", "</SCRATCHPAD_REASONING>")
-    return response
+    # Create a new list of messages
+    new_messages = []
+    
+    for message in prompt.messages:
+        # If it's the last message and it's from the assistant
+        if message == prompt.messages[-1] and message.role == MessageRole.assistant:
+            content = message.content
+            
+            # Replace the tags
+            if "<SCRATCHPAD_REASONING>" in content:
+                content = content.replace("<SCRATCHPAD_REASONING>", "<think>")
+            if "</SCRATCHPAD_REASONING>" in content:
+                content = content.replace("</SCRATCHPAD_REASONING>", "</think>")
+                
+            # Create a new message with the updated content
+            new_message = ChatMessage(
+                role=message.role,
+                content=content
+            )
+            new_messages.append(new_message)
+        else:
+            # For all other messages, just add them as is
+            new_messages.append(message)
+    
+    # Create a new Prompt with the updated messages
+    return Prompt(messages=new_messages)
 
 
 class DeepInfraModel(InferenceAPIModel):
