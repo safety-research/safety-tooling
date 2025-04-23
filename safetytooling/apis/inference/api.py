@@ -313,7 +313,7 @@ class InferenceAPI:
             return class_for_model
         elif model_id in S2S_MODELS:
             return self._openai_s2s
-        elif model_id in DEEPINFRA_MODELS: # Prefer DeepInfra over Together for some models
+        elif model_id in DEEPINFRA_MODELS:
             return self._deepinfra
         elif model_id in TOGETHER_MODELS or model_id.startswith("scalesafetyresearch"):
             return self._together
@@ -573,6 +573,14 @@ class InferenceAPI:
                 n=num_candidates,
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                 **kwargs,
+            )
+        elif isinstance(model_class, DeepInfraModel):
+            candidate_responses = await model_class(
+                model_id,
+                prompt,
+                self.print_prompt_and_response or print_prompt_and_response,
+                max_attempts_per_api_call,
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
             )
         else:
             # At this point, the request should be for DeepSeek or OpenAI, which use the same API.
