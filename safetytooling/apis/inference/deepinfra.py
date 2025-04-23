@@ -189,8 +189,8 @@ class DeepInfraModel(InferenceAPIModel):
             duration=duration,
             api_duration=api_duration,
             cost=0,  # OpenRouter will handle the cost calculation
-            prompt_tokens=response.usage.prompt_tokens if hasattr(response, 'usage') else None,
-            completion_tokens=response.usage.completion_tokens if hasattr(response, 'usage') else None,
+            prompt_tokens=getattr(getattr(response, 'usage', None), 'prompt_tokens', None),
+            completion_tokens=getattr(getattr(response, 'usage', None), 'completion_tokens', None),
             reasoning_content=None,
         )
         responses = [response_obj]
