@@ -43,7 +43,7 @@ class OpenAICompletionModel(OpenAIModel):
         n = kwargs.get("n", 1)
         completion_tokens = n * max_tokens
 
-        prompt_tokens = self.count_tokens(str(prompt), "default_tokenizer")
+        prompt_tokens = count_tokens(str(prompt), "default_tokenizer")
         return prompt_tokens + completion_tokens
 
     async def _make_api_call(self, prompt: Prompt, model_id, start_time, **params) -> list[LLMResponse]:
