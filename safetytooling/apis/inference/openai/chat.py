@@ -117,8 +117,14 @@ class OpenAIChatModel(OpenAIModel):
             )
         else:
             api_func = self.aclient.chat.completions.create
+        if model_id in {"deepseek-chat", "deepseek-reasoner"}:
+            if prompt.is_last_message_assistant():
+                self.aclient.base_url = "https://api.deepseek.com/beta"
+            messages = prompt.deepseek_format()
+        else:
+            messages = prompt.openai_format()
         api_response: openai.types.chat.ChatCompletion = await api_func(
-            messages=prompt.openai_format(),
+            messages=messages,
             model=model_id,
             **kwargs,
         )
