@@ -166,6 +166,7 @@ class OpenAIChatModel(OpenAIModel):
                     duration=duration,
                     cost=context_cost + count_tokens(choice.message.content, model_id) * completion_token_cost,
                     logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
+                    reasoning_content=choice.message.reasoning_content,
                 )
             )
         self.add_response_to_prompt_file(prompt_file, responses)
