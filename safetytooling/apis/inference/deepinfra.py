@@ -164,6 +164,8 @@ class DeepInfraModel(InferenceAPIModel):
                         else:
                             output = f"<think>\n{reasoning}\n</think>\n{output}"                  
                     else:
+                        if response.choices is None:
+                            raise RuntimeError(f"No response from OpenRouter: {response}")
                         output = response.choices[0].message.content
                     
                     api_duration = time.time() - api_start

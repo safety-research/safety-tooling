@@ -584,7 +584,7 @@ class InferenceAPI:
             )
         else:
             # At this point, the request should be for DeepSeek or OpenAI, which use the same API.
-            expected_chat_models = [OpenAIChatModel, OpenAICompletionModel]
+            expected_chat_models = [OpenAIChatModel, OpenAICompletionModel, DeepInfraModel]
             if not any(isinstance(model_class, model) for model in expected_chat_models):
                 raise RuntimeError(
                     f"Got unexpected ChatModel class: {model_class}. Make sure to implement logic to handle InferenceAPI.__call__ for your custom ChatModel. Or, add your ChatModel class to expected_chat_models above."
