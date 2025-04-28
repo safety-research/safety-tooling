@@ -1,6 +1,6 @@
 # See https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
+requires = ["setuptools", "setuptools-scm", "numpy>=1.24"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -23,6 +23,7 @@ dependencies = [
     "python-io",
     "soundfile",
     "librosa",
+    "numpy",
     "opencv-python",
     "pandas",
     "scipy",
