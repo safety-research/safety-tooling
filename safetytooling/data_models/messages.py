@@ -321,11 +321,12 @@ class Prompt(HashableBaseModel):
             return self.openai_image_format()
         return [msg.deepseek_format() for msg in self.messages]
 
-    def gemini_format(self, use_vertexai: bool = False) -> List[str]:
+    def gemini_format(self, use_vertexai: bool = False) -> Tuple[List[str], str | None]:
         if self.is_none_in_messages():
             raise ValueError(f"Gemini chat prompts cannot have a None role. Got {self.messages}")
 
         messages = []
+        system_message = None
 
         for msg in self.messages:
             if msg.role == MessageRole.audio:
@@ -337,7 +338,9 @@ class Prompt(HashableBaseModel):
                     messages.append(" ")
                 else:
                     messages.append(msg.content)
-        return messages
+            elif msg.role == MessageRole.system:
+                system_message = str(msg.content)
+        return messages, system_message
 
     def openai_s2s_format(self) -> List[Any]:
         messages = []
