@@ -91,7 +91,9 @@ class OpenRouterChatModel(InferenceAPIModel):
                     )
                     api_duration = time.time() - api_start
                     if (
-                        response_data.choices[0].message.content is None
+                        response_data.choices is None
+                        or len(response_data.choices) == 0
+                        or response_data.choices[0].message.content is None
                         or response_data.choices[0].message.content == ""
                     ):
                         raise RuntimeError(f"Empty response from {model_id} (common for openrouter so retrying)")
