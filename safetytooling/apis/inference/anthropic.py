@@ -305,7 +305,7 @@ class AnthropicModelBatch:
 
                 # Safely extract text and thinking content
                 text_content = None
-                reasoning_content = None  # We can extract this even if not used by LLMResponse yet
+                reasoning_content = None
                 if content:
                     for block in content:
                         if block.type == "text" and hasattr(block, "text"):
