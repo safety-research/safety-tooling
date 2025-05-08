@@ -117,11 +117,29 @@ class OpenAIChatModel(OpenAIModel):
             )
         else:
             api_func = self.aclient.chat.completions.create
-        api_response: openai.types.chat.ChatCompletion = await api_func(
-            messages=prompt.openai_format(),
-            model=model_id,
-            **kwargs,
-        )
+
+        original_base_url = self.aclient.base_url
+        try:
+            if model_id in {"deepseek-chat", "deepseek-reasoner"}:
+                if prompt.is_last_message_assistant():
+                    # Use the beta endpoint for assistant prefilled prompts with DeepSeek
+                    self.aclient.base_url = "https://api.deepseek.com/beta"
+                else:
+                    # Use the standard v1 endpoint otherwise
+                    self.aclient.base_url = "https://api.deepseek.com/v1"
+                messages = prompt.deepseek_format()
+            else:
+                messages = prompt.openai_format()
+
+            api_response: openai.types.chat.ChatCompletion = await api_func(
+                messages=messages,
+                model=model_id,
+                **kwargs,
+            )
+        finally:
+            # Always revert the base_url after the call
+            self.aclient.base_url = original_base_url
+
         if hasattr(api_response, "error") and (
             "Rate limit exceeded" in api_response.error["message"] or api_response.error["code"] == 429
         ):  # OpenRouter routes through the error messages from the different providers, so we catch them here
@@ -160,6 +178,7 @@ class OpenAIChatModel(OpenAIModel):
                     duration=duration,
                     cost=context_cost + count_tokens(choice.message.content, model_id) * completion_token_cost,
                     logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
+                    reasoning_content=getattr(choice.message, "reasoning_content", None),
                 )
             )
         self.add_response_to_prompt_file(prompt_file, responses)

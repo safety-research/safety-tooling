@@ -123,6 +123,7 @@ class OpenAIModelBatch:
                     api_duration=None,
                     cost=0,
                     batch_custom_id=result["custom_id"],
+                    reasoning_content=choice["message"].get("reasoning_content", None),
                 )
 
         responses = []
