@@ -26,6 +26,7 @@ from .inference import LLMResponse
 PRINT_COLORS = {
     "user": "cyan",
     "system": "magenta",
+    "developer": "magenta",
     "assistant": "light_green",
     "audio": "yellow",
     "image": "yellow",
@@ -36,6 +37,7 @@ PRINT_COLORS = {
 class MessageRole(str, Enum):
     user = "user"
     system = "system"
+    developer = "developer"
     assistant = "assistant"
     audio = "audio"
     image = "image"
