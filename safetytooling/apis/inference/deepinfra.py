@@ -13,6 +13,8 @@ from .model import InferenceAPIModel
 # Model IDs as they should be used
 DEEPINFRA_MODELS = {
     "deepinfra:deepseek/deepseek-r1",
+    "deepinfra:deepseek/deepseek-chat",
+    "deepinfra:meta-llama/llama-3.1-8b-instruct",
     "deepinfra:meta-llama/llama-3.3-70b-instruct",
     "deepinfra:meta-llama/llama-3.1-405b-instruct",
 }  # Add other models as needed
@@ -25,28 +27,25 @@ def preprocess_prompt(prompt: Prompt) -> Prompt:
     """
     # Create a new list of messages
     new_messages = []
-    
+
     for message in prompt.messages:
         # If it's the last message and it's from the assistant
         if message == prompt.messages[-1] and message.role == MessageRole.assistant:
             content = message.content
-            
+
             # Replace the tags
             if "<SCRATCHPAD_REASONING>" in content:
                 content = content.replace("<SCRATCHPAD_REASONING>", "<think>")
             if "</SCRATCHPAD_REASONING>" in content:
                 content = content.replace("</SCRATCHPAD_REASONING>", "</think>")
-                
+
             # Create a new message with the updated content
-            new_message = ChatMessage(
-                role=message.role,
-                content=content
-            )
+            new_message = ChatMessage(role=message.role, content=content)
             new_messages.append(new_message)
         else:
             # For all other messages, just add them as is
             new_messages.append(message)
-    
+
     # Create a new Prompt with the updated messages
     return Prompt(messages=new_messages)
 
@@ -66,7 +65,7 @@ class DeepInfraModel(InferenceAPIModel):
         self.site_url = site_url
         self.site_name = site_name
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
-        
+
         if api_key is not None:
             try:
                 self.aclient = AsyncOpenAI(
@@ -87,19 +86,19 @@ class DeepInfraModel(InferenceAPIModel):
         max_attempts: int,
         is_valid=lambda x: True,
         **kwargs,
-    ) -> list[LLMResponse]:        
+    ) -> list[LLMResponse]:
         # Remove the deepinfra: prefix if present
         if model_id.startswith("deepinfra:"):
             openrouter_model_id = model_id.replace("deepinfra:", "")
         else:
             openrouter_model_id = model_id
-        
+
         if "deepseek-r1" in openrouter_model_id.lower():
-            prompt = preprocess_prompt(prompt) # Convert <SCRATCHPAD_REASONING> to <think>
-        
+            prompt = preprocess_prompt(prompt)  # Convert <SCRATCHPAD_REASONING> to <think>
+
         if self.aclient is None:
             raise RuntimeError("OPENROUTER_API_KEY environment variable must be set in .env before running your script")
-        
+
         start = time.time()
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
@@ -113,7 +112,7 @@ class DeepInfraModel(InferenceAPIModel):
             extra_headers["HTTP-Referer"] = self.site_url
         if self.site_name:
             extra_headers["X-Title"] = self.site_name
-        
+
         # Add header to prevent OpenRouter from transforming the request
         extra_headers["X-OpenRouter-No-Transform"] = "true"
 
@@ -124,16 +123,16 @@ class DeepInfraModel(InferenceAPIModel):
 
                     # Set up extra_body
                     extra_body = kwargs.pop("extra_body", {})
-                    
+
                     # Use route parameter to ensure direct routing to DeepInfra
                     extra_body["provider"] = {
                         "order": ["DeepInfra"],
                         "allow_fallbacks": False
                     }
-                    
+
                     if "deepseek-r1" in openrouter_model_id.lower():
                         extra_body["include_reasoning"] = True
-                    
+
                     # Make the API call through OpenRouter
                     response = await self.aclient.chat.completions.create(
                         model=openrouter_model_id,
@@ -142,34 +141,35 @@ class DeepInfraModel(InferenceAPIModel):
                         extra_body=extra_body,
                         **kwargs,
                     )
-                    
+
+                    if response.choices is None:
+                        raise RuntimeError(f"No response from OpenRouter: {response}")
+
                     # Process the output
                     if "deepseek-r1" in openrouter_model_id.lower():
                         output = response.choices[0].message.content
                         if response.choices[0].message.reasoning:
                             reasoning = response.choices[0].message.reasoning.rstrip()
                         else:
-                            reasoning  = None
-                        
+                            reasoning = None
+
                         has_prefill = prompt.messages[-1].role == MessageRole.assistant
                         prefill_starts_with_think = prompt.messages[-1].content.startswith("<think>")
                         prefill_has_think_ending = "</think>" in prompt.messages[-1].content
-                        
+
                         if reasoning is None:
-                            pass # no reasoning, so no need to modify the output
+                            pass  # no reasoning, so no need to modify the output
                         elif has_prefill and prefill_starts_with_think and not prefill_has_think_ending:
                             output = f"{reasoning}\n</think>\n{output}"
                         elif has_prefill:
-                            pass # output is already in the correct format
+                            pass  # output is already in the correct format
                         else:
-                            output = f"<think>\n{reasoning}\n</think>\n{output}"                  
+                            output = f"<think>\n{reasoning}\n</think>\n{output}"
                     else:
-                        if response.choices is None:
-                            raise RuntimeError(f"No response from OpenRouter: {response}")
                         output = response.choices[0].message.content
-                    
+
                     api_duration = time.time() - api_start
-                    
+
                     if not is_valid(output):
                         raise RuntimeError(f"Invalid response according to is_valid {response}")
                     break
@@ -191,8 +191,8 @@ class DeepInfraModel(InferenceAPIModel):
             duration=duration,
             api_duration=api_duration,
             cost=0,  # OpenRouter will handle the cost calculation
-            prompt_tokens=getattr(getattr(response, 'usage', None), 'prompt_tokens', None),
-            completion_tokens=getattr(getattr(response, 'usage', None), 'completion_tokens', None),
+            prompt_tokens=getattr(getattr(response, "usage", None), "prompt_tokens", None),
+            completion_tokens=getattr(getattr(response, "usage", None), "completion_tokens", None),
             reasoning_content=None,
         )
         responses = [response_obj]

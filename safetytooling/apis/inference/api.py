@@ -226,7 +226,7 @@ class InferenceAPI:
             base_url=DEEPSEEK_BASE_URL,
             openai_api_key=os.environ.get("DEEPSEEK_API_KEY", None),
         )
-        
+
         self._deepinfra = DeepInfraModel(
             num_threads=self.deepinfra_num_threads,
             prompt_history_dir=self.prompt_history_dir,
@@ -581,6 +581,16 @@ class InferenceAPI:
                 self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call,
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                **kwargs,
+            )
+        elif isinstance(model_class, VLLMChatModel):
+            candidate_responses = await model_class(
+                model_id,
+                prompt,
+                self.print_prompt_and_response or print_prompt_and_response,
+                max_attempts_per_api_call,
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                **kwargs,
             )
         else:
             # At this point, the request should be for DeepSeek or OpenAI, which use the same API.

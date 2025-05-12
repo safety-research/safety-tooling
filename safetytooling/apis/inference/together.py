@@ -28,34 +28,27 @@ TOGETHER_MODELS = {
     "meta-llama/Meta-Llama-3.1-70B-Instruct-Reference",
     "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
     "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
-    
     # Mistral models
     "mistralai/Mistral-7B-v0.1",
     "mistralai/Mixtral-8x7B-Instruct-v0.1",
     "mistralai/Mixtral-8x22B-Instruct-v0.1",
-    
     # Google models
     "google/gemma-2-9b-it",
     "google/gemma-2-27b-it",
-    
     # DeepSeek models
     "deepseek-ai/DeepSeek-R1",
     "deepseek-ai/DeepSeek-V3",
     "deepseek-ai/deepseek-llm-67b-chat",
-    
     # Qwen models
     "Qwen/Qwen2.5-Coder-32B-Instruct",
     "Qwen/Qwen2.5-72B-Instruct-Turbo",
     "Qwen/QwQ-32B-Preview",
-    
     # OpenAI models
     "gpt-4.5-preview-2025-02-27",
-    
     # Anthropic models
     "claude-3-7-sonnet-20250219",
-    
     # NVIDIA models
-    "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
+    "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF",
 }
 LOGGER = logging.getLogger(__name__)
 
