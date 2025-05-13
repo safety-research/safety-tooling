@@ -150,7 +150,7 @@ class AnthropicChatModel(InferenceAPIModel):
             is_reasoning = response.content[0].type == "thinking"
             # check whether request is for websearch tool
             types = [c.type for c in response.content]
-            is_websearch = "web_search_tool_result" in types 
+            is_websearch = "web_search_tool_result" in types
             assert (
                 is_reasoning or is_websearch or len(response.content) == 1
             ), "Anthropic reasoning models don't support multiple completions"
@@ -167,8 +167,8 @@ class AnthropicChatModel(InferenceAPIModel):
                     cost=0,
                     reasoning_content=response.content[0].thinking,
                 )
-            elif is_websearch: 
-                texts = [c.text for c in response.content if c.type =='text']
+            elif is_websearch:
+                texts = [c.text for c in response.content if c.type == "text"]
                 response = LLMResponse(
                     model_id=model_id,
                     completion="\n".join(texts),
