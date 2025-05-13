@@ -153,7 +153,7 @@ class AnthropicChatModel(InferenceAPIModel):
             is_websearch = "web_search_tool_result" in types
             assert (
                 is_reasoning or is_websearch or len(response.content) == 1
-            ), "Anthropic reasoning models don't support multiple completions"
+            ), "Check that only 1 completion is returned when request is not for websearch tool use or reasoning"
 
             if is_reasoning:
                 if not hasattr(response.content[-1], "text"):

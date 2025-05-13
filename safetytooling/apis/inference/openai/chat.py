@@ -102,6 +102,7 @@ class OpenAIChatModel(OpenAIModel):
             kwargs["max_completion_tokens"] = kwargs["max_tokens"]
             del kwargs["max_tokens"]
 
+        # removing n to not cause an error from OpenAI API when using websearch tool
         if "web_search_options" in kwargs:
             assert kwargs["n"] == 1
             del kwargs["n"]
