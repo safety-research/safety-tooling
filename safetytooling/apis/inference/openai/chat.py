@@ -102,6 +102,11 @@ class OpenAIChatModel(OpenAIModel):
             kwargs["max_completion_tokens"] = kwargs["max_tokens"]
             del kwargs["max_tokens"]
 
+        # removing n to not cause an error from OpenAI API when using websearch tool
+        if "web_search_options" in kwargs:
+            assert kwargs["n"] == 1
+            del kwargs["n"]
+
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
         api_start = time.time()
 
