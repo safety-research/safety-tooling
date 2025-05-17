@@ -79,7 +79,7 @@ class LLMResponse(pydantic.BaseModel):
             return StopReason.CONTENT_FILTER
         elif v in ["prompt_blocked"]:
             return StopReason.PROMPT_BLOCKED
-        elif v in ["api_error"]:
+        elif v in ["api_error", "error"]:
             return StopReason.API_ERROR
         elif v in ["recitation"]:
             return GeminiStopReason.RECITATION

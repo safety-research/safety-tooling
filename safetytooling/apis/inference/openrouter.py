@@ -14,7 +14,14 @@ OPENROUTER_MODELS = {
     "x-ai/grok-3-beta",
     "mistral/ministral-8b",
     "mistralai/mistral-large-2411",
+    "google/gemini-2.5-flash-preview",
+    "google/gemini-2.0-flash-001",
+    "deepseek/deepseek-v3-base:free",
+    "deepseek/deepseek-r1-zero:free",
+    "meta-llama/llama-3.1-405b",
+    "meta-llama/llama-3.1-405b:free",
 }
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -115,8 +122,16 @@ class OpenRouterChatModel(InferenceAPIModel):
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
 
-        if response_data is None:
-            raise RuntimeError("No response data received")
+        if response_data is None or response_data.choices is None or len(response_data.choices) == 0:
+            return [LLMResponse(
+                model_id=model_id,
+                completion="",
+                stop_reason="stop_sequence",
+                api_duration=api_duration,
+                duration=duration,
+                cost=0,
+                logprobs=None,
+            )]
 
         if response_data.choices[0].message.content is None or response_data.choices[0].message.content == "":
             raise RuntimeError(f"Empty response from {model_id} (even after retries, perhaps decrease concurrency)")
