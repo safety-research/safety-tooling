@@ -110,12 +110,15 @@ class GeminiModel(InferenceAPIModel):
         content, system_message = prompt.gemini_format()
         if generation_config:
             model = genai.GenerativeModel(
-                model_name=model_id, generation_config=generation_config, safety_settings=safety_settings,
-                system_instruction=system_message
+                model_name=model_id,
+                generation_config=generation_config,
+                safety_settings=safety_settings,
+                system_instruction=system_message,
             )
         else:
-            model = genai.GenerativeModel(model_name=model_id, safety_settings=safety_settings,
-                                          system_instruction=system_message)
+            model = genai.GenerativeModel(
+                model_name=model_id, safety_settings=safety_settings, system_instruction=system_message
+            )
 
         upload_files = [i for i in content if isinstance(i, genai.types.file_types.File)]
         response = await model.generate_content_async(contents=content)
