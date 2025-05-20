@@ -107,14 +107,19 @@ class GeminiModel(InferenceAPIModel):
             raise RuntimeError(
                 "Gemini is not initialized. Please set GOOGLE_API_KEY in .env before running your script"
             )
+        content, system_message = prompt.gemini_format()
         if generation_config:
             model = genai.GenerativeModel(
-                model_name=model_id, generation_config=generation_config, safety_settings=safety_settings
+                model_name=model_id,
+                generation_config=generation_config,
+                safety_settings=safety_settings,
+                system_instruction=system_message,
             )
         else:
-            model = genai.GenerativeModel(model_name=model_id, safety_settings=safety_settings)
+            model = genai.GenerativeModel(
+                model_name=model_id, safety_settings=safety_settings, system_instruction=system_message
+            )
 
-        content = prompt.gemini_format()
         upload_files = [i for i in content if isinstance(i, genai.types.file_types.File)]
         response = await model.generate_content_async(contents=content)
         return response, upload_files

@@ -108,7 +108,8 @@ class ChatMessage(HashableBaseModel):
             raise ValueError(f"Invalid role {self.role} in prompt when using images")
 
     def gemini_format(self) -> Dict[str, str]:
-        return {"role": self.role.value, "content": self.content}
+        role = "model" if self.role == MessageRole.assistant else "user"
+        return {"role": role, "parts": [{"text": self.content}]}
 
     def remove_role(self) -> Self:
         return self.__class__(role=MessageRole.none, content=self.content)
@@ -323,23 +324,24 @@ class Prompt(HashableBaseModel):
             return self.openai_image_format()
         return [msg.deepseek_format() for msg in self.messages]
 
-    def gemini_format(self, use_vertexai: bool = False) -> List[str]:
+    def gemini_format(self, use_vertexai: bool = False) -> Tuple[List[str], str | None]:
         if self.is_none_in_messages():
             raise ValueError(f"Gemini chat prompts cannot have a None role. Got {self.messages}")
 
         messages = []
+        system_prompt = None
 
         for msg in self.messages:
             if msg.role == MessageRole.audio:
                 messages.append(prepare_audio_part(msg.content, use_vertexai))
             elif msg.role == MessageRole.image:
                 messages.append(prepare_gemini_image(msg.content, use_vertexai))
-            elif msg.role == MessageRole.user:
-                if msg.content == "" or msg.content is None:
-                    messages.append(" ")
-                else:
-                    messages.append(msg.content)
-        return messages
+            elif msg.role == MessageRole.system:
+                system_prompt = str(msg.content)
+            else:
+                messages.append(msg.gemini_format())
+
+        return messages, system_prompt
 
     def openai_s2s_format(self) -> List[Any]:
         messages = []
