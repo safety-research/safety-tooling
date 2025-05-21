@@ -5,7 +5,7 @@ from typing import Any, Literal, Union
 import openai
 import pydantic
 
-from safetytooling.data_models.utils import GeminiBlockReason, GeminiStopReason, SafetyRatings
+from .utils import GeminiBlockReason, GeminiStopReason, SafetyRatings
 
 from .hashable import HashableBaseModel
 
