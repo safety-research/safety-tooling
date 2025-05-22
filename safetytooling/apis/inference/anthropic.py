@@ -133,7 +133,7 @@ class AnthropicChatModel(InferenceAPIModel):
                         duration=duration,
                         api_duration=api_duration,
                         cost=0,
-                        # No usage data if response is None
+                        usage=None,  # No usage data if response is None
                     )
                 else:
                     response = LLMResponse(
