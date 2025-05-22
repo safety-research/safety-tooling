@@ -10,7 +10,7 @@ from anthropic import AsyncAnthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from safetytooling.data_models import LLMResponse, Prompt
+from safetytooling.data_models import LLMResponse, Prompt, Usage
 
 from .model import InferenceAPIModel
 
@@ -133,6 +133,7 @@ class AnthropicChatModel(InferenceAPIModel):
                         duration=duration,
                         api_duration=api_duration,
                         cost=0,
+                        # No usage data if response is None
                     )
                 else:
                     response = LLMResponse(
@@ -142,11 +143,19 @@ class AnthropicChatModel(InferenceAPIModel):
                         duration=duration,
                         api_duration=api_duration,
                         cost=0,
+                        # No usage data if response is None
                     )
             else:
                 raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
 
         else:
+            usage_data = response.usage  # Get usage data
+            current_usage = (
+                Usage(input_tokens=usage_data.input_tokens, output_tokens=usage_data.output_tokens)
+                if usage_data
+                else None
+            )
+
             is_reasoning = response.content[0].type == "thinking"
             # check whether request is for websearch tool
             types = [c.type for c in response.content]
@@ -166,6 +175,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     api_duration=api_duration,
                     cost=0,
                     reasoning_content=response.content[0].thinking,
+                    usage=current_usage,  # Populate usage
                 )
             elif is_websearch:
                 texts = [c.text for c in response.content if c.type == "text"]
@@ -176,6 +186,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     duration=duration,
                     api_duration=api_duration,
                     cost=0,
+                    usage=current_usage,  # Populate usage
                 )
             else:
                 response = LLMResponse(
@@ -185,6 +196,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     duration=duration,
                     api_duration=api_duration,
                     cost=0,
+                    usage=current_usage,  # Populate usage
                 )
 
         responses = [response]
@@ -315,6 +327,7 @@ class AnthropicModelBatch:
         for result in results:
             if result.result.type == "succeeded":
                 content = result.result.message.content
+                usage_data = result.result.message.usage
 
                 # Safely extract text and thinking content
                 text_content = None
@@ -338,6 +351,11 @@ class AnthropicModelBatch:
                     cost=0,
                     batch_custom_id=result.custom_id,
                     reasoning_content=reasoning_content,
+                    usage=(
+                        Usage(input_tokens=usage_data.input_tokens, output_tokens=usage_data.output_tokens)
+                        if usage_data
+                        else None
+                    ),
                 )
 
         responses = []
