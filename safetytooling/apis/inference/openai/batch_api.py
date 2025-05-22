@@ -116,7 +116,7 @@ class OpenAIModelBatch:
                 choice = body["choices"][0]
                 usage_data = body.get("usage", None)
 
-                if usage_data:
+                if usage_data is not None:
                     usage_data = Usage(
                         input_tokens=usage_data.get("prompt_tokens"),
                         output_tokens=usage_data.get("completion_tokens"),
