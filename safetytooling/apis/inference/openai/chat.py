@@ -171,7 +171,6 @@ class OpenAIChatModel(OpenAIModel):
             context_cost = 0
             current_usage = None
 
-        print(f"current_usage: {current_usage}")
         responses = []
         for choice in api_response.choices:
             if choice.message.content is None or choice.finish_reason is None:
