@@ -11,7 +11,7 @@ import pydantic
 import requests
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-from safetytooling.data_models import LLMResponse, Prompt
+from safetytooling.data_models import LLMResponse, Prompt, Usage
 from safetytooling.utils import math_utils
 
 from .base import OpenAIModel
@@ -150,8 +150,27 @@ class OpenAIChatModel(OpenAIModel):
         context_token_cost, completion_token_cost = price_per_token(model_id)
         if api_response.usage is not None:
             context_cost = api_response.usage.prompt_tokens * context_token_cost
+            current_usage = Usage(
+                input_tokens=api_response.usage.prompt_tokens,
+                output_tokens=api_response.usage.completion_tokens,
+                total_tokens=api_response.usage.total_tokens,
+                prompt_tokens_details=(
+                    api_response.usage.prompt_tokens_details.model_dump()
+                    if hasattr(api_response.usage, "prompt_tokens_details")
+                    and api_response.usage.prompt_tokens_details is not None
+                    else None
+                ),
+                completion_tokens_details=(
+                    api_response.usage.completion_tokens_details.model_dump()
+                    if hasattr(api_response.usage, "completion_tokens_details")
+                    and api_response.usage.completion_tokens_details is not None
+                    else None
+                ),
+            )
         else:
             context_cost = 0
+            current_usage = None
+
         responses = []
         for choice in api_response.choices:
             if choice.message.content is None or choice.finish_reason is None:
@@ -165,6 +184,7 @@ class OpenAIChatModel(OpenAIModel):
                     duration=duration,
                     cost=context_cost + count_tokens(choice.message.content, model_id) * completion_token_cost,
                     logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
+                    usage=current_usage,
                 )
             )
         self.add_response_to_prompt_file(prompt_file, responses)

@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 import openai
 import pydantic
@@ -51,6 +51,18 @@ class StopReason(str, Enum):
         return self.value
 
 
+class Usage(pydantic.BaseModel):
+    input_tokens: Optional[int] = None  # prompt_tokens for OpenAI
+    output_tokens: Optional[int] = None  # completion_tokens for OpenAI
+
+    # OpenAI specific fields
+    total_tokens: Optional[int] = None
+    prompt_tokens_details: Optional[Dict[str, Any]] = None
+    completion_tokens_details: Optional[Dict[str, Any]] = None
+
+    model_config = pydantic.ConfigDict(extra="ignore")
+
+
 class LLMResponse(pydantic.BaseModel):
     model_id: str
     completion: str
@@ -65,6 +77,7 @@ class LLMResponse(pydantic.BaseModel):
     api_failures: int | None = 0
     batch_custom_id: str | None = None
     reasoning_content: str | None = None
+    usage: Optional[Usage] = None
 
     model_config = pydantic.ConfigDict(protected_namespaces=())
 

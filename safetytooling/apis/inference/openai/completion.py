@@ -7,7 +7,7 @@ import openai.types
 import requests
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-from safetytooling.data_models import LLMResponse, Prompt
+from safetytooling.data_models import LLMResponse, Prompt, Usage
 
 from .base import OpenAIModel
 from .utils import count_tokens, get_rate_limit, price_per_token
@@ -59,6 +59,23 @@ class OpenAICompletionModel(OpenAIModel):
         duration = time.time() - start_time
         context_token_cost, completion_token_cost = price_per_token(model_id)
         context_cost = api_response.usage.prompt_tokens * context_token_cost
+        current_usage = Usage(
+            input_tokens=api_response.usage.prompt_tokens,
+            output_tokens=api_response.usage.completion_tokens,
+            total_tokens=api_response.usage.total_tokens,
+            prompt_tokens_details=(
+                api_response.usage.prompt_tokens_details.model_dump()
+                if hasattr(api_response.usage, "prompt_tokens_details")
+                and api_response.usage.prompt_tokens_details is not None
+                else None
+            ),
+            completion_tokens_details=(
+                api_response.usage.completion_tokens_details.model_dump()
+                if hasattr(api_response.usage, "completion_tokens_details")
+                and api_response.usage.completion_tokens_details is not None
+                else None
+            ),
+        )
         responses = [
             LLMResponse(
                 model_id=model_id,
@@ -68,6 +85,7 @@ class OpenAICompletionModel(OpenAIModel):
                 duration=duration,
                 cost=context_cost + count_tokens(choice.text, model_id) * completion_token_cost,
                 logprobs=(choice.logprobs.top_logprobs if choice.logprobs is not None else None),
+                usage=current_usage,
             )
             for choice in api_response.choices
         ]
