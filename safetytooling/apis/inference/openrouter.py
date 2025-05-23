@@ -20,6 +20,7 @@ OPENROUTER_MODELS = {
     "deepseek/deepseek-r1-zero:free",
     "meta-llama/llama-3.1-405b",
     "meta-llama/llama-3.1-405b:free",
+    "nousresearch/hermes-3-llama-3.1-70b",
 }
 
 LOGGER = logging.getLogger(__name__)

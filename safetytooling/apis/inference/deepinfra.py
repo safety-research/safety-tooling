@@ -17,6 +17,8 @@ DEEPINFRA_MODELS = {
     "deepinfra:meta-llama/llama-3.1-8b-instruct",
     "deepinfra:meta-llama/llama-3.3-70b-instruct",
     "deepinfra:meta-llama/llama-3.1-405b-instruct",
+    "deepinfra:nousresearch/hermes-3-llama-3.1-405b",
+    "deepinfra:mistralai/mistral-small-24b-instruct-2501",
 }  # Add other models as needed
 LOGGER = logging.getLogger(__name__)
 
