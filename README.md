@@ -21,7 +21,7 @@ source $HOME/.local/bin/env
 
 2. Clone the repository and navigate to the directory.
 ```
-git clone git@github.com:safety-research/safety-tooling.git
+git clone https://github.com/safety-research/safety-tooling.git
 cd safety-tooling
 ```
 
