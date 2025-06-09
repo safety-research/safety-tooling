@@ -23,16 +23,20 @@ LOGGER = logging.getLogger(__name__)
 class OpenAIChatModel(OpenAIModel):
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
+        self._ensure_client()
         url = (
             "https://api.openai.com/v1/chat/completions"
             if self.base_url is None
             else self.base_url + "/v1/chat/completions"
         )
-        if self.openai_api_key is None:
-            api_key = os.environ["OPENAI_API_KEY"]
-        else:
+        
+        # Use the API key that's already been validated
+        if self.openai_api_key:
             api_key = self.openai_api_key
-
+        else:
+            # We know it exists in environment because _ensure_client() passed
+            api_key = os.environ.get("OPENAI_API_KEY")
+        
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         data = {
             "model": model_id,
@@ -91,6 +95,9 @@ class OpenAIChatModel(OpenAIModel):
 
     async def _make_api_call(self, prompt: Prompt, model_id, start_time, **kwargs) -> list[LLMResponse]:
         LOGGER.debug(f"Making {model_id} call")
+
+        # ensure api key is set and valid when making the request
+        self._ensure_client()
 
         # convert completion logprobs api to chat logprobs api
         if "logprobs" in kwargs:
@@ -196,6 +203,9 @@ class OpenAIChatModel(OpenAIModel):
         model_id,
         **kwargs,
     ) -> openai.AsyncStream[openai.types.chat.ChatCompletionChunk]:
+        # ensure api key is set and valid when making the request
+        self._ensure_client()
+
         return await self.aclient.chat.completions.create(
             messages=prompt.openai_format(),
             model=model_id,

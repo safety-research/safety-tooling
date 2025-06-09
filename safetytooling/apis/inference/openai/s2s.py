@@ -46,7 +46,8 @@ class S2SRateLimiter:
 
 class OpenAIS2SModel(InferenceAPIModel):
     def __init__(self):
-        self.api_key = os.environ["OPENAI_API_KEY"]
+        # Don't access the API key here - defer it
+        self.api_key = None  # Lazy initialization
         self.base_url = "wss://api.openai.com/v1/realtime"
         self.model = "gpt-4o-realtime-preview-2024-10-01"
         self.max_size = 10 * 1024 * 1024  # 10MB
@@ -55,6 +56,19 @@ class OpenAIS2SModel(InferenceAPIModel):
         self.max_attempts = 10
 
         self.allowed_kwargs = {"temperature", "max_output_tokens", "voice", "audio_format"}
+    
+    def _ensure_api_key(self):
+        """Ensure API key is available when needed"""
+        if self.api_key is None:
+            if "OPENAI_API_KEY" in os.environ:
+                self.api_key = os.environ["OPENAI_API_KEY"]
+            else:
+                raise ValueError(
+                    "OpenAI API key is required for S2S model but not found.\n"
+                    "Please either:\n"
+                    "1. Add OPENAI_API_KEY=<your-key> to your .env file\n"
+                    "2. Set the OPENAI_API_KEY environment variable"
+                )
 
     def log_retry(self, retry_state):
         if retry_state.attempt_number > 1:
@@ -80,6 +94,8 @@ class OpenAIS2SModel(InferenceAPIModel):
         after=log_retry,
     )
     async def connect(self):
+        self._ensure_api_key()
+        
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
