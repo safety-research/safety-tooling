@@ -155,13 +155,13 @@ class AnthropicChatModel(InferenceAPIModel):
                 if usage_data
                 else None
             )
-
-            is_reasoning = response.content[0].type == "thinking"
+            # when refusal classifier fires, response.content is []
+            is_reasoning = response.content[0].type == "thinking" if len(response.content) > 0 else False
             # check whether request is for websearch tool
             types = [c.type for c in response.content]
             is_websearch = "web_search_tool_result" in types
             assert (
-                is_reasoning or is_websearch or len(response.content) == 1
+                is_reasoning or is_websearch or len(response.content) <= 1
             ), "Check that only 1 completion is returned when request is not for websearch tool use or reasoning"
 
             if is_reasoning:
@@ -191,7 +191,7 @@ class AnthropicChatModel(InferenceAPIModel):
             else:
                 response = LLMResponse(
                     model_id=model_id,
-                    completion=response.content[0].text,
+                    completion=response.content[0].text if len(response.content) > 0 else "", # refusal classifier, return empty str
                     stop_reason=response.stop_reason,
                     duration=duration,
                     api_duration=api_duration,
