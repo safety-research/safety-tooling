@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 import traceback
 
@@ -20,32 +21,13 @@ class OpenAIEmbeddingModel:
         self.num_threads = 1
         self.batch_size = batch_size  # Max batch size for embedding endpoint
 
-        # Lazy initialization
-        self._aclient = None
-        self._client_initialized = False
+       # Simple check for API key
+        if "OPENAI_API_KEY" in os.environ:
+            self.aclient = openai.AsyncClient()
+        else:
+            self.aclient = None
 
         self.available_requests = asyncio.BoundedSemaphore(self.num_threads)
-
-    def _ensure_client(self):
-        """Initialize client when needed"""
-        if not self._client_initialized:
-            import os
-            if "OPENAI_API_KEY" in os.environ:
-                self._aclient = openai.AsyncClient()
-            else:
-                raise ValueError(
-                    "OpenAI API key is required for moderation but not found.\n"
-                    "Please either:\n"
-                    "1. Add OPENAI_API_KEY=<your-key> to your .env file\n"
-                    "2. Set the OPENAI_API_KEY environment variable"
-                )
-            self._client_initialized = True
-    
-    @property
-    def aclient(self):
-        """Property to access the client, ensures it's initialized"""
-        self._ensure_client()
-        return self._aclient
 
     async def embed(
         self,
@@ -53,7 +35,8 @@ class OpenAIEmbeddingModel:
         max_attempts: int = 5,
         **kwargs,
     ) -> EmbeddingResponseBase64:
-        self._ensure_client()
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
         
         assert params.model_id in EMBEDDING_MODELS
 

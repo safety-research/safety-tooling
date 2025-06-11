@@ -67,38 +67,18 @@ class OpenAIModel(InferenceAPIModel):
         self.model_ids = set()
         self.base_url = base_url
         self.openai_api_key = openai_api_key
-        self._aclient = None
-        self._client_initialized = False
+
+        if openai_api_key:
+            self.aclient = openai.AsyncClient(api_key=openai_api_key, base_url=self.base_url)
+        elif "OPENAI_API_KEY" in os.environ:
+            self.aclient = openai.AsyncClient(base_url=self.base_url)
+        else:
+            self.aclient = None
 
         self.token_capacity = dict()
         self.request_capacity = dict()
         self.lock_add = asyncio.Lock()
         self.lock_consume = asyncio.Lock()
-
-    def _ensure_client(self):
-        """Initialize client when actually calling the request"""
-        if not self._client_initialized:
-            if self.openai_api_key:
-                self._aclient = openai.AsyncClient(api_key=self.openai_api_key, base_url=self.base_url)  # Note: _aclient
-            else:
-                # Try to get from environment
-                if "OPENAI_API_KEY" in os.environ:
-                    self._aclient = openai.AsyncClient(base_url=self.base_url)  # Note: _aclient
-                else:
-                    raise ValueError(
-                        "OpenAI API key is required for this request but not found.\n"
-                        "Please either:\n"
-                        "1. Add OPENAI_API_KEY=<your-key> to your .env file\n"
-                        "2. Pass openai_api_key parameter when creating InferenceAPI\n"
-                        "3. Set the OPENAI_API_KEY environment variable"
-                    )
-            self._client_initialized = True
-
-    @property
-    def aclient(self):
-        """Property to access the client, ensures it's initialized"""
-        self._ensure_client()
-        return self._aclient
 
     @staticmethod
     async def _get_dummy_response_header(model_id: str):
@@ -116,7 +96,8 @@ class OpenAIModel(InferenceAPIModel):
         raise NotImplementedError
 
     async def add_model_id(self, model_id: str):
-        self._ensure_client()
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
 
         if model_id in self.model_ids:
             return
