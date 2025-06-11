@@ -1,6 +1,6 @@
 from .cache import LLMCache, LLMCacheModeration
 from .embedding import EmbeddingParams, EmbeddingResponseBase64
-from .inference import GeminiBlockReason, GeminiStopReason, LLMParams, LLMResponse, StopReason, TaggedModeration
+from .inference import GeminiBlockReason, GeminiStopReason, LLMParams, LLMResponse, StopReason, TaggedModeration, Usage
 from .messages import BatchPrompt, ChatMessage, MessageRole, Prompt
 from .utils import GEMINI_MODELS
 
@@ -11,6 +11,7 @@ __all__ = [
     "EmbeddingResponseBase64",
     "LLMParams",
     "LLMResponse",
+    "Usage",
     "StopReason",
     "GeminiStopReason",
     "GeminiBlockReason",

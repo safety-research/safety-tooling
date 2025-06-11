@@ -8,7 +8,7 @@ import openai
 import openai.types
 import openai.types.chat
 
-from safetytooling.data_models import LLMResponse, Prompt
+from safetytooling.data_models import LLMResponse, Prompt, Usage
 from safetytooling.utils import utils
 
 LOGGER = logging.getLogger(__name__)
@@ -114,6 +114,17 @@ class OpenAIModelBatch:
             if result["response"]["status_code"] == 200:
                 body = result["response"]["body"]
                 choice = body["choices"][0]
+                usage_data = body.get("usage", None)
+
+                if usage_data is not None:
+                    usage_data = Usage(
+                        input_tokens=usage_data.get("prompt_tokens"),
+                        output_tokens=usage_data.get("completion_tokens"),
+                        total_tokens=usage_data.get("total_tokens"),
+                        prompt_tokens_details=usage_data.get("prompt_tokens_details"),
+                        completion_tokens_details=usage_data.get("completion_tokens_details"),
+                    )
+
                 assert result["custom_id"] in set_custom_ids
                 responses_dict[result["custom_id"]] = LLMResponse(
                     model_id=model_id,
@@ -123,6 +134,7 @@ class OpenAIModelBatch:
                     api_duration=None,
                     cost=0,
                     batch_custom_id=result["custom_id"],
+                    usage=usage_data,
                 )
 
         responses = []

@@ -10,7 +10,7 @@ from anthropic import AsyncAnthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from safetytooling.data_models import LLMResponse, Prompt
+from safetytooling.data_models import LLMResponse, Prompt, Usage
 
 from .model import InferenceAPIModel
 
@@ -136,6 +136,7 @@ class AnthropicChatModel(InferenceAPIModel):
                         duration=duration,
                         api_duration=api_duration,
                         cost=0,
+                        usage=None,  # No usage data if response is None
                     )
                 else:
                     response = LLMResponse(
@@ -145,17 +146,25 @@ class AnthropicChatModel(InferenceAPIModel):
                         duration=duration,
                         api_duration=api_duration,
                         cost=0,
+                        # No usage data if response is None
                     )
             else:
                 raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
         else:
-            assert len(response.content) > 0, "Claude API returned an empty response"
-            
+            usage_data = response.usage  # Get usage data
+            current_usage = (
+                Usage(input_tokens=usage_data.input_tokens, output_tokens=usage_data.output_tokens)
+                if usage_data
+                else None
+            )
+
             is_reasoning = response.content[0].type == "thinking"
-            is_reasoning = False
+            # check whether request is for websearch tool
+            types = [c.type for c in response.content]
+            is_websearch = "web_search_tool_result" in types
             assert (
-                is_reasoning or len(response.content) == 1
-            ), "Anthropic reasoning models don't support multiple completions"
+                is_reasoning or is_websearch or len(response.content) == 1
+            ), "Check that only 1 completion is returned when request is not for websearch tool use or reasoning"
 
             if is_reasoning:
                 if not hasattr(response.content[-1], "text"):
@@ -168,6 +177,18 @@ class AnthropicChatModel(InferenceAPIModel):
                     api_duration=api_duration,
                     cost=0,
                     reasoning_content=response.content[0].thinking,
+                    usage=current_usage,  # Populate usage
+                )
+            elif is_websearch:
+                texts = [c.text for c in response.content if c.type == "text"]
+                response = LLMResponse(
+                    model_id=model_id,
+                    completion="\n".join(texts),
+                    stop_reason=response.stop_reason,
+                    duration=duration,
+                    api_duration=api_duration,
+                    cost=0,
+                    usage=current_usage,  # Populate usage
                 )
             else:
                 response = LLMResponse(
@@ -177,6 +198,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     duration=duration,
                     api_duration=api_duration,
                     cost=0,
+                    usage=current_usage,  # Populate usage
                 )
 
         responses = [response]
@@ -307,6 +329,7 @@ class AnthropicModelBatch:
         for result in results:
             if result.result.type == "succeeded":
                 content = result.result.message.content
+                usage_data = result.result.message.usage
 
                 # Safely extract text and thinking content
                 text_content = None
@@ -330,6 +353,11 @@ class AnthropicModelBatch:
                     cost=0,
                     batch_custom_id=result.custom_id,
                     reasoning_content=reasoning_content,
+                    usage=(
+                        Usage(input_tokens=usage_data.input_tokens, output_tokens=usage_data.output_tokens)
+                        if usage_data
+                        else None
+                    ),
                 )
 
         responses = []

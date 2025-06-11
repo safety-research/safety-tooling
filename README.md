@@ -255,3 +255,19 @@ python -m safetytooling.apis.inference.usage.usage_anthropic
     - Prompt loading with a templating library called Jinja (`prompt_utils.py`)
     - Image/audio processing (`image_utils.py` and `audio_utils.py`)
     - Human labelling framework which keeps a persistent store of human labels on disk based on the input/output pair of the LLM (`human_labeling_utils.py`)
+
+## Citation
+
+If you use this repo in your work, please cite it as follows:
+
+```bibtex
+@misc{safety_tooling_2025,
+  author       = {John Hughes and safety-research},
+  title        = {safety-research/safety-tooling: v1.0.0},
+  year         = {2025},
+  publisher    = {Zenodo},
+  version      = {v1.0.0},
+  doi          = {10.5281/zenodo.15363603},
+  url          = {https://doi.org/10.5281/zenodo.15363603}
+}
+```
