@@ -148,9 +148,11 @@ class AnthropicChatModel(InferenceAPIModel):
                     )
             else:
                 raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
-
         else:
+            assert len(response.content) > 0, "Claude API returned an empty response"
+            
             is_reasoning = response.content[0].type == "thinking"
+            is_reasoning = False
             assert (
                 is_reasoning or len(response.content) == 1
             ), "Anthropic reasoning models don't support multiple completions"

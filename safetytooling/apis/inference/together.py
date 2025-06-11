@@ -29,7 +29,7 @@ TOGETHER_MODELS = {
     "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
     "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
     # Mistral models
-    "mistralai/Mistral-7B-v0.1",
+    "mistralai/Mistral-7B-Instruct-v0.2",
     "mistralai/Mixtral-8x7B-Instruct-v0.1",
     "mistralai/Mixtral-8x22B-Instruct-v0.1",
     # Google models
