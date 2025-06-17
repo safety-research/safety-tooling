@@ -179,7 +179,11 @@ class FileBasedCacheManager(BaseCacheManager):
         LOGGER.info(f"Evicting entry from mem cache to free up {needed_space_mb} MB")
         while self.total_usage_mb > self.max_mem_usage_mb - needed_space_mb:
             # Find the entry with the smallest size
-            smallest_entry = min(self.sizes.items(), key=lambda x: x[1])
+            try:
+                smallest_entry = min(self.sizes.items(), key=lambda x: x[1])
+            except ValueError:
+                LOGGER.warning("No entries in mem cache to evict")
+                return True
             self.remove_entry(smallest_entry[0])
             LOGGER.info(f"Evicted entry from mem cache. Total usage is now {self.total_usage_mb} MB.")
         return True
