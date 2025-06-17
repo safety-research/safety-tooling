@@ -475,6 +475,7 @@ class InferenceAPI:
             isinstance(model_class, AnthropicChatModel)
             or isinstance(model_class, HuggingFaceModel)
             or isinstance(model_class, OpenRouterChatModel)
+            or isinstance(model_class, VLLMChatModel)
         ):
             if isinstance(model_class, HuggingFaceModel):
                 kwargs["model_url"] = huggingface_model_url
