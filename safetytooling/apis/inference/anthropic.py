@@ -191,7 +191,9 @@ class AnthropicChatModel(InferenceAPIModel):
             else:
                 response = LLMResponse(
                     model_id=model_id,
-                    completion=response.content[0].text if len(response.content) > 0 else "", # refusal classifier, return empty str
+                    completion=(
+                        response.content[0].text if len(response.content) > 0 else ""
+                    ),  # refusal classifier, return empty str
                     stop_reason=response.stop_reason,
                     duration=duration,
                     api_duration=api_duration,
