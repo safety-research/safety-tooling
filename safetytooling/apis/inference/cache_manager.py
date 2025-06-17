@@ -1,5 +1,8 @@
 import logging
 import os
+import sys
+from collections import deque
+from itertools import chain
 from pathlib import Path
 from typing import List, Tuple, Union
 
@@ -31,6 +34,44 @@ REDIS_CONFIG_DEFAULT = {
 
 if "REDIS_PASSWORD" in os.environ:
     REDIS_CONFIG_DEFAULT["password"] = os.environ["REDIS_PASSWORD"]
+
+
+def total_size(o, handlers={}, verbose=False):
+    """Returns the approximate memory footprint of object o and all of its contents in MB."""
+
+    # default handlers for built-ins
+    def dict_handler(d):
+        return chain.from_iterable(d.items())
+
+    all_handlers = {
+        tuple: iter,
+        list: iter,
+        deque: iter,
+        dict: dict_handler,
+        set: iter,
+        frozenset: iter,
+    }
+    # user can override or extend handlers:
+    all_handlers.update(handlers)
+
+    seen = set()  # track which object ids have been seen
+    default_size = sys.getsizeof(0)  # estimate for unknown object types
+
+    def sizeof(obj):
+        if id(obj) in seen:
+            return 0
+        seen.add(id(obj))
+        s = sys.getsizeof(obj, default_size)
+        if verbose:
+            print(f"size({type(obj).__name__}): {s:,} bytes")
+        for typ, handler in all_handlers.items():
+            if isinstance(obj, typ):
+                for elem in handler(obj):
+                    s += sizeof(elem)
+                break
+        return s
+
+    return sizeof(o) / 1024 / 1024  # Convert to MB
 
 
 class BaseCacheManager:
@@ -98,9 +139,50 @@ class BaseCacheManager:
 class FileBasedCacheManager(BaseCacheManager):
     """Original file-based cache manager implementation."""
 
-    def __init__(self, cache_dir: Path, num_bins: int = 20):
+    def __init__(self, cache_dir: Path, num_bins: int = 20, max_mem_usage_mb: float | None = None):
         super().__init__(cache_dir, num_bins)
         self.in_memory_cache = {}
+        self.sizes = {}  # Track the size of each cache file in memory
+        self.total_usage_mb = 0
+        self.max_mem_usage_mb = max_mem_usage_mb
+
+    def remove_entry(self, cache_file: Path):
+        self.in_memory_cache.pop(cache_file)
+
+        if self.max_mem_usage_mb is not None:
+            size = self.sizes.pop(cache_file)
+            self.total_usage_mb -= size
+            LOGGER.info(f"Removed entry from mem cache. Freed {size} MB.")
+
+    def add_entry(self, cache_file: Path, contents: dict):
+        self.in_memory_cache[cache_file] = contents
+
+        if self.max_mem_usage_mb is not None:
+            size = total_size(contents)
+            if self.total_usage_mb + size > self.max_mem_usage_mb:
+                space_available = self.free_space_for(size)
+                if not space_available:
+                    return False
+            self.sizes[cache_file] = size
+            self.total_usage_mb += size
+
+    def free_space_for(self, needed_space_mb: float):
+        if self.max_mem_usage_mb is None:
+            return True
+
+        if needed_space_mb > self.max_mem_usage_mb:
+            LOGGER.warning(
+                f"Needed space {needed_space_mb} MB is greater than max mem usage {self.max_mem_usage_mb} MB. "
+                "This is not possible."
+            )
+            return False
+        LOGGER.info(f"Evicting entry from mem cache to free up {needed_space_mb} MB")
+        while self.total_usage_mb > self.max_mem_usage_mb - needed_space_mb:
+            # Find the entry with the smallest size
+            smallest_entry = min(self.sizes.items(), key=lambda x: x[1])
+            self.remove_entry(smallest_entry[0])
+            LOGGER.info(f"Evicted entry from mem cache. Total usage is now {self.total_usage_mb} MB.")
+        return True
 
     def get_cache_file(self, prompt: Prompt, params: LLMParams) -> tuple[Path, str]:
         # Use the SHA-1 hash of the prompt for the dictionary key
@@ -121,9 +203,12 @@ class FileBasedCacheManager(BaseCacheManager):
         if (cache_file not in self.in_memory_cache) or (prompt_hash not in self.in_memory_cache[cache_file]):
             LOGGER.info(f"Cache miss, loading from disk: {cache_file=}, {prompt_hash=}, {params}")
             with filelock.FileLock(str(cache_file) + ".lock"):
-                self.in_memory_cache[cache_file] = load_json(cache_file)
+                contents = load_json(cache_file)
+                self.add_entry(cache_file, contents)
+        else:
+            contents = self.in_memory_cache[cache_file]
 
-        data = self.in_memory_cache[cache_file].get(prompt_hash, None)
+        data = contents.get(prompt_hash, None)
         return None if data is None else LLMCache.model_validate_json(data)
 
     def process_cached_responses(
@@ -504,9 +589,11 @@ class RedisCacheManager(BaseCacheManager):
         self.db.set(key, response.model_dump_json())
 
 
-def get_cache_manager(cache_dir: Path, use_redis: bool = False, num_bins: int = 20) -> BaseCacheManager:
+def get_cache_manager(
+    cache_dir: Path, use_redis: bool = False, num_bins: int = 20, max_mem_usage_mb: float | None = None
+) -> BaseCacheManager:
     """Factory function to get the appropriate cache manager based on environment variable."""
     print(f"{cache_dir=}, {use_redis=}, {num_bins=}")
     if use_redis:
         return RedisCacheManager(cache_dir, num_bins)
-    return FileBasedCacheManager(cache_dir, num_bins)
+    return FileBasedCacheManager(cache_dir, num_bins, max_mem_usage_mb)
