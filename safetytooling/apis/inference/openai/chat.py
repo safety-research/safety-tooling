@@ -23,16 +23,22 @@ LOGGER = logging.getLogger(__name__)
 class OpenAIChatModel(OpenAIModel):
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+                
         url = (
             "https://api.openai.com/v1/chat/completions"
             if self.base_url is None
             else self.base_url + "/v1/chat/completions"
         )
-        if self.openai_api_key is None:
-            api_key = os.environ["OPENAI_API_KEY"]
-        else:
+        
+        # Use the API key that's already been validated
+        if self.openai_api_key:
             api_key = self.openai_api_key
-
+        else:
+            # We know it exists in environment because _ensure_client() passed
+            api_key = os.environ.get("OPENAI_API_KEY")
+        
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         data = {
             "model": model_id,
@@ -90,7 +96,10 @@ class OpenAIChatModel(OpenAIModel):
         return top_logprobs
 
     async def _make_api_call(self, prompt: Prompt, model_id, start_time, **kwargs) -> list[LLMResponse]:
-        LOGGER.debug(f"Making {model_id} call")
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+    
+        LOGGER.debug(f"Making {model_id} call")       
 
         # convert completion logprobs api to chat logprobs api
         if "logprobs" in kwargs:
@@ -196,6 +205,10 @@ class OpenAIChatModel(OpenAIModel):
         model_id,
         **kwargs,
     ) -> openai.AsyncStream[openai.types.chat.ChatCompletionChunk]:
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+
+
         return await self.aclient.chat.completions.create(
             messages=prompt.openai_format(),
             model=model_id,
