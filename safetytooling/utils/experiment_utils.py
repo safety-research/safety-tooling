@@ -26,7 +26,7 @@ class ExperimentConfigBase:
     # If None, defaults to output_dir / "prompt-history"
     enable_prompt_history: bool = False
     prompt_history_dir: Path | None = None
-    max_mem_usage_mb: float | None = None
+    max_mem_usage_mb: float = 5_000
 
     log_to_file: bool = True
     openai_fraction_rate_limit: float = 0.5

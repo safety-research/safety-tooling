@@ -139,7 +139,7 @@ class BaseCacheManager:
 class FileBasedCacheManager(BaseCacheManager):
     """Original file-based cache manager implementation."""
 
-    def __init__(self, cache_dir: Path, num_bins: int = 20, max_mem_usage_mb: float | None = None):
+    def __init__(self, cache_dir: Path, num_bins: int = 20, max_mem_usage_mb: float = 5_000):
         super().__init__(cache_dir, num_bins)
         self.in_memory_cache = {}
         self.sizes = {}  # Track the size of each cache file in memory
@@ -594,7 +594,7 @@ class RedisCacheManager(BaseCacheManager):
 
 
 def get_cache_manager(
-    cache_dir: Path, use_redis: bool = False, num_bins: int = 20, max_mem_usage_mb: float | None = None
+    cache_dir: Path, use_redis: bool = False, num_bins: int = 20, max_mem_usage_mb: float = 5_000
 ) -> BaseCacheManager:
     """Factory function to get the appropriate cache manager based on environment variable."""
     print(f"{cache_dir=}, {use_redis=}, {num_bins=}")

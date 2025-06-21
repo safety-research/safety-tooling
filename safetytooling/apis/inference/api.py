@@ -90,7 +90,7 @@ class InferenceAPI:
         vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
         no_cache: bool = False,
         oai_embedding_batch_size: int = 2048,
-        max_mem_usage_mb: float | None = None,
+        max_mem_usage_mb: float = 5_000,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
