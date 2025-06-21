@@ -26,6 +26,7 @@ class ExperimentConfigBase:
     # If None, defaults to output_dir / "prompt-history"
     enable_prompt_history: bool = False
     prompt_history_dir: Path | None = None
+    max_mem_usage_mb: float = 5_000
 
     log_to_file: bool = True
     openai_fraction_rate_limit: float = 0.5
@@ -92,6 +93,7 @@ class ExperimentConfigBase:
                 huggingface_num_threads=self.huggingface_num_threads,
                 vllm_num_threads=self.vllm_num_threads,
                 cache_dir=self.cache_dir,
+                max_mem_usage_mb=self.max_mem_usage_mb,
                 prompt_history_dir=self.prompt_history_dir,
                 use_redis=self.use_redis,
                 print_prompt_and_response=self.print_prompt_and_response,
