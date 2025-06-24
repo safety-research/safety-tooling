@@ -83,6 +83,8 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         validation_file=val_file_id,
         model=cfg.model,
         n_epochs=cfg.n_epochs,
+        n_checkpoints=cfg.n_evals,
+        n_evals=cfg.n_evals,
         batch_size=cfg.batch_size,
         learning_rate=cfg.learning_rate,
         lora=cfg.lora,
@@ -174,6 +176,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
             ft_job_dict["lora_r"] = cfg.lora_r
             ft_job_dict["lora_alpha"] = cfg.lora_alpha
             ft_job_dict["lora_dropout"] = cfg.lora_dropout
+            ft_job_dict["n_evals"] = cfg.n_evals
             with open(save_config_path, "w") as f:
                 json.dump(ft_job_dict, f, indent=2)
             LOGGER.info("Config saved.")
@@ -184,6 +187,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
 @dataclasses.dataclass
 class TogetherFTConfig(FinetuneConfig):
     learning_rate: float = 1e-5
+    n_evals: int = 1  # The number of evaluations to run and checkpoints to save.
     lora: bool = False
     lora_r: int = 8
     lora_alpha: int = 8
