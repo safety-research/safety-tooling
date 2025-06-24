@@ -45,6 +45,7 @@ from .openrouter import OPENROUTER_MODELS, OpenRouterChatModel
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
+from .deepinfra import DEEPINFRA_MODELS, DeepInfraModel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ class InferenceAPI:
         openrouter_num_threads: int = 80,
         vllm_num_threads: int = 8,
         deepseek_num_threads: int = 20,
+        deepinfra_num_threads: int = 40,
         prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
         use_redis: bool = False,
@@ -117,6 +119,7 @@ class InferenceAPI:
         self.huggingface_num_threads = huggingface_num_threads
         self.vllm_num_threads = vllm_num_threads
         self.deepseek_num_threads = deepseek_num_threads
+        self.deepinfra_num_threads = deepinfra_num_threads
         self.empty_completion_threshold = empty_completion_threshold
         self.gpt4o_s2s_rpm_cap = gpt4o_s2s_rpm_cap
         self.init_time = time.time()
@@ -224,6 +227,12 @@ class InferenceAPI:
             openai_api_key=os.environ.get("DEEPSEEK_API_KEY", None),
         )
 
+        self._deepinfra = DeepInfraModel(
+            num_threads=self.deepinfra_num_threads,
+            prompt_history_dir=self.prompt_history_dir,
+            api_key=os.environ.get("OPENROUTER_API_KEY", None),
+        )
+
         self._batch_models = {}
 
         # Batched models require GPU and we only want to initialize them if we have a GPU available
@@ -257,6 +266,7 @@ class InferenceAPI:
             "openrouter": self._openrouter,
             "vllm": self._vllm,
             "deepseek": self._deepseek,
+            "deepinfra": self._deepinfra,
         }
 
     @classmethod
@@ -303,6 +313,8 @@ class InferenceAPI:
             return class_for_model
         elif model_id in S2S_MODELS:
             return self._openai_s2s
+        elif model_id in DEEPINFRA_MODELS:
+            return self._deepinfra
         elif model_id in TOGETHER_MODELS or model_id.startswith("scalesafetyresearch"):
             return self._together
         elif model_id in OPENROUTER_MODELS or model_id.startswith("openrouter/"):
@@ -563,9 +575,27 @@ class InferenceAPI:
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                 **kwargs,
             )
+        elif isinstance(model_class, DeepInfraModel):
+            candidate_responses = await model_class(
+                model_id,
+                prompt,
+                self.print_prompt_and_response or print_prompt_and_response,
+                max_attempts_per_api_call,
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                **kwargs,
+            )
+        elif isinstance(model_class, VLLMChatModel):
+            candidate_responses = await model_class(
+                model_id,
+                prompt,
+                self.print_prompt_and_response or print_prompt_and_response,
+                max_attempts_per_api_call,
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                **kwargs,
+            )
         else:
             # At this point, the request should be for DeepSeek or OpenAI, which use the same API.
-            expected_chat_models = [OpenAIChatModel, OpenAICompletionModel]
+            expected_chat_models = [OpenAIChatModel, OpenAICompletionModel, DeepInfraModel]
             if not any(isinstance(model_class, model) for model in expected_chat_models):
                 raise RuntimeError(
                     f"Got unexpected ChatModel class: {model_class}. Make sure to implement logic to handle InferenceAPI.__call__ for your custom ChatModel. Or, add your ChatModel class to expected_chat_models above."

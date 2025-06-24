@@ -15,7 +15,15 @@ OPENROUTER_MODELS = {
     "google/gemini-2.0-flash-001",
     "mistral/ministral-8b",
     "mistralai/mistral-large-2411",
+    "google/gemini-2.5-flash-preview",
+    "google/gemini-2.0-flash-001",
+    "deepseek/deepseek-v3-base:free",
+    "deepseek/deepseek-r1-zero:free",
+    "meta-llama/llama-3.1-405b",
+    "meta-llama/llama-3.1-405b:free",
+    "nousresearch/hermes-3-llama-3.1-70b",
 }
+
 LOGGER = logging.getLogger(__name__)
 
 
