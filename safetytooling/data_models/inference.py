@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union, List
 
 import openai
 import pydantic
@@ -23,6 +23,7 @@ class LLMParams(HashableBaseModel):
     seed: int | None = None
     logit_bias: dict[int, float] | None = None
     stop: list[str] | None = None
+    tools: tuple[str, ...] | None = None
     model_config = pydantic.ConfigDict(extra="allow")  # Allow unknown kwargs e.g. response_format for OpenAI
     unknown_kwargs: dict[str, Any] = pydantic.Field(default_factory=dict)
 
@@ -77,6 +78,7 @@ class LLMResponse(pydantic.BaseModel):
     api_failures: int | None = 0
     batch_custom_id: str | None = None
     reasoning_content: str | None = None
+    tool_use_content: List[Dict[str, Any]] | None = None
     usage: Optional[Usage] = None
 
     model_config = pydantic.ConfigDict(protected_namespaces=())
@@ -93,7 +95,7 @@ class LLMResponse(pydantic.BaseModel):
             return StopReason.CONTENT_FILTER
         elif v in ["prompt_blocked"]:
             return StopReason.PROMPT_BLOCKED
-        elif v in ["api_error"]:
+        elif v in ["api_error", "error"]:
             return StopReason.API_ERROR
         elif v in ["recitation"]:
             return GeminiStopReason.RECITATION
