@@ -92,6 +92,8 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         lora_r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         lora_dropout=cfg.lora_dropout,
+        wandb_api_key=os.environ.get("WANDB_API_KEY"),
+        wandb_project_name=cfg.wandb_project_name,
     )
     LOGGER.info(f"Started fine-tuning job: {ft_job.id}")
 
@@ -159,9 +161,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         if cfg.save_folder.endswith("/"):
             cfg.save_folder += f"{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{output_name}"
         else:
-            cfg.save_folder += (
-                f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{output_name}"
-            )
+            cfg.save_folder += f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{output_name}"
 
         os.makedirs(cfg.save_folder, exist_ok=True)
         if cfg.save_model:
