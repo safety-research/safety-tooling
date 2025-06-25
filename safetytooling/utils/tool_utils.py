@@ -57,3 +57,47 @@ def convert_tools_to_anthropic(tools: List[BaseTool]) -> List[Dict[str, Any]]:
             continue
 
     return anthropic_tools
+
+
+def convert_tool_to_openai(tool: BaseTool) -> Dict[str, Any]:
+    """Convert a single LangChain tool to OpenAI tool format."""
+
+    # Get the parameters schema
+    parameters = {"type": "object", "properties": {}, "required": []}
+
+    if tool.args_schema:
+        try:
+            schema = tool.args_schema.schema()
+            parameters = {
+                "type": "object",
+                "properties": schema.get("properties", {}),
+                "required": schema.get("required", []),
+            }
+        except Exception as e:
+            logging.warning(f"Failed to get schema for tool {tool.name}: {e}")
+
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": parameters,
+        },
+    }
+
+
+def convert_tools_to_openai(tools: List[BaseTool]) -> List[Dict[str, Any]]:
+    """Convert a list of LangChain tools to OpenAI tool format."""
+    if not tools:
+        return []
+
+    openai_tools = []
+    for tool in tools:
+        try:
+            openai_tool = convert_tool_to_openai(tool)
+            openai_tools.append(openai_tool)
+        except Exception as e:
+            logging.warning(f"Failed to convert tool {getattr(tool, 'name', 'unknown')}: {e}")
+            continue
+
+    return openai_tools

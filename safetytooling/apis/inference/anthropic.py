@@ -35,6 +35,9 @@ VISION_MODELS = {
     "claude-3-opus-20240229",
     "claude-3-7-sonnet-20250219",
 }
+
+ANTHROPIC_TOOL_MODELS = ANTHROPIC_MODELS
+
 LOGGER = logging.getLogger(__name__)
 
 
