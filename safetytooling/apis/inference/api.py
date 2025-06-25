@@ -11,6 +11,7 @@ from typing import Awaitable, Callable, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
+from langchain.tools import BaseTool
 from tqdm.auto import tqdm
 from typing_extensions import Self
 
@@ -26,10 +27,12 @@ from safetytooling.data_models import (
     Prompt,
     TaggedModeration,
 )
+from safetytooling.utils.tool_utils import make_tools_hashable
 from safetytooling.utils.utils import get_repo_root
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
 from .cache_manager import BaseCacheManager, get_cache_manager
+from .deepinfra import DEEPINFRA_MODELS, DeepInfraModel
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
@@ -45,7 +48,6 @@ from .openrouter import OPENROUTER_MODELS, OpenRouterChatModel
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
-from .deepinfra import DEEPINFRA_MODELS, DeepInfraModel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +56,9 @@ _DEFAULT_GLOBAL_INFERENCE_API: InferenceAPI | None = None
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODELS = {"deepseek-chat", "deepseek-reasoner"}
+TOOL_MODELS = {
+    *ANTHROPIC_MODELS,
+}
 
 
 class InferenceAPI:
@@ -399,6 +404,7 @@ class InferenceAPI:
         huggingface_model_url: str | None = None,
         force_provider: str | None = None,
         use_cache: bool = True,
+        tools: list[BaseTool] | None = None,
         **kwargs,
     ) -> list[LLMResponse]:
         """
@@ -425,9 +431,13 @@ class InferenceAPI:
             huggingface_model_url: If specified, use this model URL for HuggingFace models.
             force_provider: If specified, force the API call to use the specified provider.
             use_cache: Whether to use the cache.
+            tools: List of tools to use for the model.
         """
         if self.no_cache:
             use_cache = False
+
+        if tools is not None:
+            assert model_id in TOOL_MODELS, f"Model {model_id} does not support tools"
 
         model_class = self.model_id_to_class(model_id, gemini_use_vertexai, force_provider)
 
@@ -441,6 +451,7 @@ class InferenceAPI:
             n=n,
             insufficient_valids_behaviour=insufficient_valids_behaviour,
             num_candidates_per_completion=num_candidates_per_completion,
+            tools=make_tools_hashable(tools),
             **kwargs,
         )
         cached_responses, cached_results, failed_cache_responses = [], [], []
@@ -502,6 +513,7 @@ class InferenceAPI:
                                 self.print_prompt_and_response or print_prompt_and_response,
                                 max_attempts_per_api_call,
                                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                                tools=tools,
                                 **kwargs,
                             )
                             for _ in range(num_candidates)
