@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional, Union, List
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import openai
 import pydantic
@@ -8,6 +8,7 @@ import pydantic
 from safetytooling.data_models.utils import GeminiBlockReason, GeminiStopReason, SafetyRatings
 
 from .hashable import HashableBaseModel
+from .messages import ChatMessage
 
 
 class LLMParams(HashableBaseModel):
@@ -67,6 +68,7 @@ class Usage(pydantic.BaseModel):
 class LLMResponse(pydantic.BaseModel):
     model_id: str
     completion: str
+    generated_content: List[ChatMessage]
     stop_reason: StopReason | GeminiStopReason | GeminiBlockReason
     cost: float = 0
     audio_out: str | Path | None = None
@@ -77,8 +79,6 @@ class LLMResponse(pydantic.BaseModel):
     recitation_retries: int | None = None
     api_failures: int | None = 0
     batch_custom_id: str | None = None
-    reasoning_content: str | None = None
-    tool_use_content: List[Dict[str, Any]] | None = None
     usage: Optional[Usage] = None
 
     model_config = pydantic.ConfigDict(protected_namespaces=())

@@ -41,6 +41,7 @@ class MessageRole(str, Enum):
     assistant = "assistant"
     audio = "audio"
     image = "image"
+    tool = "tool"
     # none is designed for completion tasks where no role / tag will be added
     none = "none"
 
@@ -57,7 +58,7 @@ class ChatCompletionDeepSeekAssistantMessageParam(openai.types.chat.ChatCompleti
 
 class ChatMessage(HashableBaseModel):
     role: MessageRole
-    content: str | Path
+    content: str | Path | List[Dict[str, Any]]
 
     def __post_init__(self):
         if isinstance(self.content, Path):

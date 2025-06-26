@@ -11,8 +11,9 @@ from anthropic.types.message_create_params import MessageCreateParamsNonStreamin
 from anthropic.types.messages.batch_create_params import Request
 from langchain.tools import BaseTool
 
-from safetytooling.data_models import LLMResponse, Prompt, Usage
+from safetytooling.data_models import ChatMessage, LLMResponse, MessageRole, Prompt, Usage
 from safetytooling.utils.tool_utils import convert_tools_to_anthropic
+
 from .model import InferenceAPIModel
 
 ANTHROPIC_MODELS = {
@@ -58,13 +59,51 @@ class AnthropicChatModel(InferenceAPIModel):
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
         self.kwarg_change_name = {"stop": "stop_sequences"}
 
+    def _convert_content_blocks_to_list(self, content_blocks) -> list:
+        """Convert Anthropic content blocks to a serializable format."""
+        result = []
+        for block in content_blocks:
+            if hasattr(block, "model_dump"):
+                result.append(block.model_dump())
+            else:
+                # Fallback for blocks without model_dump
+                block_dict = {"type": block.type}
+                if block.type == "text":
+                    block_dict["text"] = block.text
+                elif block.type == "thinking":
+                    block_dict["thinking"] = block.thinking
+                    if hasattr(block, "signature"):
+                        block_dict["signature"] = block.signature
+                elif block.type == "redacted_thinking":
+                    block_dict["data"] = block.data
+                elif block.type == "tool_use":
+                    block_dict["id"] = block.id
+                    block_dict["name"] = block.name
+                    block_dict["input"] = block.input
+                else:
+                    block_dict["data"] = str(block)
+                result.append(block_dict)
+        return result
+
+    def _extract_text_completion(self, generated_content: list[ChatMessage]) -> str:
+        """Extract the final text completion from generated content."""
+        text_parts = []
+        for msg in generated_content:
+            if isinstance(msg.content, str):
+                text_parts.append(msg.content)
+            elif isinstance(msg.content, list):
+                # Extract text from content blocks
+                for block in msg.content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text_parts.append(block.get("text", ""))
+        return "\n\n".join(text_parts) if text_parts else ""
+
     async def _execute_tool_loop(self, chat_messages, model_id, sys_prompt, anthropic_tools, tools, **kwargs):
-        """Handle tool execution loop and return final response, tool use content, and reasoning content."""
+        """Handle tool execution loop and return all generated content."""
         current_messages = chat_messages.copy()
         total_usage = Usage(input_tokens=0, output_tokens=0)
-        tool_use_content = []
-        reasoning_content = None  # Store the first thinking block
-        
+        all_generated_content = []
+
         while True:
             response = await self.aclient.messages.create(
                 messages=current_messages,
@@ -80,11 +119,9 @@ class AnthropicChatModel(InferenceAPIModel):
                 total_usage.input_tokens += response.usage.input_tokens
                 total_usage.output_tokens += response.usage.output_tokens
 
-            # Extract reasoning content from the first thinking block if not already captured
-            if reasoning_content is None:
-                thinking_blocks = [block for block in response.content if block.type == "thinking"]
-                if thinking_blocks:
-                    reasoning_content = thinking_blocks[0].thinking
+            # Convert content blocks to serializable format and store as single message
+            content_list = self._convert_content_blocks_to_list(response.content)
+            all_generated_content.append(ChatMessage(role=MessageRole.assistant, content=content_list))
 
             # Check if Claude wants to use tools
             tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
@@ -92,15 +129,6 @@ class AnthropicChatModel(InferenceAPIModel):
             if not tool_use_blocks:
                 # No more tool use, we're done
                 break
-
-            # Convert response content to dicts and add to tool_use_content
-            # Skip thinking blocks as they should go to reasoning_content
-            for block in response.content:
-                if block.type != "thinking":  # Don't include thinking in tool_use_content
-                    if hasattr(block, 'model_dump'):
-                        tool_use_content.append(block.model_dump())
-                    else:
-                        tool_use_content.append({"type": "unknown", "content": str(block)})
 
             # Add Claude's response to the conversation
             current_messages.append({"role": "assistant", "content": response.content})
@@ -120,7 +148,6 @@ class AnthropicChatModel(InferenceAPIModel):
                             "content": str(tool_result),
                         }
                         tool_results.append(result_dict)
-                        tool_use_content.append(result_dict)
                     except Exception as e:
                         result_dict = {
                             "type": "tool_result",
@@ -129,7 +156,6 @@ class AnthropicChatModel(InferenceAPIModel):
                             "is_error": True,
                         }
                         tool_results.append(result_dict)
-                        tool_use_content.append(result_dict)
                 else:
                     result_dict = {
                         "type": "tool_result",
@@ -138,17 +164,12 @@ class AnthropicChatModel(InferenceAPIModel):
                         "is_error": True,
                     }
                     tool_results.append(result_dict)
-                    tool_use_content.append(result_dict)
 
-            # Add tool results to the conversation
+            # Add tool results to the conversation and generated content
             current_messages.append({"role": "user", "content": tool_results})
+            all_generated_content.append(ChatMessage(role=MessageRole.user, content=tool_results))
 
-        # Update the final response with accumulated usage
-        if hasattr(response, "usage") and response.usage:
-            response.usage.input_tokens = total_usage.input_tokens
-            response.usage.output_tokens = total_usage.output_tokens
-
-        return response, tool_use_content, reasoning_content
+        return response, all_generated_content, total_usage
 
     async def __call__(
         self,
@@ -177,7 +198,6 @@ class AnthropicChatModel(InferenceAPIModel):
                 del kwargs[k]
 
         # Special case: ignore seed parameter since it's used for caching in safety-tooling
-        # Other surplus parameters will still raise an error
         if "seed" in kwargs:
             del kwargs["seed"]
 
@@ -186,9 +206,10 @@ class AnthropicChatModel(InferenceAPIModel):
 
         LOGGER.debug(f"Making {model_id} call")
         response: anthropic.types.Message | None = None
-        tool_use_content = []
-        reasoning_content_from_tools = None
+        generated_content: list[ChatMessage] = []
+        total_usage = None
         duration = None
+        api_duration = None
 
         async with self.available_requests:
             error_list = []
@@ -198,7 +219,7 @@ class AnthropicChatModel(InferenceAPIModel):
 
                     # Handle tool execution if tools are provided
                     if anthropic_tools:
-                        response, tool_use_content, reasoning_content_from_tools = await self._execute_tool_loop(
+                        response, generated_content, total_usage = await self._execute_tool_loop(
                             chat_messages, model_id, sys_prompt, anthropic_tools, tools, **kwargs
                         )
                     else:
@@ -209,7 +230,15 @@ class AnthropicChatModel(InferenceAPIModel):
                             **kwargs,
                             **(dict(system=sys_prompt) if sys_prompt else {}),
                         )
-                        reasoning_content_from_tools = None
+                        # Convert content blocks to serializable format and store as single message
+                        content_list = self._convert_content_blocks_to_list(response.content)
+                        generated_content = [ChatMessage(role=MessageRole.assistant, content=content_list)]
+
+                        total_usage = (
+                            Usage(input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens)
+                            if response.usage
+                            else None
+                        )
 
                     api_duration = time.time() - api_start
                     if not is_valid(response):
@@ -226,9 +255,10 @@ class AnthropicChatModel(InferenceAPIModel):
                     await asyncio.sleep(1.5**i)
                 else:
                     break
-        
+
         duration = time.time() - start
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
+
         if response is None:
             if model_id == "research-claude-cabernet":
                 LOGGER.error(f"Failed to get a response for {prompt} from any API after {max_attempts} attempts.")
@@ -240,115 +270,40 @@ class AnthropicChatModel(InferenceAPIModel):
                 )
                 if n_prompt_blocked_errs > n_try_again_errs:
                     stop_reason = "prompt_blocked"
-                    response = LLMResponse(
-                        model_id=model_id,
-                        completion="",
-                        stop_reason=stop_reason,
-                        duration=duration,
-                        api_duration=api_duration,
-                        cost=0,
-                        usage=None,  # No usage data if response is None
-                        tool_use_content=tool_use_content,
-                    )
                 else:
-                    response = LLMResponse(
-                        model_id=model_id,
-                        completion="",
-                        stop_reason="api_error",
-                        duration=duration,
-                        api_duration=api_duration,
-                        cost=0,
-                        tool_use_content=tool_use_content,
-                    )
+                    stop_reason = "api_error"
+
+                response = LLMResponse(
+                    model_id=model_id,
+                    completion="",
+                    generated_content=[],
+                    stop_reason=stop_reason,
+                    duration=duration,
+                    api_duration=api_duration,
+                    cost=0,
+                    usage=None,
+                )
             else:
                 raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")
         else:
-            usage_data = response.usage  # Get usage data
-            current_usage = (
-                Usage(input_tokens=usage_data.input_tokens, output_tokens=usage_data.output_tokens)
-                if usage_data
-                else None
-            )
-            # when refusal classifier fires, response.content is []
-            is_reasoning = response.content[0].type == "thinking" if len(response.content) > 0 else False
-            # check whether request is for websearch tool
-            types = [c.type for c in response.content]
-            is_websearch = "web_search_tool_result" in types
-            has_tool_use = any(c.type == "tool_use" for c in response.content)
-            
-            assert (
-                is_reasoning or is_websearch or has_tool_use or len(response.content) <= 1
-            ), "Check that only 1 completion is returned when request is not for websearch tool use, tool use, or reasoning"
+            # Extract text completion from generated content
+            completion = self._extract_text_completion(generated_content)
 
-            if is_reasoning:
-                if not hasattr(response.content[-1], "text"):
-                    raise RuntimeError(f"Anthropic reasoning model {model_id} returned a response with no text")
-                # Use reasoning content from tool loop if available, otherwise extract from response
-                reasoning_content = (reasoning_content_from_tools if anthropic_tools 
-                                   else response.content[0].thinking)
-                response = LLMResponse(
-                    model_id=model_id,
-                    completion=response.content[-1].text,
-                    stop_reason=response.stop_reason,
-                    duration=duration,
-                    api_duration=api_duration,
-                    cost=0,
-                    reasoning_content=reasoning_content,
-                    usage=current_usage,  # Populate usage
-                    tool_use_content=tool_use_content,
-                )
-            elif is_websearch:
-                texts = [c.text for c in response.content if c.type == "text"]
-                # Use reasoning content from tool loop if available
-                reasoning_content = reasoning_content_from_tools if reasoning_content_from_tools else None
-                response = LLMResponse(
-                    model_id=model_id,
-                    completion="\n".join(texts),
-                    stop_reason=response.stop_reason,
-                    duration=duration,
-                    api_duration=api_duration,
-                    cost=0,
-                    usage=current_usage,  # Populate usage
-                    reasoning_content=reasoning_content,
-                    tool_use_content=tool_use_content,
-                )
-            elif has_tool_use:
-                # Handle tool use responses - extract text content
-                texts = [c.text for c in response.content if c.type == "text"]
-                # Use reasoning content from tool loop if available
-                reasoning_content = reasoning_content_from_tools if reasoning_content_from_tools else None
-                response = LLMResponse(
-                    model_id=model_id,
-                    completion="\n".join(texts) if texts else "",
-                    stop_reason=response.stop_reason,
-                    duration=duration,
-                    api_duration=api_duration,
-                    cost=0,
-                    usage=current_usage,
-                    reasoning_content=reasoning_content,
-                    tool_use_content=tool_use_content,
-                )
-            else:
-                # Use reasoning content from tool loop if available, otherwise extract from response if present
-                reasoning_content = None
-                if reasoning_content_from_tools:
-                    reasoning_content = reasoning_content_from_tools
-                elif len(response.content) > 0 and response.content[0].type == "thinking":
-                    reasoning_content = response.content[0].thinking
-                    
-                response = LLMResponse(
-                    model_id=model_id,
-                    completion=(
-                        response.content[0].text if len(response.content) > 0 else ""
-                    ),  # refusal classifier, return empty str
-                    stop_reason=response.stop_reason,
-                    duration=duration,
-                    api_duration=api_duration,
-                    cost=0,
-                    usage=current_usage,  # Populate usage
-                    reasoning_content=reasoning_content,
-                    tool_use_content=tool_use_content,
-                )
+            # Handle edge case where content is empty (e.g., refusal)
+            if len(response.content) == 0:
+                completion = ""
+                generated_content = []
+
+            response = LLMResponse(
+                model_id=model_id,
+                completion=completion,
+                generated_content=generated_content,
+                stop_reason=response.stop_reason,
+                duration=duration,
+                api_duration=api_duration,
+                cost=0,
+                usage=total_usage,
+            )
 
         responses = [response]
 
@@ -423,7 +378,6 @@ class AnthropicModelBatch:
 
     def prompts_to_requests(self, model_id: str, prompts: list[Prompt], max_tokens: int, **kwargs) -> list[Request]:
         # Special case: ignore seed parameter since it's used for caching in safety-tooling
-        # Other surplus parameters will still raise an error
         if "seed" in kwargs:
             del kwargs["seed"]
 
@@ -443,6 +397,39 @@ class AnthropicModelBatch:
                 )
             )
         return requests
+
+    def _convert_content_blocks_to_list(self, content_blocks) -> list:
+        """Convert Anthropic content blocks to a serializable format."""
+        result = []
+        for block in content_blocks:
+            if hasattr(block, "model_dump"):
+                result.append(block.model_dump())
+            else:
+                # Fallback for blocks without model_dump
+                block_dict = {"type": block.type}
+                if block.type == "text":
+                    block_dict["text"] = block.text
+                elif block.type == "thinking":
+                    block_dict["thinking"] = block.thinking
+                    if hasattr(block, "signature"):
+                        block_dict["signature"] = block.signature
+                else:
+                    block_dict["data"] = str(block)
+                result.append(block_dict)
+        return result
+
+    def _extract_text_completion(self, generated_content: list[ChatMessage]) -> str:
+        """Extract the final text completion from generated content."""
+        text_parts = []
+        for msg in generated_content:
+            if isinstance(msg.content, str):
+                text_parts.append(msg.content)
+            elif isinstance(msg.content, list):
+                # Extract text from content blocks
+                for block in msg.content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text_parts.append(block.get("text", ""))
+        return "\n".join(text_parts) if text_parts else ""
 
     async def __call__(
         self,
@@ -480,28 +467,25 @@ class AnthropicModelBatch:
                 content = result.result.message.content
                 usage_data = result.result.message.usage
 
-                # Safely extract text and thinking content
-                text_content = None
-                reasoning_content = None  # We can extract this even if not used by LLMResponse yet
+                # Convert content blocks to serializable format and store as single message
+                generated_content = []
                 if content:
-                    for block in content:
-                        if block.type == "text" and hasattr(block, "text"):
-                            text_content = block.text
-                        elif block.type == "thinking" and hasattr(block, "thinking"):
-                            reasoning_content = block.thinking
+                    content_list = self._convert_content_blocks_to_list(content)
+                    generated_content = [ChatMessage(role=MessageRole.assistant, content=content_list)]
 
-                text = text_content if text_content else ""
+                # Extract text completion
+                text = self._extract_text_completion(generated_content)
 
                 assert result.custom_id in set_custom_ids
                 responses_dict[result.custom_id] = LLMResponse(
                     model_id=model_id,
                     completion=text,
+                    generated_content=generated_content,
                     stop_reason=result.result.message.stop_reason,
                     duration=None,  # Batch does not track individual durations
                     api_duration=None,
                     cost=0,
                     batch_custom_id=result.custom_id,
-                    reasoning_content=reasoning_content,
                     usage=(
                         Usage(input_tokens=usage_data.input_tokens, output_tokens=usage_data.output_tokens)
                         if usage_data
