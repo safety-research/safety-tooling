@@ -21,7 +21,7 @@ class OpenAIEmbeddingModel:
         self.num_threads = 1
         self.batch_size = batch_size  # Max batch size for embedding endpoint
 
-       # Simple check for API key
+        # Simple check for API key
         if "OPENAI_API_KEY" in os.environ:
             self.aclient = openai.AsyncClient()
         else:
@@ -37,7 +37,7 @@ class OpenAIEmbeddingModel:
     ) -> EmbeddingResponseBase64:
         if self.aclient is None:
             raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
-        
+
         assert params.model_id in EMBEDDING_MODELS
 
         if params.dimensions is not None:

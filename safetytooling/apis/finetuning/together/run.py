@@ -8,8 +8,6 @@ import os
 from pathlib import Path
 
 import simple_parsing
-import wandb
-import wandb.sdk.wandb_run
 
 from safetytooling.data_models.finetune import FinetuneConfig
 from safetytooling.utils import utils
@@ -45,23 +43,6 @@ async def upload_finetuning_file(
         await asyncio.sleep(check_delay)
 
 
-def upload_file_to_wandb(
-    file_path: Path,
-    name: str,
-    type: str,
-    description: str,
-    wandb_run: wandb.sdk.wandb_run.Run,
-):
-    LOGGER.info(f"Uploading file '{name}' to wandb...")
-    artifact = wandb.Artifact(
-        name=name,
-        type=type,
-        description=description,
-    )
-    artifact.add_file(file_path.as_posix())
-    wandb_run.log_artifact(artifact)
-
-
 async def main(cfg: TogetherFTConfig, verbose: bool = True):
     """Run Together fine-tuning job with monitoring."""
     # TODO: potentially add training data checking
@@ -83,6 +64,8 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         validation_file=val_file_id,
         model=cfg.model,
         n_epochs=cfg.n_epochs,
+        n_checkpoints=cfg.n_evals,
+        n_evals=cfg.n_evals,
         batch_size=cfg.batch_size,
         learning_rate=cfg.learning_rate,
         lora=cfg.lora,
@@ -90,55 +73,16 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         lora_r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         lora_dropout=cfg.lora_dropout,
+        wandb_api_key=os.environ.get("WANDB_API_KEY"),
+        wandb_project_name=cfg.wandb_project_name,
     )
     LOGGER.info(f"Started fine-tuning job: {ft_job.id}")
-
-    wrun = None
-    if cfg.wandb_project_name is not None:
-        # Initialize wandb run
-        wrun = wandb.init(
-            project=cfg.wandb_project_name,
-            entity=cfg.wandb_entity,
-            config=dataclasses.asdict(cfg),
-            tags=cfg.tags,
-        )
-        assert isinstance(wrun, wandb.sdk.wandb_run.Run)
-
-        wrun.config.update(
-            {
-                "finetune_job_id": ft_job.id,
-                "train_file_id": train_file_id,
-                **({"val_file_id": val_file_id} if val_file_id is not None else {}),
-            }
-        )
-
-        # Upload files to wandb
-        upload_file_to_wandb(
-            file_path=cfg.train_file,
-            name=train_file_id,
-            type="together-finetune-training-file",
-            description="Training file for finetuning",
-            wandb_run=wrun,
-        )
-
-        if cfg.val_file is not None:
-            upload_file_to_wandb(
-                file_path=cfg.val_file,
-                name=val_file_id,
-                type="together-finetune-validation-file",
-                description="Validation file for finetuning",
-                wandb_run=wrun,
-            )
 
     LOGGER.info("Waiting for fine-tuning job to finish...")
     while True:
         status = client.fine_tuning.retrieve(ft_job.id)  # https://docs.together.ai/reference/get_fine-tunes-id
-        if wrun is not None:
-            wrun.summary.update({"together_job_status": status.status})
         if status.status == "completed":
             LOGGER.info("Fine-tuning job succeeded.")
-            if wrun is not None:
-                wrun.summary.update(status.model_dump())
             break
         elif status.status in ["error", "cancelled"]:
             LOGGER.error(f"Fine-tuning job failed: {status.status}")
@@ -146,20 +90,16 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
 
         await asyncio.sleep(10)
 
-    if wrun is not None:
-        wrun.finish()
     LOGGER.info(f"Fine-tuning job finished with id <ft_id>{ft_job.id}</ft_id>")
 
     if cfg.save_folder is not None:
-        assert ft_job.output_name is not None, "Output name is None"
-        ft_job.output_name = ft_job.output_name.replace("/", "|")
+        assert status.output_name is not None, "Output name is None"
+        output_name = status.output_name.replace("/", "|")
 
         if cfg.save_folder.endswith("/"):
-            cfg.save_folder += f"{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.output_name}"
+            cfg.save_folder += f"{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{output_name}"
         else:
-            cfg.save_folder += (
-                f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{ft_job.output_name}"
-            )
+            cfg.save_folder += f"/{cfg.model}/{cfg.train_file.name.split('/')[-1].split('.')[0]}[id]{output_name}"
 
         os.makedirs(cfg.save_folder, exist_ok=True)
         if cfg.save_model:
@@ -174,6 +114,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
             ft_job_dict["lora_r"] = cfg.lora_r
             ft_job_dict["lora_alpha"] = cfg.lora_alpha
             ft_job_dict["lora_dropout"] = cfg.lora_dropout
+            ft_job_dict["n_evals"] = cfg.n_evals
             with open(save_config_path, "w") as f:
                 json.dump(ft_job_dict, f, indent=2)
             LOGGER.info("Config saved.")
@@ -184,6 +125,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
 @dataclasses.dataclass
 class TogetherFTConfig(FinetuneConfig):
     learning_rate: float = 1e-5
+    n_evals: int = 1  # The number of evaluations to run and checkpoints to save.
     lora: bool = False
     lora_r: int = 8
     lora_alpha: int = 8

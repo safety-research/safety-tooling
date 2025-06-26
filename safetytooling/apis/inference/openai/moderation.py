@@ -27,14 +27,14 @@ class OpenAIModerationModel:
         """
         self.num_threads = num_threads
         self._batch_size = 32  # Max batch size for moderation endpoint
-        
+
         if "OPENAI_API_KEY" in os.environ:
             self.aclient = openai.AsyncClient()
         else:
             self.aclient = None
-        
+
         self.available_requests = asyncio.BoundedSemaphore(self.num_threads)
-    
+
     async def _single_moderation_request(
         self,
         model_id: str,
@@ -43,7 +43,7 @@ class OpenAIModerationModel:
     ) -> openai.types.ModerationCreateResponse:
         if self.aclient is None:
             raise RuntimeError("OPENAI_API_KEY environment variable must be set to use moderation")
-        
+
         assert len(texts) <= self._batch_size
 
         for i in range(max_attempts):
