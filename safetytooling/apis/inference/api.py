@@ -287,7 +287,7 @@ class InferenceAPI:
                 return self.provider_to_class[force_provider]
         elif model_id in COMPLETION_MODELS:
             return self._openai_completion
-        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt") or model_id.startswith("gpt"):
+        elif model_id in GPT_CHAT_MODELS or model_id.startswith("gpt") or any(m in model_id for m in GPT_CHAT_MODELS):
             return self._openai_chat
         elif model_id in ANTHROPIC_MODELS or model_id.startswith("claude"):
             return self._anthropic_chat

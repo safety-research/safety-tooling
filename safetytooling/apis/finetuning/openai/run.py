@@ -27,6 +27,7 @@ import openai
 import openai.types.fine_tuning
 from openai import APIConnectionError, RateLimitError
 from safetytooling.apis.finetuning.openai.check import openai_check_finetuning_data
+from safetytooling.apis.inference.openai import utils as openai_utils
 from safetytooling.data_models.finetune import FinetuneConfig
 from safetytooling.utils import utils
 
@@ -242,8 +243,13 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
             case "succeeded":
                 LOGGER.info("Fine-tuning job succeeded.")
                 wrun.summary.update(ft_job.model_dump())
-                assert ft_job.trained_tokens is not None
-                train_cost_usd = ft_job.trained_tokens * train_cost_est.cost_per_1k_tokens_usd / 1000
+                if cfg.model in openai_utils.FT_HOURLY_PRICING_MODELS:
+                    assert ft_job.finished_at is not None
+                    assert ft_job.created_at is not None
+                    train_cost_usd = train_cost_est.cost_per_hour_usd * (ft_job.finished_at - ft_job.created_at) / 3600
+                else:
+                    assert ft_job.trained_tokens is not None
+                    train_cost_usd = ft_job.trained_tokens * train_cost_est.cost_per_1k_tokens_usd / 1000
                 wrun.summary.update({"train_cost_usd": train_cost_usd})
                 break
 
