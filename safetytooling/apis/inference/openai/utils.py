@@ -334,3 +334,19 @@ def finetune_price_per_hour(model_id: str) -> float | None:
             return 100
         case _:
             return None
+
+
+def is_finetune_gpt_model(model_id: str) -> bool:
+    """
+    Check if the model is a finetune model of a GPT model.
+    Based on the format ft:base-model:org-id::ft-id
+    """
+    if not model_id.startswith("ft:"):
+        return False
+
+    parts = model_id.split(":")
+    if len(parts) < 4:
+        return False
+
+    base_model = parts[1]
+    return base_model in GPT_CHAT_MODELS
