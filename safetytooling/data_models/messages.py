@@ -21,7 +21,6 @@ from ..utils.image_utils import (
 )
 from ..utils.special_prompts import gopher_base_model_prompt
 from .hashable import HashableBaseModel
-from .inference import LLMResponse
 
 PRINT_COLORS = {
     "user": "cyan",
@@ -30,6 +29,7 @@ PRINT_COLORS = {
     "assistant": "light_green",
     "audio": "yellow",
     "image": "yellow",
+    "tool": "blue",
     "none": "cyan",
 }
 
@@ -42,6 +42,8 @@ class MessageRole(str, Enum):
     audio = "audio"
     image = "image"
     tool = "tool"
+    tool_call = "tool_call"
+    tool_result = "tool_result"
     # none is designed for completion tasks where no role / tag will be added
     none = "none"
 
@@ -58,7 +60,7 @@ class ChatCompletionDeepSeekAssistantMessageParam(openai.types.chat.ChatCompleti
 
 class ChatMessage(HashableBaseModel):
     role: MessageRole
-    content: str | Path | List[Dict[str, Any]]
+    content: str | Path | Dict[str, Any] | List[Dict[str, Any]]
 
     def __post_init__(self):
         if isinstance(self.content, Path):
@@ -68,7 +70,44 @@ class ChatMessage(HashableBaseModel):
         return f"{self.role}: {self.content}"
 
     def openai_format(self) -> openai.types.chat.ChatCompletionMessageParam:
-        return {"role": self.role.value, "content": self.content}
+        """Convert to OpenAI format, handling tool messages."""
+        if self.role == MessageRole.tool:
+            # Tool messages need special format
+            if isinstance(self.content, dict):
+                return {
+                    "role": "tool",
+                    "tool_call_id": self.content.get("tool_call_id"),
+                    "name": self.content.get("name", ""),
+                    "content": self.content.get("content", "")
+                }
+            else:
+                return {"role": "tool", "content": str(self.content)}
+        elif self.role == MessageRole.assistant and isinstance(self.content, list):
+            # Handle assistant messages with tool calls
+            tool_calls = []
+            text_content = ""
+            
+            for item in self.content:
+                if isinstance(item, dict):
+                    if item.get("type") == "tool_call":
+                        tool_calls.append({
+                            "id": item.get("id"),
+                            "type": "function",
+                            "function": item.get("function", {})
+                        })
+                    elif item.get("type") == "text":
+                        text_content = item.get("text", "")
+            
+            result = {"role": self.role.value}
+            if text_content:
+                result["content"] = text_content
+            if tool_calls:
+                result["tool_calls"] = tool_calls
+            
+            return result
+        else:
+            # Default behavior unchanged
+            return {"role": self.role.value, "content": self.content}
 
     def deepseek_format(
         self, is_prefix: bool = False
@@ -290,13 +329,16 @@ class Prompt(HashableBaseModel):
             case _:
                 return self.openai_format()
 
-    def openai_format(
-        self,
-    ) -> list[openai.types.chat.ChatCompletionMessageParam]:
-        if self.is_last_message_assistant():
-            raise ValueError(
-                f"OpenAI chat prompts cannot end with an assistant message. Got {self.messages[-1].role}: {self.messages[-1].content}"
-            )
+    def openai_format(self) -> list[openai.types.chat.ChatCompletionMessageParam]:
+        # Allow ending with tool messages
+        # if self.is_last_message_assistant() and not (
+        #     isinstance(self.messages[-1].content, list) and 
+        #     any(isinstance(item, dict) and item.get("type") == "tool_call" 
+        #         for item in self.messages[-1].content)
+        # ):
+        #     raise ValueError(
+        #         f"OpenAI chat prompts cannot end with a plain assistant message. Got {self.messages[-1].role}: {self.messages[-1].content}"
+        #     )
         if self.is_none_in_messages():
             raise ValueError(f"OpenAI chat prompts cannot have a None role. Got {self.messages}")
         if self.contains_image():
@@ -480,7 +522,7 @@ class Prompt(HashableBaseModel):
         out += "<GOPHER>"
         return Prompt(messages=[ChatMessage(role=MessageRole.none, content=out)])
 
-    def pretty_print(self, responses: list[LLMResponse], print_fn: Callable | None = None) -> None:
+    def pretty_print(self, responses: list["LLMResponse"], print_fn: Callable | None = None) -> None:
         if print_fn is None:
             print_fn = cprint
 

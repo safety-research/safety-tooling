@@ -96,6 +96,7 @@ class AnthropicChatModel(InferenceAPIModel):
                 for block in msg.content:
                     if isinstance(block, dict) and block.get("type") == "text":
                         text_parts.append(block.get("text", ""))
+        text_parts = [part for part in text_parts if part.strip() != ""]
         return "\n\n".join(text_parts) if text_parts else ""
 
     async def _execute_tool_loop(self, chat_messages, model_id, sys_prompt, anthropic_tools, tools, **kwargs):
@@ -141,7 +142,13 @@ class AnthropicChatModel(InferenceAPIModel):
                 if langchain_tool:
                     try:
                         # Execute the tool
-                        tool_result = langchain_tool.invoke(tool_block.input)
+                        if hasattr(langchain_tool, 'ainvoke'):
+                            tool_result = await langchain_tool.ainvoke(tool_block.input)
+                        elif hasattr(langchain_tool, 'invoke'):
+                            tool_result = langchain_tool.invoke(tool_block.input)
+                        else:
+                            raise ValueError(f"Tool {langchain_tool.name} does not have an invoke method")
+
                         result_dict = {
                             "type": "tool_result",
                             "tool_use_id": tool_block.id,
@@ -179,6 +186,7 @@ class AnthropicChatModel(InferenceAPIModel):
         max_attempts: int,
         is_valid=lambda x: True,
         tools: list[BaseTool] | None = None,
+        include_thinking_in_completion: bool = False,
         **kwargs,
     ) -> list[LLMResponse]:
         start = time.time()

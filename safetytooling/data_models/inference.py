@@ -68,9 +68,9 @@ class Usage(pydantic.BaseModel):
 class LLMResponse(pydantic.BaseModel):
     model_id: str
     completion: str
-    generated_content: List[ChatMessage]
     stop_reason: StopReason | GeminiStopReason | GeminiBlockReason
     cost: float = 0
+    generated_content: List[ChatMessage] | None = None
     audio_out: str | Path | None = None
     duration: float | None = None
     api_duration: float | None = None
@@ -79,7 +79,7 @@ class LLMResponse(pydantic.BaseModel):
     recitation_retries: int | None = None
     api_failures: int | None = 0
     batch_custom_id: str | None = None
-    usage: Optional[Usage] = None
+    usage: Usage | None = None
 
     model_config = pydantic.ConfigDict(protected_namespaces=())
 
