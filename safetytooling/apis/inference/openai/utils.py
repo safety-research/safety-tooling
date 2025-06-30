@@ -164,7 +164,7 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     Returns the (tokens per min, request per min) for the given model id.
     # go to: https://platform.openai.com/settings/organization/limits
     """
-    if "gpt-4o-mini" in model_id or "gpt-4.1-nano" in model_id:
+    if "gpt-4o-mini" in model_id or "gpt-4.1-mini" in model_id or "gpt-4.1-nano" in model_id:
         return 150_000_000, 30_000
     elif "gpt-4o" in model_id or "gpt-4.1" in model_id:
         return 30_000_000, 10_000
