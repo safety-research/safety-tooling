@@ -268,7 +268,7 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
                     train_cost_usd = train_cost_est.cost_per_hour_usd * (ft_job.finished_at - ft_job.created_at) / 3600
                 else:
                     assert ft_job.trained_tokens is not None
-                    train_cost_usd = ft_job.trained_tokens * train_cost_est.cost_per_1k_tokens_usd / 1000
+                    train_cost_usd = ft_job.trained_tokens * train_cost_est.cost_per_1m_tokens_usd / 1_000_000
                 wrun.summary.update({"train_cost_usd": train_cost_usd})
                 break
 
