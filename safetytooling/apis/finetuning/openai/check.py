@@ -99,7 +99,7 @@ def openai_check_finetuning_data(
     is_validation: Whether the file is contains validation data.
                    If False, the file contains training data.
     """
-    if method == "supervised":
+    if method in ["supervised", "reinforcement"]:
         prompts = [Prompt.model_validate(x) for x in utils.load_jsonl(dataset_path)]
     elif method == "dpo":
         preferred_prompts = [

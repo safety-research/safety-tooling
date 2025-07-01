@@ -115,6 +115,25 @@ async def queue_finetune(
                     },
                     validation_file=val_file_id,
                 )
+            elif cfg.method == "reinforcement":
+                with open(cfg.config.grader_config, "r") as f:
+                    grader = json.load(f)
+                ft_job = await client.fine_tuning.jobs.create(
+                    model=cfg.model,
+                    training_file=train_file_id,
+                    method={
+                        "type": "reinforcement",
+                        "reinforcement": {
+                            "hyperparameters": {
+                                "n_epochs": cfg.n_epochs,
+                                "learning_rate_multiplier": cfg.learning_rate_multiplier,
+                                "batch_size": cfg.batch_size,
+                            },
+                            "grader": grader,
+                        },
+                    },
+                    validation_file=val_file_id,
+                )
 
     return ft_job
 
@@ -317,11 +336,17 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
 
 
 @dataclasses.dataclass
+class ReinforcementConfig:
+    grader_config: str
+
+
+@dataclasses.dataclass
 class OpenAIFTConfig(FinetuneConfig):
     learning_rate_multiplier: float | str = "auto"
     batch_size: int | str = "auto"
     beta: float | str = "auto"  # for dpo
-    method: Literal["supervised", "dpo"] = "supervised"
+    method: Literal["supervised", "dpo", "reinforcement"] = "supervised"
+    config: ReinforcementConfig | None = None
 
 
 if __name__ == "__main__":
