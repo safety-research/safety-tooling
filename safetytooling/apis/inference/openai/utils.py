@@ -342,7 +342,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
 
 def finetune_price_per_token(model_id: str) -> float | None:
     """
-    Returns price per 1000 tokens.
+    Returns price per 1M tokens.
     Returns None if the model does not support fine-tuning.
 
     See https://openai.com/pricing and
@@ -350,30 +350,30 @@ def finetune_price_per_token(model_id: str) -> float | None:
     for details.
     """
     if "gpt-4.1-nano" in model_id:
-        return 0.0015
-    elif "gpt-4.1-mini" in model_id:
-        return 0.005
+        return 1.5
     elif "gpt-4o-mini" in model_id:
-        return 0.003
+        return 3
+    elif "gpt-4.1-mini" in model_id:
+        return 5
     elif "gpt-4o" in model_id or "gpt-4.1" in model_id:
-        return 0.025
+        return 25
     elif "ft:gpt-3.5-turbo" in model_id:
-        return 0.008
+        return 8
 
     match model_id:
         case "gpt-3.5-turbo-1106" | "gpt-3.5-turbo-0613" | "gpt-3.5-turbo":
-            return 0.008
+            return 8
         case "davinci-002":
-            return 0.006
+            return 6
         case "babbage-002":
-            return 0.0004
+            return 0.4
         case _:
             return None
 
 
 def finetune_price_per_hour(model_id: str) -> float | None:
     match model_id:
-        case "o4-mini-2025-04-16":
+        case "o4-mini" | "o4-mini-2025-04-16":
             return 100
         case _:
             return None

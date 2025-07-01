@@ -52,7 +52,7 @@ class FTDatasetCostEstimateHourly(FTDatasetCostEstimate):
 
 @dataclasses.dataclass
 class FTDatasetCostEstimatePerToken(FTDatasetCostEstimate):
-    cost_per_1k_tokens_usd: float = dataclasses.field(init=False)
+    cost_per_1m_tokens_usd: float = dataclasses.field(init=False)
     est_cost_per_epoch_usd: float = dataclasses.field(init=False)
     est_trained_tokens: int = dataclasses.field(init=False)
     est_cost_usd: float = dataclasses.field(init=False)
@@ -61,14 +61,14 @@ class FTDatasetCostEstimatePerToken(FTDatasetCostEstimate):
         if self.is_validation:
             (
                 _,
-                self.cost_per_1k_tokens_usd,
+                self.cost_per_1m_tokens_usd,
             ) = openai_utils.price_per_token(model_id=self.model_id)
         else:
             price = openai_utils.finetune_price_per_token(model_id=self.model_id)
             assert price is not None
-            self.cost_per_1k_tokens_usd = price
+            self.cost_per_1m_tokens_usd = price
 
-        self.est_cost_per_epoch_usd = self.cost_per_1k_tokens_usd / 1000 * self.est_trained_tokens_per_epoch
+        self.est_cost_per_epoch_usd = self.cost_per_1m_tokens_usd / 1_000_000 * self.est_trained_tokens_per_epoch
         self.est_cost_usd = self.est_cost_per_epoch_usd * self.n_epochs
         self.est_trained_tokens = self.est_trained_tokens_per_epoch * self.n_epochs
 
@@ -82,7 +82,7 @@ class FTDatasetCostEstimatePerToken(FTDatasetCostEstimate):
         logger.info(f"Estimated batch size: {self.est_batch_size}")
         logger.info(f"Estimated tokens trained per epoch: {self.est_trained_tokens_per_epoch}")
         logger.info(f"Estimated tokens trained (all epochs): {self.est_trained_tokens}")
-        logger.info(f"Cost per 1k tokens: ${self.cost_per_1k_tokens_usd}")
+        logger.info(f"Cost per 1M tokens: ${self.cost_per_1m_tokens_usd}")
         logger.info(f"Estimated cost per epoch: ${self.est_cost_per_epoch_usd}")
         logger.info(f"Estimated cost (all epochs): ${self.est_cost_usd}")
 
