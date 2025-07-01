@@ -26,13 +26,34 @@ class FTDatasetCostEstimate:
     total_tokens: int  # Can depend on model_id since different models may have different tokenization
     est_batch_size: int
 
-    # Training costs / context size per API
-    cost_per_1k_tokens_usd: float = dataclasses.field(init=False)
-
-    # Cost estimates
     est_trained_tokens_per_epoch: int  # Not the same as total_tokens due to batching and truncation effects
-    est_cost_per_epoch_usd: float = dataclasses.field(init=False)
 
+
+@dataclasses.dataclass
+class FTDatasetCostEstimateHourly(FTDatasetCostEstimate):
+    cost_per_hour_usd: float = dataclasses.field(init=False)
+    est_trained_tokens: int = dataclasses.field(init=False)
+    est_cost_usd: float = dataclasses.field(init=False)
+
+    def __post_init__(self):
+        price = openai_utils.finetune_price_per_hour(self.model_id)
+        assert price is not None
+        self.cost_per_hour_usd = price
+        self.est_cost_usd = self.cost_per_hour_usd
+        self.est_trained_tokens = self.est_trained_tokens_per_epoch * self.n_epochs
+
+    def log_cost_summary(self):
+        logger.info(f"Fine-tuning cost summary for {self.dataset_path}")
+        logger.info(f"Validation: {self.is_validation}")
+        logger.info(f"Model: {self.model_id}")
+        logger.info("Pricing model: HOURLY")
+        logger.info(f"Cost per hour: ${self.cost_per_hour_usd}")
+
+
+@dataclasses.dataclass
+class FTDatasetCostEstimatePerToken(FTDatasetCostEstimate):
+    cost_per_1k_tokens_usd: float = dataclasses.field(init=False)
+    est_cost_per_epoch_usd: float = dataclasses.field(init=False)
     est_trained_tokens: int = dataclasses.field(init=False)
     est_cost_usd: float = dataclasses.field(init=False)
 
@@ -48,21 +69,21 @@ class FTDatasetCostEstimate:
             self.cost_per_1k_tokens_usd = price
 
         self.est_cost_per_epoch_usd = self.cost_per_1k_tokens_usd / 1000 * self.est_trained_tokens_per_epoch
-
-        self.est_trained_tokens = self.est_trained_tokens_per_epoch * self.n_epochs
         self.est_cost_usd = self.est_cost_per_epoch_usd * self.n_epochs
+        self.est_trained_tokens = self.est_trained_tokens_per_epoch * self.n_epochs
 
     def log_cost_summary(self):
         logger.info(f"Fine-tuning cost summary for {self.dataset_path}")
         logger.info(f"Validation: {self.is_validation}")
         logger.info(f"Model: {self.model_id}")
+        logger.info("Pricing model: PER TOKEN")
         logger.info(f"Number of examples: {self.num_examples}")
         logger.info(f"Total tokens: {self.total_tokens}")
         logger.info(f"Estimated batch size: {self.est_batch_size}")
-        logger.info(f"Cost per 1k tokens: ${self.cost_per_1k_tokens_usd}")
         logger.info(f"Estimated tokens trained per epoch: {self.est_trained_tokens_per_epoch}")
-        logger.info(f"Estimated cost per epoch: ${self.est_cost_per_epoch_usd}")
         logger.info(f"Estimated tokens trained (all epochs): {self.est_trained_tokens}")
+        logger.info(f"Cost per 1k tokens: ${self.cost_per_1k_tokens_usd}")
+        logger.info(f"Estimated cost per epoch: ${self.est_cost_per_epoch_usd}")
         logger.info(f"Estimated cost (all epochs): ${self.est_cost_usd}")
 
 
@@ -72,13 +93,13 @@ def openai_check_finetuning_data(
     n_epochs: int = 1,
     is_validation: bool = False,
     verbose: bool = False,
-    method: Literal["supervised", "dpo"] = "supervised",
+    method: Literal["supervised", "dpo", "reinforcement"] = "supervised",
 ) -> FTDatasetCostEstimate:
     """
     is_validation: Whether the file is contains validation data.
                    If False, the file contains training data.
     """
-    if method == "supervised":
+    if method in ["supervised", "reinforcement"]:
         prompts = [Prompt.model_validate(x) for x in utils.load_jsonl(dataset_path)]
     elif method == "dpo":
         preferred_prompts = [
@@ -141,7 +162,7 @@ def openai_check_finetuning_data(
         batch_lengths = prompt_lengths[i : i + batch_size]
         tokens_per_epoch += min(max(batch_lengths), context_length) * len(batch_lengths)
 
-    return FTDatasetCostEstimate(
+    cost_estimate = FTDatasetCostEstimate(
         dataset_path=dataset_path,
         model_id=model_id,
         n_epochs=n_epochs,
@@ -151,3 +172,8 @@ def openai_check_finetuning_data(
         est_batch_size=batch_size,
         est_trained_tokens_per_epoch=tokens_per_epoch,
     )
+
+    if model_id in openai_utils.FT_HOURLY_PRICING_MODELS and not is_validation:
+        return FTDatasetCostEstimateHourly(**dataclasses.asdict(cost_estimate))
+    else:
+        return FTDatasetCostEstimatePerToken(**dataclasses.asdict(cost_estimate))

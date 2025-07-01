@@ -49,6 +49,7 @@ _GPT_4_MODELS = (
     "o1-preview-2024-09-12",
     "o1",
     "o1-2024-12-17",
+    "o4-mini-2025-04-16",
     "gpt-4o-mini",
     "gpt-4o-mini-2024-07-18",
     "gpt-4o",
@@ -94,6 +95,8 @@ OAI_FINETUNE_MODELS = (
 )
 S2S_MODELS = "gpt-4o-s2s"
 
+FT_HOURLY_PRICING_MODELS = ("o4-mini-2025-04-16",)
+
 
 def count_tokens(text: str, model_id: str) -> int:
     try:
@@ -113,7 +116,7 @@ def get_max_context_length(model_id: str) -> int:
         return 16_384
 
     match model_id:
-        case "o1" | "o1-2024-12-17" | "o3-mini" | "o3-mini-2025-01-31":
+        case "o1" | "o1-2024-12-17" | "o3-mini" | "o3-mini-2025-01-31" | "o4-mini-2025-04-16":
             return 200_000
         case (
             "o1-mini"
@@ -171,7 +174,7 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     match model_id:
         case "o1" | "o1-2024-12-17":
             return 30_000_000, 1_000
-        case "o1-mini" | "o1-mini-2024-09-12" | "o3-mini" | "o3-mini-2025-01-31":
+        case "o1-mini" | "o1-mini-2024-09-12" | "o3-mini" | "o3-mini-2025-01-31" | "o4-mini-2025-04-16":
             return 150_000_000, 30_000
         case "o1-preview" | "o1-preview-2024-09-12":
             return 30_000_000, 10_000
@@ -215,7 +218,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         prices = 15, 60
     elif model_id in ("o3-mini", "o3-mini-2025-01-31"):
         prices = 1.10, 4.40
-    elif model_id in ("o1-mini", "o1-mini-2024-09-12"):
+    elif model_id in ("o1-mini", "o1-mini-2024-09-12", "o4-mini-2025-04-16"):
         prices = 1.10, 4.40
     elif model_id in (
         "gpt-4.1-nano",
@@ -225,6 +228,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
     elif model_id in (
         "gpt-4.1-mini",
         "gpt-4.1-mini-2025-04-14",
+        "o4-mini-2025-04-16",
     ):
         prices = 0.4, 1.6
     elif model_id in (
@@ -322,3 +326,27 @@ def finetune_price_per_token(model_id: str) -> float | None:
             return 0.0004
         case _:
             return None
+
+
+def finetune_price_per_hour(model_id: str) -> float | None:
+    match model_id:
+        case "o4-mini-2025-04-16":
+            return 100
+        case _:
+            return None
+
+
+def is_finetune_gpt_model(model_id: str) -> bool:
+    """
+    Check if the model is a finetune model of a GPT model.
+    Based on the format ft:base-model:org-id::ft-id
+    """
+    if not model_id.startswith("ft:"):
+        return False
+
+    parts = model_id.split(":")
+    if len(parts) < 4:
+        return False
+
+    base_model = parts[1]
+    return base_model in GPT_CHAT_MODELS
