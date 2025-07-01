@@ -124,7 +124,18 @@ def get_max_context_length(model_id: str) -> int:
         return 16_384
 
     match model_id:
-        case "o1" | "o1-2024-12-17" | "o3-mini" | "o3-mini-2025-01-31" | "o3" | "o3-2025-04-16" | "o3-pro" | "o3-pro-2025-06-10" | "o4-mini" | "o4-mini-2025-04-16":
+        case (
+            "o1"
+            | "o1-2024-12-17"
+            | "o3-mini"
+            | "o3-mini-2025-01-31"
+            | "o3"
+            | "o3-2025-04-16"
+            | "o3-pro"
+            | "o3-pro-2025-06-10"
+            | "o4-mini"
+            | "o4-mini-2025-04-16"
+        ):
             return 200_000
         case (
             "o1-mini"
@@ -182,7 +193,16 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     match model_id:
         case "o1-mini" | "o1-mini-2024-09-12" | "o3-mini" | "o3-mini-2025-01-31" | "o4-mini" | "o4-mini-2025-04-16":
             return 150_000_000, 30_000
-        case "o1" | "o1-2024-12-17" | "o1-preview" | "o1-preview-2024-09-12" | "o3" | "o3-2025-04-16" | "o3-pro" | "o3-pro-2025-06-10":
+        case (
+            "o1"
+            | "o1-2024-12-17"
+            | "o1-preview"
+            | "o1-preview-2024-09-12"
+            | "o3"
+            | "o3-2025-04-16"
+            | "o3-pro"
+            | "o3-pro-2025-06-10"
+        ):
             return 30_000_000, 10_000
         case (
             "gpt-4-turbo"
@@ -233,9 +253,12 @@ def price_per_token(model_id: str) -> tuple[float, float]:
     ):
         prices = 15, 60
     elif model_id in (
-        "o4-mini", "o4-mini-2025-04-16",
-        "o3-mini", "o3-mini-2025-01-31",
-        "o1-mini", "o1-mini-2024-09-12"
+        "o4-mini",
+        "o4-mini-2025-04-16",
+        "o3-mini",
+        "o3-mini-2025-01-31",
+        "o1-mini",
+        "o1-mini-2024-09-12",
     ):
         prices = 1.1, 4.4
     elif model_id in (

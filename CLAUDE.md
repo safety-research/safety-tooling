@@ -89,7 +89,7 @@ When writing example code:
 For a comprehensive understanding of this repository's structure, codebase organization, and development guidelines, please refer to the [REPO_GUIDE.md](./REPO_GUIDE.md). This guide contains detailed information about:
 
 - Project architecture and module organization
-- Development workflows and best practices  
+- Development workflows and best practices
 - Contributing guidelines
 - Testing strategies
 
