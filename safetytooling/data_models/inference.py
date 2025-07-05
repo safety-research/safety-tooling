@@ -1,5 +1,7 @@
+from ast import Str
 from enum import Enum
 from pathlib import Path
+from tkinter import NO
 from typing import Any, Dict, Literal, Optional, Union
 
 import openai
@@ -46,6 +48,7 @@ class StopReason(str, Enum):
     API_ERROR = "api_error"
     PROMPT_BLOCKED = "prompt_blocked"
     UNKNOWN = "unknown"
+    TOOL_USE = "tool_use"
 
     def __str__(self):
         return self.value
@@ -62,6 +65,10 @@ class Usage(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(extra="ignore")
 
+class ToolUseBlock(pydantic.BaseModel):
+    id: str
+    name: str
+    input: dict[str, str]
 
 class LLMResponse(pydantic.BaseModel):
     model_id: str
@@ -78,6 +85,8 @@ class LLMResponse(pydantic.BaseModel):
     batch_custom_id: str | None = None
     reasoning_content: str | None = None
     usage: Optional[Usage] = None
+    tool_use_block: ToolUseBlock | None = None
+    content: list | str | None = None
 
     model_config = pydantic.ConfigDict(protected_namespaces=())
 
@@ -93,6 +102,8 @@ class LLMResponse(pydantic.BaseModel):
             return StopReason.CONTENT_FILTER
         elif v in ["prompt_blocked"]:
             return StopReason.PROMPT_BLOCKED
+        elif v in ["tool_use"]:
+            return StopReason.TOOL_USE
         elif v in ["api_error"]:
             return StopReason.API_ERROR
         elif v in ["recitation"]:

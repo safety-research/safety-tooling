@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, Literal
 
 import anthropic.types
 import numpy as np
@@ -54,10 +54,14 @@ class ChatCompletionDeepSeekAssistantMessageParam(openai.types.chat.ChatCompleti
     prefix: Optional[bool]
     """Whether the message is a prefill/prefix. Specifically for DeepSeek API."""
 
+class MessageContent(pydantic.BaseModel):
+    type: Literal["text", "tool_use", "tool_result"]
+    tool_use_id: str
+    content: str | List[str] | List[dict[str, str]] | Any
 
 class ChatMessage(HashableBaseModel):
     role: MessageRole
-    content: str | Path
+    content: str | Path | List[MessageContent] | List[anthropic.types.ContentBlock] | List[dict[str, str]] | List[str] | Any
 
     def __post_init__(self):
         if isinstance(self.content, Path):
@@ -67,15 +71,33 @@ class ChatMessage(HashableBaseModel):
         return f"{self.role}: {self.content}"
 
     def openai_format(self) -> openai.types.chat.ChatCompletionMessageParam:
-        return {"role": self.role.value, "content": self.content}
+        # Convert content to appropriate format for OpenAI
+        if isinstance(self.content, (str, Path)):
+            content = str(self.content)
+        elif isinstance(self.content, list):
+            # For lists, convert to string representation
+            content = str(self.content)
+        else:
+            content = str(self.content)
+        
+        return {"role": self.role.value, "content": content}
 
     def deepseek_format(
         self, is_prefix: bool = False
     ) -> Union[openai.types.chat.ChatCompletionMessageParam, ChatCompletionDeepSeekAssistantMessageParam]:
-        if is_prefix:
-            return {"role": self.role.value, "content": self.content, "prefix": True}
+        # Convert content to appropriate format for DeepSeek
+        if isinstance(self.content, (str, Path)):
+            content = str(self.content)
+        elif isinstance(self.content, list):
+            # For lists, convert to string representation
+            content = str(self.content)
         else:
-            return {"role": self.role.value, "content": self.content}
+            content = str(self.content)
+        
+        if is_prefix:
+            return {"role": self.role.value, "content": content, "prefix": True}  # type: ignore
+        else:
+            return {"role": self.role.value, "content": content}  # type: ignore
 
     def openai_image_format(self):
         # for images the format involves including images and user text in the same message
@@ -94,7 +116,8 @@ class ChatMessage(HashableBaseModel):
 
     def anthropic_format(self) -> anthropic.types.MessageParam:
         assert self.role.value in ("user", "assistant")
-        return anthropic.types.MessageParam(content=self.content, role=self.role.value)
+        messages = anthropic.types.MessageParam(content=self.content, role=self.role.value)
+        return messages
 
     def anthropic_image_format(self) -> Dict:
         if self.role == MessageRole.image:
@@ -333,9 +356,13 @@ class Prompt(HashableBaseModel):
 
         for msg in self.messages:
             if msg.role == MessageRole.audio:
-                messages.append(prepare_audio_part(msg.content, use_vertexai))
+                if isinstance(msg.content, (str, Path)):
+                    audio_file = str(msg.content) if isinstance(msg.content, Path) else msg.content
+                    messages.append(prepare_audio_part(audio_file, use_vertexai))
             elif msg.role == MessageRole.image:
-                messages.append(prepare_gemini_image(msg.content, use_vertexai))
+                if isinstance(msg.content, (str, Path)):
+                    image_file = str(msg.content) if isinstance(msg.content, Path) else msg.content
+                    messages.append(prepare_gemini_image(image_file, use_vertexai))
             elif msg.role == MessageRole.system:
                 system_prompt = str(msg.content)
             else:

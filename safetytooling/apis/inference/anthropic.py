@@ -11,6 +11,7 @@ from anthropic.types.message_create_params import MessageCreateParamsNonStreamin
 from anthropic.types.messages.batch_create_params import Request
 
 from safetytooling.data_models import LLMResponse, Prompt, Usage
+from safetytooling.data_models.inference import ToolUseBlock
 
 from .model import InferenceAPIModel
 
@@ -160,8 +161,12 @@ class AnthropicChatModel(InferenceAPIModel):
             # check whether request is for websearch tool
             types = [c.type for c in response.content]
             is_websearch = "web_search_tool_result" in types
+            has_tool_use = "tool_use" in types
+
+            tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
+
             assert (
-                is_reasoning or is_websearch or len(response.content) <= 1
+                is_reasoning or is_websearch or has_tool_use or len(response.content) <= 1
             ), "Check that only 1 completion is returned when request is not for websearch tool use or reasoning"
 
             if is_reasoning:
@@ -188,6 +193,23 @@ class AnthropicChatModel(InferenceAPIModel):
                     cost=0,
                     usage=current_usage,  # Populate usage
                 )
+            elif has_tool_use:
+                texts = [c.text if c.type == "text" else f"[{c.type}] tool: {c.name}, input:{c.input}" for c in response.content]
+                response = LLMResponse(
+                    model_id=model_id,
+                    completion="\n".join(texts),
+                    stop_reason="tool_use",
+                    duration=duration,
+                    api_duration=api_duration,
+                    cost=0,
+                    tool_use_block=ToolUseBlock(
+                        id=tool_use_blocks[-1].id,
+                        name=tool_use_blocks[-1].name,
+                        input=dict(**tool_use_blocks[-1].input),
+                    ).model_dump(),
+                    content = response.content,
+                    #usage=current_usage.model_dump(),  # Populate usage
+                )
             else:
                 response = LLMResponse(
                     model_id=model_id,
@@ -198,7 +220,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     duration=duration,
                     api_duration=api_duration,
                     cost=0,
-                    usage=current_usage,  # Populate usage
+                    usage=current_usage.model_dump(),  # Populate usage
                 )
 
         responses = [response]
