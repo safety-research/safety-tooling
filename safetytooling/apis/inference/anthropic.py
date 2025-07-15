@@ -164,6 +164,7 @@ class AnthropicChatModel(InferenceAPIModel):
             has_tool_use = "tool_use" in types
 
             tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
+            print(f"tool_use_blocks: {tool_use_blocks}")
 
             assert (
                 is_reasoning or is_websearch or has_tool_use or len(response.content) <= 1
@@ -202,11 +203,11 @@ class AnthropicChatModel(InferenceAPIModel):
                     duration=duration,
                     api_duration=api_duration,
                     cost=0,
-                    tool_use_block=ToolUseBlock(
-                        id=tool_use_blocks[-1].id,
-                        name=tool_use_blocks[-1].name,
-                        input=dict(**tool_use_blocks[-1].input),
-                    ).model_dump(),
+                    tool_use_blocks=[ToolUseBlock(
+                        id=tool_use_block.id,
+                        name=tool_use_block.name,
+                        input=dict(**tool_use_block.input),
+                    ).model_dump() for tool_use_block in tool_use_blocks],
                     content = response.content,
                     #usage=current_usage.model_dump(),  # Populate usage
                 )

@@ -85,7 +85,7 @@ class LLMResponse(pydantic.BaseModel):
     batch_custom_id: str | None = None
     reasoning_content: str | None = None
     usage: Optional[Usage] = None
-    tool_use_block: ToolUseBlock | None = None
+    tool_use_blocks: list[ToolUseBlock] | None = None
     content: list | str | None = None
 
     model_config = pydantic.ConfigDict(protected_namespaces=())

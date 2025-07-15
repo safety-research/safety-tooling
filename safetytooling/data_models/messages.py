@@ -315,10 +315,10 @@ class Prompt(HashableBaseModel):
     def openai_format(
         self,
     ) -> list[openai.types.chat.ChatCompletionMessageParam]:
-        if self.is_last_message_assistant():
-            raise ValueError(
-                f"OpenAI chat prompts cannot end with an assistant message. Got {self.messages[-1].role}: {self.messages[-1].content}"
-            )
+        # if self.is_last_message_assistant():
+        #     raise ValueError(
+        #         f"OpenAI chat prompts cannot end with an assistant message. Got {self.messages[-1].role}: {self.messages[-1].content}"
+        #     )
         if self.is_none_in_messages():
             raise ValueError(f"OpenAI chat prompts cannot have a None role. Got {self.messages}")
         if self.contains_image():
