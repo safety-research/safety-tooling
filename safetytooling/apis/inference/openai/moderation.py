@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from traceback import format_exc
-from typing import Awaitable
+from typing import Awaitable, Optional
 
 import openai
 import openai._models
@@ -19,6 +19,7 @@ class OpenAIModerationModel:
     def __init__(
         self,
         num_threads: int = 100,
+        base_url: Optional[str] = None
     ):
         """
         num_threads: number of concurrent requests to make to OpenAI API.
@@ -29,7 +30,7 @@ class OpenAIModerationModel:
         self._batch_size = 32  # Max batch size for moderation endpoint
 
         if "OPENAI_API_KEY" in os.environ:
-            self.aclient = openai.AsyncClient()
+            self.aclient = openai.AsyncClient(base_url=base_url)
         else:
             self.aclient = None
 
