@@ -16,11 +16,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class OpenAIModerationModel:
-    def __init__(
-        self,
-        num_threads: int = 100,
-        base_url: Optional[str] = None
-    ):
+    def __init__(self, num_threads: int = 100, base_url: Optional[str] = None):
         """
         num_threads: number of concurrent requests to make to OpenAI API.
         The moderation endpoint is supposed to have no rate limit, but we set
