@@ -76,7 +76,7 @@ class InferenceAPI:
         huggingface_num_threads: int = 100,
         together_num_threads: int = 80,
         openrouter_num_threads: int = 80,
-        vllm_num_threads: int = 8,
+        vllm_num_threads: int = 20,
         deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
@@ -214,6 +214,7 @@ class InferenceAPI:
             num_threads=vllm_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             vllm_base_url=self.vllm_base_url,
+            runpod_api_key=os.environ.get("RUNPOD_API_KEY", None),
         )
 
         # DeepSeek uses the OpenAI API
