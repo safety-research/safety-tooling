@@ -85,6 +85,7 @@ class AnthropicChatModel(InferenceAPIModel):
 
         async with self.available_requests:
             error_list = []
+            max_tokens = kwargs.pop("max_tokens", 2000)
             for i in range(max_attempts):
                 try:
                     api_start = time.time()
@@ -92,7 +93,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     response = await self.aclient.messages.create(
                         messages=chat_messages,
                         model=model_id,
-                        max_tokens=kwargs.pop("max_tokens", 2000),
+                        max_tokens=max_tokens,
                         **kwargs,
                         **(dict(system=sys_prompt) if sys_prompt else {}),
                     )
