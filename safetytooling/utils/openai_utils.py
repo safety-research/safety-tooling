@@ -5,7 +5,6 @@ import openai
 import openai.types
 import openai.types.chat
 import openai.types.chat.chat_completion
-import scipy.special
 import tiktoken
 
 from safetytooling.utils import utils
@@ -77,11 +76,12 @@ def get_top_chat_logprobs(
             max_tokens=1,
             n=1,
             logprobs=True,
-            top_logprobs=n_logprobs,   
+            top_logprobs=n_logprobs,
             seed=seed,
             stop=[],
             **kwargs,
         )
+
     base_resp = query_api()
 
     # Maps token_idx bytes to (logprob, token_str).

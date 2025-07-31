@@ -42,7 +42,7 @@ from .openai.completion import OpenAICompletionModel
 from .openai.embedding import OpenAIEmbeddingModel
 from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
-from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
+from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS, is_finetune_gpt_model
 from .openrouter import OPENROUTER_MODELS, OpenRouterChatModel, OPENROUTER_TOOL_MODELS
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
@@ -83,7 +83,7 @@ class InferenceAPI:
         huggingface_num_threads: int = 100,
         together_num_threads: int = 80,
         openrouter_num_threads: int = 80,
-        vllm_num_threads: int = 8,
+        vllm_num_threads: int = 20,
         deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
@@ -221,6 +221,7 @@ class InferenceAPI:
             num_threads=vllm_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             vllm_base_url=self.vllm_base_url,
+            runpod_api_key=os.environ.get("RUNPOD_API_KEY", None),
         )
 
         # DeepSeek uses the OpenAI API
@@ -294,7 +295,7 @@ class InferenceAPI:
                 return self.provider_to_class[force_provider]
         elif model_id in COMPLETION_MODELS:
             return self._openai_completion
-        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt") or model_id.startswith("gpt"):
+        elif model_id in GPT_CHAT_MODELS or model_id.startswith("gpt") or is_finetune_gpt_model(model_id):
             return self._openai_chat
         elif model_id in ANTHROPIC_MODELS or model_id.startswith("claude"):
             return self._anthropic_chat

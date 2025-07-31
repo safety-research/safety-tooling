@@ -86,7 +86,7 @@ class OpenAIS2SModel(InferenceAPIModel):
     async def connect(self):
         if self.api_key is None:
             raise RuntimeError("OPENAI_API_KEY environment variable must be set to use S2S model")
-     
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",

@@ -29,6 +29,7 @@ class VLLMChatModel(InferenceAPIModel):
         num_threads: int,
         prompt_history_dir: Path | None = None,
         vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
+        runpod_api_key: str | None = None,
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
@@ -38,6 +39,10 @@ class VLLMChatModel(InferenceAPIModel):
         self.vllm_base_url = vllm_base_url
         if self.vllm_base_url.endswith("v1"):
             self.vllm_base_url += "/chat/completions"
+
+        self.runpod_api_key = runpod_api_key
+        if self.runpod_api_key:
+            self.headers["Authorization"] = f"Bearer {self.runpod_api_key}"
 
         self.stop_reason_map = {
             "length": StopReason.MAX_TOKENS.value,
@@ -55,7 +60,7 @@ class VLLMChatModel(InferenceAPIModel):
                 raise RuntimeError(f"API Error: Status {response.status}, {reason}")
             return await response.json()
 
-    async def run_query(self, model_url: str, messages: list, params: dict) -> dict:
+    async def run_query(self, model_url: str, messages: list, params: dict, continue_final_message: bool = False) -> dict:
         # Check if the model URL is a non-chat endpoint
         ### TODO: Kinda jank, find a better solution
         if "/chat/" not in model_url:
@@ -71,6 +76,14 @@ class VLLMChatModel(InferenceAPIModel):
                 "messages": messages,
                 **{k: v for k, v in params.items() if k != "model"},
             }
+
+        # Add continue_final_message to payload if True
+        if continue_final_message:
+            payload["continue_final_message"] = True
+            payload["add_generation_prompt"] = False
+        else:
+            payload["continue_final_message"] = False
+            payload["add_generation_prompt"] = True
 
         async with aiohttp.ClientSession() as session:
             response = await self.query(model_url, payload, session)
@@ -132,8 +145,9 @@ class VLLMChatModel(InferenceAPIModel):
 
                     response_data = await self.run_query(
                         model_url,
-                        prompt.openai_format(),
+                        prompt.together_format(),
                         kwargs,
+                        continue_final_message=prompt.is_last_message_assistant(),
                     )
                     api_duration = time.time() - api_start
 
