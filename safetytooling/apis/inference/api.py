@@ -30,7 +30,7 @@ from safetytooling.data_models import (
 from safetytooling.utils.tool_utils import make_tools_hashable
 from safetytooling.utils.utils import get_repo_root
 
-from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel, ANTHROPIC_TOOL_MODELS
+from .anthropic import ANTHROPIC_MODELS, ANTHROPIC_TOOL_MODELS, AnthropicChatModel
 from .cache_manager import BaseCacheManager, get_cache_manager
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
@@ -43,7 +43,7 @@ from .openai.embedding import OpenAIEmbeddingModel
 from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS, is_finetune_gpt_model
-from .openrouter import OPENROUTER_MODELS, OpenRouterChatModel, OPENROUTER_TOOL_MODELS
+from .openrouter import OPENROUTER_MODELS, OPENROUTER_TOOL_MODELS, OpenRouterChatModel
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel

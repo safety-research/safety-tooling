@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import anthropic.types
 import numpy as np
@@ -8,6 +8,9 @@ import openai.types.chat
 import pydantic
 from termcolor import cprint
 from typing_extensions import Self
+
+if TYPE_CHECKING: # avoids circular import
+    from .inference import LLMResponse
 
 from ..utils.audio_utils import (
     get_audio_data,

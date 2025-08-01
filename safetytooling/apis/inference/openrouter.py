@@ -5,8 +5,8 @@ import time
 from pathlib import Path
 from traceback import format_exc
 
-from openai import AsyncOpenAI, BadRequestError
 from langchain.tools import BaseTool
+from openai import AsyncOpenAI, BadRequestError
 
 from safetytooling.data_models import ChatMessage, LLMResponse, MessageRole, Prompt
 from safetytooling.utils.tool_utils import convert_tools_to_openai
