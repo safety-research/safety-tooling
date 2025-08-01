@@ -37,7 +37,7 @@ OPENROUTER_MODELS = {
 # Models that support tool calling
 OPENROUTER_TOOL_MODELS = {
     "google/gemini-2.0-flash-001",
-    "google/gemini-2.5-flash-preview", 
+    "google/gemini-2.5-flash-preview",
     "mistral/ministral-8b",
     "mistralai/mistral-large-2411",
     "meta-llama/llama-3.1-405b",
@@ -94,23 +94,22 @@ class OpenRouterChatModel(InferenceAPIModel):
         # Handle assistant messages with potential tool calls
         if message.role == "assistant":
             content_parts = []
-            
+
             # Add text content if present
             if message.content:
                 content_parts.append({"type": "text", "text": message.content})
-            
+
             # Add tool calls if present
-            if hasattr(message, 'tool_calls') and message.tool_calls:
+            if hasattr(message, "tool_calls") and message.tool_calls:
                 for tool_call in message.tool_calls:
-                    content_parts.append({
-                        "type": "tool_call",
-                        "id": tool_call.id,
-                        "function": {
-                            "name": tool_call.function.name,
-                            "arguments": tool_call.function.arguments
+                    content_parts.append(
+                        {
+                            "type": "tool_call",
+                            "id": tool_call.id,
+                            "function": {"name": tool_call.function.name, "arguments": tool_call.function.arguments},
                         }
-                    })
-            
+                    )
+
             # Return appropriate format
             if not content_parts:
                 return ChatMessage(role=MessageRole.assistant, content="")
@@ -140,7 +139,7 @@ class OpenRouterChatModel(InferenceAPIModel):
         """Handle OpenAI-style tool execution loop and return all generated content."""
         current_messages = messages.copy()
         all_generated_content = []
-        
+
         while True:
             response_data = await self.aclient.chat.completions.create(
                 messages=current_messages,
@@ -158,22 +157,22 @@ class OpenRouterChatModel(InferenceAPIModel):
                 raise RuntimeError(f"Empty response from {model_id}")
 
             message = response_data.choices[0].message
-            
+
             # Convert to ChatMessage and add to generated content
             assistant_msg = self._convert_message_to_chat_message(message)
             all_generated_content.append(assistant_msg)
-            
+
             # Add to conversation in OpenAI format
             msg_dict = {
                 "role": "assistant",
                 "content": message.content,
             }
-            if hasattr(message, 'tool_calls') and message.tool_calls:
+            if hasattr(message, "tool_calls") and message.tool_calls:
                 msg_dict["tool_calls"] = message.tool_calls
             current_messages.append(msg_dict)
 
             # Check if there are tool calls
-            if not hasattr(message, 'tool_calls') or message.tool_calls is None:
+            if not hasattr(message, "tool_calls") or message.tool_calls is None:
                 # No more tool calls, we're done
                 break
 
@@ -185,13 +184,13 @@ class OpenRouterChatModel(InferenceAPIModel):
                     try:
                         # Parse arguments and execute the tool
                         tool_args = json.loads(tool_call.function.arguments)
-                        if hasattr(langchain_tool, 'ainvoke'):
+                        if hasattr(langchain_tool, "ainvoke"):
                             tool_result = await langchain_tool.ainvoke(tool_args)
-                        elif hasattr(langchain_tool, 'invoke'):
+                        elif hasattr(langchain_tool, "invoke"):
                             tool_result = langchain_tool.invoke(tool_args)
                         else:
                             raise ValueError(f"Tool {langchain_tool.name} does not have an invoke method")
-                        
+
                         # Create tool result ChatMessage
                         tool_msg = ChatMessage(
                             role=MessageRole.tool,
@@ -199,18 +198,20 @@ class OpenRouterChatModel(InferenceAPIModel):
                                 "tool_call_id": tool_call.id,
                                 "name": tool_call.function.name,
                                 "content": str(tool_result),
-                            }
+                            },
                         )
                         all_generated_content.append(tool_msg)
-                        
+
                         # Add to conversation in OpenAI format
-                        current_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "content": str(tool_result),
-                        })
-                        
+                        current_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_call.function.name,
+                                "content": str(tool_result),
+                            }
+                        )
+
                     except Exception as e:
                         # Create error tool result
                         error_msg = ChatMessage(
@@ -219,16 +220,18 @@ class OpenRouterChatModel(InferenceAPIModel):
                                 "tool_call_id": tool_call.id,
                                 "name": tool_call.function.name,
                                 "content": f"Error executing tool: {str(e)}",
-                            }
+                            },
                         )
                         all_generated_content.append(error_msg)
-                        
-                        current_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "content": f"Error executing tool: {str(e)}",
-                        })
+
+                        current_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_call.function.name,
+                                "content": f"Error executing tool: {str(e)}",
+                            }
+                        )
                 else:
                     # Tool not found error
                     error_msg = ChatMessage(
@@ -237,16 +240,18 @@ class OpenRouterChatModel(InferenceAPIModel):
                             "tool_call_id": tool_call.id,
                             "name": tool_call.function.name,
                             "content": f"Tool {tool_call.function.name} not found",
-                        }
+                        },
                     )
                     all_generated_content.append(error_msg)
-                    
-                    current_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_call.function.name,
-                        "content": f"Tool {tool_call.function.name} not found",
-                    })
+
+                    current_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "content": f"Tool {tool_call.function.name} not found",
+                        }
+                    )
 
         return response_data, all_generated_content
 
@@ -303,15 +308,23 @@ class OpenRouterChatModel(InferenceAPIModel):
                         )
                         # Convert single response to ChatMessage
                         if response_data.choices and response_data.choices[0].message:
-                            generated_content = [self._convert_message_to_chat_message(response_data.choices[0].message)]
+                            generated_content = [
+                                self._convert_message_to_chat_message(response_data.choices[0].message)
+                            ]
 
                     api_duration = time.time() - api_start
-                    
+
                     if (
                         response_data.choices is None
                         or len(response_data.choices) == 0
-                        or (response_data.choices[0].message.content is None or response_data.choices[0].message.content == "")
-                        and not (hasattr(response_data.choices[0].message, 'tool_calls') and response_data.choices[0].message.tool_calls)
+                        or (
+                            response_data.choices[0].message.content is None
+                            or response_data.choices[0].message.content == ""
+                        )
+                        and not (
+                            hasattr(response_data.choices[0].message, "tool_calls")
+                            and response_data.choices[0].message.tool_calls
+                        )
                     ):
                         # sometimes gemini will never return a response
                         if model_id == "google/gemini-2.0-flash-001":
@@ -356,26 +369,28 @@ class OpenRouterChatModel(InferenceAPIModel):
 
         # Extract text completion from generated content
         completion = self._extract_text_completion(generated_content)
-        
+
         # For multiple choices (n > 1), we only support non-tool scenarios
         if kwargs.get("n", 1) > 1:
             assert not tools, "Multiple choices not supported with tools"
             responses = []
             for choice in response_data.choices:
-                responses.append(LLMResponse(
-                    model_id=model_id,
-                    completion=choice.message.content or "",
-                    generated_content=[self._convert_message_to_chat_message(choice.message)],
-                    stop_reason=choice.finish_reason,
-                    api_duration=api_duration,
-                    duration=duration,
-                    cost=0,
-                    logprobs=(
-                        self.convert_top_logprobs(choice.logprobs)
-                        if hasattr(choice, "logprobs") and choice.logprobs is not None
-                        else None
-                    ),
-                ))
+                responses.append(
+                    LLMResponse(
+                        model_id=model_id,
+                        completion=choice.message.content or "",
+                        generated_content=[self._convert_message_to_chat_message(choice.message)],
+                        stop_reason=choice.finish_reason,
+                        api_duration=api_duration,
+                        duration=duration,
+                        cost=0,
+                        logprobs=(
+                            self.convert_top_logprobs(choice.logprobs)
+                            if hasattr(choice, "logprobs") and choice.logprobs is not None
+                            else None
+                        ),
+                    )
+                )
         else:
             # Single response with potential tool use
             responses = [
@@ -389,7 +404,8 @@ class OpenRouterChatModel(InferenceAPIModel):
                     cost=0,
                     logprobs=(
                         self.convert_top_logprobs(response_data.choices[0].logprobs)
-                        if hasattr(response_data.choices[0], "logprobs") and response_data.choices[0].logprobs is not None
+                        if hasattr(response_data.choices[0], "logprobs")
+                        and response_data.choices[0].logprobs is not None
                         else None
                     ),
                 )

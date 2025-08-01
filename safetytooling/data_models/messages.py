@@ -9,7 +9,7 @@ import pydantic
 from termcolor import cprint
 from typing_extensions import Self
 
-if TYPE_CHECKING: # avoids circular import
+if TYPE_CHECKING:  # avoids circular import
     from .inference import LLMResponse
 
 from ..utils.audio_utils import (
@@ -81,7 +81,7 @@ class ChatMessage(HashableBaseModel):
                     "role": "tool",
                     "tool_call_id": self.content.get("tool_call_id"),
                     "name": self.content.get("name", ""),
-                    "content": self.content.get("content", "")
+                    "content": self.content.get("content", ""),
                 }
             else:
                 return {"role": "tool", "content": str(self.content)}
@@ -89,24 +89,22 @@ class ChatMessage(HashableBaseModel):
             # Handle assistant messages with tool calls
             tool_calls = []
             text_content = ""
-            
+
             for item in self.content:
                 if isinstance(item, dict):
                     if item.get("type") == "tool_call":
-                        tool_calls.append({
-                            "id": item.get("id"),
-                            "type": "function",
-                            "function": item.get("function", {})
-                        })
+                        tool_calls.append(
+                            {"id": item.get("id"), "type": "function", "function": item.get("function", {})}
+                        )
                     elif item.get("type") == "text":
                         text_content = item.get("text", "")
-            
+
             result = {"role": self.role.value}
             if text_content:
                 result["content"] = text_content
             if tool_calls:
                 result["tool_calls"] = tool_calls
-            
+
             return result
         else:
             # Default behavior unchanged
@@ -335,8 +333,8 @@ class Prompt(HashableBaseModel):
     def openai_format(self) -> list[openai.types.chat.ChatCompletionMessageParam]:
         # Allow ending with tool messages
         # if self.is_last_message_assistant() and not (
-        #     isinstance(self.messages[-1].content, list) and 
-        #     any(isinstance(item, dict) and item.get("type") == "tool_call" 
+        #     isinstance(self.messages[-1].content, list) and
+        #     any(isinstance(item, dict) and item.get("type") == "tool_call"
         #         for item in self.messages[-1].content)
         # ):
         #     raise ValueError(

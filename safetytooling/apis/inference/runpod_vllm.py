@@ -60,7 +60,9 @@ class VLLMChatModel(InferenceAPIModel):
                 raise RuntimeError(f"API Error: Status {response.status}, {reason}")
             return await response.json()
 
-    async def run_query(self, model_url: str, messages: list, params: dict, continue_final_message: bool = False) -> dict:
+    async def run_query(
+        self, model_url: str, messages: list, params: dict, continue_final_message: bool = False
+    ) -> dict:
         # Check if the model URL is a non-chat endpoint
         ### TODO: Kinda jank, find a better solution
         if "/chat/" not in model_url:
@@ -186,7 +188,9 @@ class VLLMChatModel(InferenceAPIModel):
         responses = [
             LLMResponse(
                 model_id=model_id,
-                completion=choice["message"]["content"] if "/chat/" in model_url else choice["text"], # TODO: Kinda jank, find a better solution
+                completion=(
+                    choice["message"]["content"] if "/chat/" in model_url else choice["text"]
+                ),  # TODO: Kinda jank, find a better solution
                 stop_reason=choice["finish_reason"],
                 api_duration=api_duration,
                 duration=duration,

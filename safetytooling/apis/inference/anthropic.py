@@ -142,9 +142,9 @@ class AnthropicChatModel(InferenceAPIModel):
                 if langchain_tool:
                     try:
                         # Execute the tool
-                        if hasattr(langchain_tool, 'ainvoke'):
+                        if hasattr(langchain_tool, "ainvoke"):
                             tool_result = await langchain_tool.ainvoke(tool_block.input)
-                        elif hasattr(langchain_tool, 'invoke'):
+                        elif hasattr(langchain_tool, "invoke"):
                             tool_result = langchain_tool.invoke(tool_block.input)
                         else:
                             raise ValueError(f"Tool {langchain_tool.name} does not have an invoke method")
