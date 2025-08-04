@@ -156,6 +156,10 @@ class AnthropicChatModel(InferenceAPIModel):
                         }
                         tool_results.append(result_dict)
                     except Exception as e:
+                        error_info = (
+                            f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
+                        )
+                        LOGGER.warn(f"Encountered tool call {langchain_tool.name} error: {error_info}, passing error to LLM.")
                         result_dict = {
                             "type": "tool_result",
                             "tool_use_id": tool_block.id,
