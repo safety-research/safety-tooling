@@ -47,6 +47,7 @@ class StopReason(str, Enum):
     CONTENT_FILTER = "content_filter"
     API_ERROR = "api_error"
     PROMPT_BLOCKED = "prompt_blocked"
+    TOOL_USE = "tool_use"
     UNKNOWN = "unknown"
 
     def __str__(self):
@@ -97,6 +98,8 @@ class LLMResponse(pydantic.BaseModel):
             return StopReason.PROMPT_BLOCKED
         elif v in ["api_error", "error"]:
             return StopReason.API_ERROR
+        elif v in ["tool_use"]:
+            return StopReason.TOOL_USE
         elif v in ["recitation"]:
             return GeminiStopReason.RECITATION
         elif v in ["safety"]:
