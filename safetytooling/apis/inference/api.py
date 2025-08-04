@@ -619,6 +619,7 @@ class InferenceAPI:
                         max_attempts_per_api_call,
                         n=num_candidates,
                         is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                        tools=tools,
                         **kwargs,
                     )
 
