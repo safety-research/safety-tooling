@@ -54,23 +54,30 @@ async def test_tool_call():
             tools=tools,
         )
         assert len(resp[0].generated_content) == 3  # Should have assistant, tool output, assistant
+
+        # The assistant calling the tool
         assert resp[0].generated_content[0].role == MessageRole.assistant
         if model == "gpt-4o-mini":
+            # OpenAI models either call tools or say something, never both
             assert resp[0].generated_content[0].content["message"]["content"] is None
             tool_calls = resp[0].generated_content[0].content["message"]["tool_calls"]
             assert tool_calls is not None
             assert len(tool_calls) == 1
             assert tool_calls[0]["function"]["name"] == TOOL_NAME
         elif model == "claude-3-5-haiku-20241022":
+            # Claude can say things and also call tools, so don't assert content is None
             tool_use_content = [x for x in resp[0].generated_content[0].content if x["type"] == "tool_use"]
             assert len(tool_use_content) == 1
             assert tool_use_content[0]["name"] == TOOL_NAME
+
+        # The call to the tool
         assert resp[0].generated_content[1].role == MessageRole.tool
         tool_name = resp[0].generated_content[1].content["tool_name"]
         assert tool_name == TOOL_NAME
         tool_output = resp[0].generated_content[1].content["message"]
         assert tool_output == TOOL_OUTPUT
 
+        # This will have the response the assistant gives (usually like "The temprature is 42 degrees Fahrenheit.")
         assert resp[0].generated_content[2].role == MessageRole.assistant
 
 
