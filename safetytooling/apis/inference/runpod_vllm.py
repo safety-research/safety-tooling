@@ -14,6 +14,9 @@ from .model import InferenceAPIModel
 
 VLLM_MODELS = {
     "dummy": "https://pod-port.proxy.runpod.net/v1/chat/completions",
+    "meta-llama/Llama-3.1-70B": "https://98gzngudd59oss-8000.proxy.runpod.net/v1/completions",
+    "meta-llama/Llama-3.1-8B": "https://98gzngudd59oss-8000.proxy.runpod.net/v1/completions",
+    "google/gemma-3-27b-pt": "https://98gzngudd59oss-8000.proxy.runpod.net/v1/completions",
     # Add more models and their endpoints as needed
 }
 
@@ -58,17 +61,23 @@ class VLLMChatModel(InferenceAPIModel):
             return await response.json()
 
     async def run_query(
-        self,
-        model_url: str,
-        messages: list,
-        params: dict,
-        continue_final_message: bool = False,
+        self, model_url: str, messages: list, params: dict, continue_final_message: bool = False
     ) -> dict:
-        payload = {
-            "model": params.get("model", "default"),
-            "messages": messages,
-            **{k: v for k, v in params.items() if k != "model"},
-        }
+        # Check if the model URL is a non-chat endpoint
+        ### TODO: Kinda jank, find a better solution
+        if "/chat/" not in model_url:
+            assert len(messages) == 1, "Make sure that there is only one message with the entire prompt"
+            payload = {
+                "model": params.get("model", "default"),
+                "prompt": messages[0]["content"],
+                **{k: v for k, v in params.items() if k != "model"},
+            }
+        else:
+            payload = {
+                "model": params.get("model", "default"),
+                "messages": messages,
+                **{k: v for k, v in params.items() if k != "model"},
+            }
 
         # Add continue_final_message to payload if True
         if continue_final_message:
@@ -148,9 +157,15 @@ class VLLMChatModel(InferenceAPIModel):
                         LOGGER.error(f"Invalid response format: {response_data}")
                         raise RuntimeError(f"Invalid response format: {response_data}")
 
-                    if not all(is_valid(choice["message"]["content"]) for choice in response_data["choices"]):
-                        LOGGER.error(f"Invalid responses according to is_valid {response_data}")
-                        raise RuntimeError(f"Invalid responses according to is_valid {response_data}")
+                    ### TODO: Kinda jank, find a better solution
+                    if "/chat/" not in model_url:
+                        if not all(is_valid(choice["text"]) for choice in response_data["choices"]):
+                            LOGGER.error(f"Invalid responses according to is_valid {response_data}")
+                            raise RuntimeError(f"Invalid responses according to is_valid {response_data}")
+                    else:
+                        if not all(is_valid(choice["message"]["content"]) for choice in response_data["choices"]):
+                            LOGGER.error(f"Invalid responses according to is_valid {response_data}")
+                            raise RuntimeError(f"Invalid responses according to is_valid {response_data}")
             except TypeError as e:
                 raise e
             except Exception as e:
@@ -173,7 +188,9 @@ class VLLMChatModel(InferenceAPIModel):
         responses = [
             LLMResponse(
                 model_id=model_id,
-                completion=choice["message"]["content"],
+                completion=(
+                    choice["message"]["content"] if "/chat/" in model_url else choice["text"]
+                ),  # TODO: Kinda jank, find a better solution
                 stop_reason=choice["finish_reason"],
                 api_duration=api_duration,
                 duration=duration,

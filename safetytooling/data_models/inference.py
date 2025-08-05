@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import openai
 import pydantic
@@ -8,6 +8,7 @@ import pydantic
 from safetytooling.data_models.utils import GeminiBlockReason, GeminiStopReason, SafetyRatings
 
 from .hashable import HashableBaseModel
+from .messages import ChatMessage
 
 
 class LLMParams(HashableBaseModel):
@@ -23,6 +24,7 @@ class LLMParams(HashableBaseModel):
     seed: int | None = None
     logit_bias: dict[int, float] | None = None
     stop: list[str] | None = None
+    tools: tuple[str, ...] | None = None
     model_config = pydantic.ConfigDict(extra="allow")  # Allow unknown kwargs e.g. response_format for OpenAI
     unknown_kwargs: dict[str, Any] = pydantic.Field(default_factory=dict)
 
@@ -45,6 +47,7 @@ class StopReason(str, Enum):
     CONTENT_FILTER = "content_filter"
     API_ERROR = "api_error"
     PROMPT_BLOCKED = "prompt_blocked"
+    TOOL_USE = "tool_use"
     UNKNOWN = "unknown"
 
     def __str__(self):
@@ -68,6 +71,7 @@ class LLMResponse(pydantic.BaseModel):
     completion: str
     stop_reason: StopReason | GeminiStopReason | GeminiBlockReason
     cost: float = 0
+    generated_content: List[ChatMessage] | None = None
     audio_out: str | Path | None = None
     duration: float | None = None
     api_duration: float | None = None
@@ -76,8 +80,7 @@ class LLMResponse(pydantic.BaseModel):
     recitation_retries: int | None = None
     api_failures: int | None = 0
     batch_custom_id: str | None = None
-    reasoning_content: str | None = None
-    usage: Optional[Usage] = None
+    usage: Usage | None = None
 
     model_config = pydantic.ConfigDict(protected_namespaces=())
 
@@ -93,8 +96,10 @@ class LLMResponse(pydantic.BaseModel):
             return StopReason.CONTENT_FILTER
         elif v in ["prompt_blocked"]:
             return StopReason.PROMPT_BLOCKED
-        elif v in ["api_error"]:
+        elif v in ["api_error", "error"]:
             return StopReason.API_ERROR
+        elif v in ["tool_use"]:
+            return StopReason.TOOL_USE
         elif v in ["recitation"]:
             return GeminiStopReason.RECITATION
         elif v in ["safety"]:
