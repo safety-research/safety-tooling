@@ -188,7 +188,7 @@ class AnthropicChatModel(InferenceAPIModel):
                 message = tool_with_content_message.pop("content")
                 tool_with_content_message["message"] = message
                 tool_with_content_message.pop("type")  # don't need this
-                tool_with_content_message['tool_name'] = tool_block.name
+                tool_with_content_message["tool_name"] = tool_block.name
                 all_generated_content.append(ChatMessage(role=MessageRole.tool, content=tool_with_content_message))
                 print(tool_with_content_message)
 
