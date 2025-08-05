@@ -13,6 +13,7 @@ import pydantic
 import requests
 from langchain.tools import BaseTool
 from tenacity import retry, stop_after_attempt, wait_fixed
+from traceback import format_exc
 
 from safetytooling.data_models import LLMResponse, Prompt, Usage, ChatMessage, MessageRole
 from safetytooling.utils import math_utils
@@ -100,7 +101,7 @@ class OpenAIChatModel(OpenAIModel):
         return top_logprobs
 
 
-    async def _execute_tool_loop(self, chat_messages, model_id, openai_tools, api_func, **kwargs):
+    async def _execute_tool_loop(self, chat_messages, model_id, openai_tools, tools, api_func, **kwargs):
         """Handle tool execution loop and return all generated content."""
         current_messages = chat_messages.copy()
         total_usage = Usage(input_tokens=0, output_tokens=0)
@@ -113,21 +114,24 @@ class OpenAIChatModel(OpenAIModel):
             **kwargs,
         )
         if response.usage:
-            total_usage.input_tokens += response.usage.input_tokens
-            total_usage.output_tokens += response.usage.output_tokens
+            total_usage.input_tokens += response.usage.prompt_tokens
+            total_usage.output_tokens += response.usage.completion_tokens
         self._raise_any_response_errors(response)
         # remove n param so it's default 1 now
         n = kwargs.pop("n") if 'n' in kwargs else None
-
+        result_choices = []
         # for n>1, we need to run tool stuff on each choice seperately
         for choice in response.choices:
             choice_messages = copy.deepcopy(current_messages)
-            choice_generated_content = [ChatMessage(role=MessageRole.user, content=dict(choice))]
+            choice_generated_content = []
             while True:
+                choice_generated_content.append(ChatMessage(role=MessageRole.assistant, content=dict(choice)))
                 choice_messages.append(choice.message)
-                if len(choice.messages.tool_calls) == 0:
+                if choice.message.tool_calls is None or len(choice.message.tool_calls) == 0:
                     break
+                tool_results = []
                 for tool_call in choice.message.tool_calls:
+                    print(f"tool call {tool_call}")
                     langchain_tool = next((t for t in tools if t.name == tool_call.function.name), None)
                     if langchain_tool:
                         try:
@@ -169,23 +173,29 @@ class OpenAIChatModel(OpenAIModel):
                         }
                         tool_results.append(result_dict)
                     
+                # replace 'content' with 'message' so it looks nicer
                 for tool_result in tool_results:
-                    choice_generated_content.append(ChatMessage(role=MessageRole.tool, content=tool_result))
+                    tool_with_content_message = copy.deepcopy(tool_result)
+                    message = tool_with_content_message.pop("content")
+                    tool_with_content_message['message'] = message
+                    choice_generated_content.append(ChatMessage(role=MessageRole.tool, content=tool_with_content_message))
                 choice_messages.extend(tool_results)
+                print(choice_messages)
                 choice_response = await api_func(
                     messages=choice_messages,
                     model=model_id,
                     tools=openai_tools,
                     **kwargs,
                 )
+                print(choice_response)
                 self._raise_any_response_errors(choice_response)
                 if choice_response.usage:
-                    total_usage.input_tokens += choice_response.usage.input_tokens
-                    total_usage.output_tokens += choice_response.usage.output_tokens
+                    total_usage.input_tokens += choice_response.usage.prompt_tokens
+                    total_usage.output_tokens += choice_response.usage.completion_tokens
                 choice = choice_response.choices[0]
             all_generated_content.append(choice_generated_content)
-
-        return response, all_generated_content, total_usage
+            result_choices.append(choice)
+        return result_choices, all_generated_content, total_usage
 
 
     def _raise_any_response_errors(self, api_response: openai.types.chat.ChatCompletion):
@@ -257,6 +267,7 @@ class OpenAIChatModel(OpenAIModel):
                 **kwargs,
             )
             self._raise_any_response_errors(api_response)
+            choices = api_response.choices
             all_generated_content = [[ChatMessage(role=MessageRole.assistant, content=dict(choice))] for choice in api_response.choices]
             if api_response.usage is not None:
                 total_usage = Usage(
@@ -280,10 +291,11 @@ class OpenAIChatModel(OpenAIModel):
                 total_usage = None
         else:
             # tool use
-            api_response, all_generated_content, total_usage = await _execute_tool_loop(
+            choices, all_generated_content, total_usage = await self._execute_tool_loop(
                 chat_messages=prompt.openai_format(),
                 model_id=model_id,
                 openai_tools=openai_tools,
+                tools=tools,
                 api_func=api_func,
                 **kwargs
             )
@@ -298,7 +310,7 @@ class OpenAIChatModel(OpenAIModel):
         duration = time.time() - start_time
         
         responses = []
-        for choice, generated_content in zip(api_response.choices, all_generated_content):
+        for choice, generated_content in zip(choices, all_generated_content):
             if choice.message.content is None or choice.finish_reason is None:
                 raise RuntimeError(f"No content or finish reason for {model_id}")
             responses.append(

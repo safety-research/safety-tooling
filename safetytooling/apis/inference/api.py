@@ -42,7 +42,7 @@ from .openai.completion import OpenAICompletionModel
 from .openai.embedding import OpenAIEmbeddingModel
 from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
-from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS, is_finetune_gpt_model
+from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS, OPENAI_TOOL_MODELS, is_finetune_gpt_model
 from .openrouter import OPENROUTER_MODELS, OPENROUTER_TOOL_MODELS, OpenRouterChatModel
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
@@ -58,6 +58,7 @@ DEEPSEEK_MODELS = {"deepseek-chat", "deepseek-reasoner"}
 
 TOOL_MODELS = {
     *ANTHROPIC_TOOL_MODELS,
+    *OPENAI_TOOL_MODELS,
     *OPENROUTER_TOOL_MODELS,
 }
 
