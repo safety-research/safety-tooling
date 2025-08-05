@@ -1,26 +1,26 @@
 import collections
+import copy
+import json
 import logging
 import os
 import time
+from traceback import format_exc
 
 import httpx
 import openai
-import copy
-import json
 import openai.types
 import openai.types.chat
 import pydantic
 import requests
 from langchain.tools import BaseTool
 from tenacity import retry, stop_after_attempt, wait_fixed
-from traceback import format_exc
 
-from safetytooling.data_models import LLMResponse, Prompt, Usage, ChatMessage, MessageRole
+from safetytooling.data_models import ChatMessage, LLMResponse, MessageRole, Prompt, Usage
 from safetytooling.utils import math_utils
 from safetytooling.utils.tool_utils import convert_tools_to_openai
 
 from .base import OpenAIModel
-from .utils import count_tokens, get_rate_limit, price_per_token
+from .utils import get_rate_limit, price_per_token
 
 LOGGER = logging.getLogger(__name__)
 
@@ -100,13 +100,12 @@ class OpenAIChatModel(OpenAIModel):
 
         return top_logprobs
 
-
     async def _execute_tool_loop(self, chat_messages, model_id, openai_tools, tools, api_func, **kwargs):
         """Handle tool execution loop and return all generated content."""
         current_messages = chat_messages.copy()
         total_usage = Usage(input_tokens=0, output_tokens=0)
         all_generated_content = []
-        
+
         response = await api_func(
             messages=current_messages,
             model=model_id,
@@ -116,9 +115,10 @@ class OpenAIChatModel(OpenAIModel):
         if response.usage:
             total_usage.input_tokens += response.usage.prompt_tokens
             total_usage.output_tokens += response.usage.completion_tokens
-        self._raise_any_response_errors(response)
+        self._raise_any_response_errors(response, messages=current_messages, model_id=model_id)
         # remove n param so it's default 1 now
-        n = kwargs.pop("n") if 'n' in kwargs else None
+        if "n" in kwargs:
+            kwargs.pop("n")
         result_choices = []
         # for n>1, we need to run tool stuff on each choice seperately
         for choice in response.choices:
@@ -150,9 +150,7 @@ class OpenAIChatModel(OpenAIModel):
                             }
                             tool_results.append(result_dict)
                         except Exception as e:
-                            error_info = (
-                                f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                            )
+                            error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                             LOGGER.warn(
                                 f"Encountered tool call {langchain_tool.name} error: {error_info}, passing error to LLM."
                             )
@@ -160,7 +158,7 @@ class OpenAIChatModel(OpenAIModel):
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "content": f"Error executing tool: {str(e)}",
-                                #"is_error": True,
+                                # "is_error": True,
                             }
                             tool_results.append(result_dict)
                     else:
@@ -168,16 +166,18 @@ class OpenAIChatModel(OpenAIModel):
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "content": f"Tool {tool_call.function.name} not found",
-                            #"is_error": True,
+                            # "is_error": True,
                         }
                         tool_results.append(result_dict)
-                    
+
                 # replace 'content' with 'message' so it looks nicer
                 for tool_result in tool_results:
                     tool_with_content_message = copy.deepcopy(tool_result)
                     message = tool_with_content_message.pop("content")
-                    tool_with_content_message['message'] = message
-                    choice_generated_content.append(ChatMessage(role=MessageRole.tool, content=tool_with_content_message))
+                    tool_with_content_message["message"] = message
+                    choice_generated_content.append(
+                        ChatMessage(role=MessageRole.tool, content=tool_with_content_message)
+                    )
                 choice_messages.extend(tool_results)
                 choice_response = await api_func(
                     messages=choice_messages,
@@ -185,7 +185,7 @@ class OpenAIChatModel(OpenAIModel):
                     tools=openai_tools,
                     **kwargs,
                 )
-                self._raise_any_response_errors(choice_response)
+                self._raise_any_response_errors(choice_response, messages=choice_messages, model_id=model_id)
                 if choice_response.usage:
                     total_usage.input_tokens += choice_response.usage.prompt_tokens
                     total_usage.output_tokens += choice_response.usage.completion_tokens
@@ -194,8 +194,7 @@ class OpenAIChatModel(OpenAIModel):
             result_choices.append(choice)
         return result_choices, all_generated_content, total_usage
 
-
-    def _raise_any_response_errors(self, api_response: openai.types.chat.ChatCompletion):
+    def _raise_any_response_errors(self, api_response: openai.types.chat.ChatCompletion, messages, model_id, **kwargs):
         if hasattr(api_response, "error") and (
             "Rate limit exceeded" in api_response.error["message"] or api_response.error["code"] == 429
         ):  # OpenRouter routes through the error messages from the different providers, so we catch them here
@@ -203,7 +202,7 @@ class OpenAIChatModel(OpenAIModel):
                 method="POST",
                 url="https://api.openai.com/v1/chat/completions",
                 headers={"Authorization": f"Bearer {self.openai_api_key}"},
-                json={"messages": prompt.openai_format(), "model": model_id, **kwargs},
+                json={"messages": messages, "model": model_id, **kwargs},
             )
             raise openai.RateLimitError(
                 api_response.error["message"],
@@ -215,7 +214,9 @@ class OpenAIChatModel(OpenAIModel):
         ):  # this sometimes happens on OpenRouter; we want to raise an error
             raise RuntimeError(f"No tokens were generated for {model_id}")
 
-    async def _make_api_call(self, prompt: Prompt, model_id, start_time, tools: list[BaseTool] | None = None,**kwargs) -> list[LLMResponse]:
+    async def _make_api_call(
+        self, prompt: Prompt, model_id, start_time, tools: list[BaseTool] | None = None, **kwargs
+    ) -> list[LLMResponse]:
         if self.aclient is None:
             raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
 
@@ -255,7 +256,7 @@ class OpenAIChatModel(OpenAIModel):
             )
         else:
             api_func = self.aclient.chat.completions.create
-        
+
         if openai_tools is None:
             # non-tool use
             api_response: openai.types.chat.ChatCompletion = await api_func(
@@ -263,9 +264,11 @@ class OpenAIChatModel(OpenAIModel):
                 model=model_id,
                 **kwargs,
             )
-            self._raise_any_response_errors(api_response)
+            self._raise_any_response_errors(api_response, messages=prompt.openai_format(), model_id=model_id)
             choices = api_response.choices
-            all_generated_content = [[ChatMessage(role=MessageRole.assistant, content=dict(choice))] for choice in api_response.choices]
+            all_generated_content = [
+                [ChatMessage(role=MessageRole.assistant, content=dict(choice))] for choice in api_response.choices
+            ]
             if api_response.usage is not None:
                 total_usage = Usage(
                     input_tokens=api_response.usage.prompt_tokens,
@@ -294,7 +297,7 @@ class OpenAIChatModel(OpenAIModel):
                 openai_tools=openai_tools,
                 tools=tools,
                 api_func=api_func,
-                **kwargs
+                **kwargs,
             )
 
         # Calculate cost
@@ -305,7 +308,7 @@ class OpenAIChatModel(OpenAIModel):
         # Timing
         api_duration = time.time() - api_start
         duration = time.time() - start_time
-        
+
         responses = []
         for choice, generated_content in zip(choices, all_generated_content):
             if choice.message.content is None or choice.finish_reason is None:
@@ -320,7 +323,7 @@ class OpenAIChatModel(OpenAIModel):
                     cost=input_cost + output_cost,
                     logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
                     usage=total_usage,
-                    generated_content=generated_content
+                    generated_content=generated_content,
                 )
             )
         self.add_response_to_prompt_file(prompt_file, responses)
