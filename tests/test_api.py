@@ -42,12 +42,11 @@ async def test_openai_tool_call():
         StructuredTool.from_function(func=testToolFunc, name="Thermometer_tool", description="Gives the temperature.")
     ]
     resp = await InferenceAPI(cache_dir=None)(
-        model_id="gpt-4.1",
+        model_id="gpt-4o-mini",
         prompt=Prompt(messages=[ChatMessage(role=MessageRole.user, content="What is the temperature? (please use the tool)")]),
         max_tokens=1000,
         tools=tools,
     )
-    print(resp)
     assert(len(resp[0].generated_content) == 3, "Should have assistant, tool output, assistant")
     assert(resp[0].generated_content[0].role == MessageRole.assistant)
     assert(resp[0].generated_content[0].content['message'].content == None)

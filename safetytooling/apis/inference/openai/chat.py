@@ -131,7 +131,6 @@ class OpenAIChatModel(OpenAIModel):
                     break
                 tool_results = []
                 for tool_call in choice.message.tool_calls:
-                    print(f"tool call {tool_call}")
                     langchain_tool = next((t for t in tools if t.name == tool_call.function.name), None)
                     if langchain_tool:
                         try:
@@ -180,14 +179,12 @@ class OpenAIChatModel(OpenAIModel):
                     tool_with_content_message['message'] = message
                     choice_generated_content.append(ChatMessage(role=MessageRole.tool, content=tool_with_content_message))
                 choice_messages.extend(tool_results)
-                print(choice_messages)
                 choice_response = await api_func(
                     messages=choice_messages,
                     model=model_id,
                     tools=openai_tools,
                     **kwargs,
                 )
-                print(choice_response)
                 self._raise_any_response_errors(choice_response)
                 if choice_response.usage:
                     total_usage.input_tokens += choice_response.usage.prompt_tokens
