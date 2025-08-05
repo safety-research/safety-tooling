@@ -171,10 +171,11 @@ class OpenAIChatModel(OpenAIModel):
                         tool_results.append(result_dict)
 
                 # replace 'content' with 'message' so it looks nicer
-                for tool_result in tool_results:
+                for tool_call, tool_result in zip(choice.message.tool_calls, tool_results):
                     tool_with_content_message = copy.deepcopy(tool_result)
                     message = tool_with_content_message.pop("content")
                     tool_with_content_message["message"] = message
+                    tool_with_content_message["tool_name"] = tool_call.function.name
                     choice_generated_content.append(
                         ChatMessage(role=MessageRole.tool, content=tool_with_content_message)
                     )

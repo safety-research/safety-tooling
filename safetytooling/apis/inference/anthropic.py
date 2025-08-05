@@ -183,11 +183,12 @@ class AnthropicChatModel(InferenceAPIModel):
             # Add tool results to the conversation and generated content
             current_messages.append({"role": "user", "content": tool_results})
 
-            for tool_result in tool_results:
+            for tool_result, tool_block in zip(tool_results, tool_use_blocks):
                 tool_with_content_message = copy.deepcopy(tool_result)
                 message = tool_with_content_message.pop("content")
                 tool_with_content_message["message"] = message
                 tool_with_content_message.pop("type")  # don't need this
+                tool_with_content_message['tool_name'] = tool_block.name
                 all_generated_content.append(ChatMessage(role=MessageRole.tool, content=tool_with_content_message))
                 print(tool_with_content_message)
 

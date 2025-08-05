@@ -66,6 +66,8 @@ async def test_tool_call():
             assert len(tool_use_content) == 1
             assert tool_use_content[0]["name"] == TOOL_NAME
         assert resp[0].generated_content[1].role == MessageRole.tool
+        tool_name = resp[0].generated_content[1].content["tool_name"]
+        assert tool_name == TOOL_NAME
         tool_output = resp[0].generated_content[1].content["message"]
         assert tool_output == TOOL_OUTPUT
 
