@@ -32,6 +32,14 @@ async def test_openai():
 
 @pytest.mark.asyncio
 async def test_tool_call():
+    """
+    # If you just want to test for tool call, you can simply do
+    for content in (resp[0].generated_content if resp[0].generated_content is not None else []):
+        if content.role == MessageRole.tool:
+            tool_output = content["message"]
+            tool_name = content["tool_name"]
+    """
+
     utils.setup_environment()
     TOOL_NAME = "Thermometer_tool"
     TOOL_OUTPUT = "The temperature is 42 degrees F."
