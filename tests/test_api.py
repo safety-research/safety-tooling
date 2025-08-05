@@ -58,7 +58,7 @@ async def test_openai_tool_call():
     tool_calls = resp[0].generated_content[0].content["message"]["tool_calls"]
     assert tool_calls is not None
     assert len(tool_calls) == 1
-    assert tool_calls[0]['function']['name'] == TOOL_NAME
+    assert tool_calls[0]["function"]["name"] == TOOL_NAME
     assert resp[0].generated_content[1].role == MessageRole.tool
     tool_output = resp[0].generated_content[1].content["message"]
     assert tool_output == TOOL_OUTPUT

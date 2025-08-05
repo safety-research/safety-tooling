@@ -267,7 +267,8 @@ class OpenAIChatModel(OpenAIModel):
             self._raise_any_response_errors(api_response, messages=prompt.openai_format(), model_id=model_id)
             choices = api_response.choices
             all_generated_content = [
-                [ChatMessage(role=MessageRole.assistant, content=choice.model_dump())] for choice in api_response.choices
+                [ChatMessage(role=MessageRole.assistant, content=choice.model_dump())]
+                for choice in api_response.choices
             ]
             if api_response.usage is not None:
                 total_usage = Usage(
