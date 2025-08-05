@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import logging
 import time
@@ -121,8 +122,9 @@ class AnthropicChatModel(InferenceAPIModel):
                 total_usage.output_tokens += response.usage.output_tokens
 
             # Convert content blocks to serializable format and store as single message
-            content_list = self._convert_content_blocks_to_list(response.content)
-            all_generated_content.append(ChatMessage(role=MessageRole.assistant, content=content_list))
+            all_generated_content.append(
+                ChatMessage(role=MessageRole.assistant, content=self._convert_content_blocks_to_list(response.content))
+            )
 
             # Check if Claude wants to use tools
             tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
@@ -180,7 +182,14 @@ class AnthropicChatModel(InferenceAPIModel):
 
             # Add tool results to the conversation and generated content
             current_messages.append({"role": "user", "content": tool_results})
-            all_generated_content.append(ChatMessage(role=MessageRole.user, content=tool_results))
+
+            for tool_result in tool_results:
+                tool_with_content_message = copy.deepcopy(tool_result)
+                message = tool_with_content_message.pop("content")
+                tool_with_content_message["message"] = message
+                tool_with_content_message.pop("type")  # don't need this
+                all_generated_content.append(ChatMessage(role=MessageRole.tool, content=tool_with_content_message))
+                print(tool_with_content_message)
 
         return response, all_generated_content, total_usage
 

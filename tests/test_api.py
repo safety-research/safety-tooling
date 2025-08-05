@@ -31,7 +31,7 @@ async def test_openai():
 
 
 @pytest.mark.asyncio
-async def test_openai_tool_call():
+async def test_tool_call():
     utils.setup_environment()
     TOOL_NAME = "Thermometer_tool"
     TOOL_OUTPUT = "The temperature is 42 degrees F."
@@ -44,26 +44,32 @@ async def test_openai_tool_call():
     tools = [
         StructuredTool.from_function(func=testToolFunc, name="Thermometer_tool", description="Gives the temperature.")
     ]
-    resp = await InferenceAPI(cache_dir=None)(
-        model_id="gpt-4o-mini",
-        prompt=Prompt(
-            messages=[ChatMessage(role=MessageRole.user, content="What is the temperature? (please use the tool)")]
-        ),
-        max_tokens=1000,
-        tools=tools,
-    )
-    assert len(resp[0].generated_content) == 3  # Should have assistant, tool output, assistant
-    assert resp[0].generated_content[0].role == MessageRole.assistant
-    assert resp[0].generated_content[0].content["message"]["content"] is None
-    tool_calls = resp[0].generated_content[0].content["message"]["tool_calls"]
-    assert tool_calls is not None
-    assert len(tool_calls) == 1
-    assert tool_calls[0]["function"]["name"] == TOOL_NAME
-    assert resp[0].generated_content[1].role == MessageRole.tool
-    tool_output = resp[0].generated_content[1].content["message"]
-    assert tool_output == TOOL_OUTPUT
+    for model in ["claude-3-5-haiku-20241022", "gpt-4o-mini"]:
+        resp = await InferenceAPI(cache_dir=None)(
+            model_id=model,
+            prompt=Prompt(
+                messages=[ChatMessage(role=MessageRole.user, content="What is the temperature? (please use the tool)")]
+            ),
+            max_tokens=1000,
+            tools=tools,
+        )
+        assert len(resp[0].generated_content) == 3  # Should have assistant, tool output, assistant
+        assert resp[0].generated_content[0].role == MessageRole.assistant
+        if model == "gpt-4o-mini":
+            assert resp[0].generated_content[0].content["message"]["content"] is None
+            tool_calls = resp[0].generated_content[0].content["message"]["tool_calls"]
+            assert tool_calls is not None
+            assert len(tool_calls) == 1
+            assert tool_calls[0]["function"]["name"] == TOOL_NAME
+        elif model == "claude-3-5-haiku-20241022":
+            tool_use_content = [x for x in resp[0].generated_content[0].content if x["type"] == "tool_use"]
+            assert len(tool_use_content) == 1
+            assert tool_use_content[0]["name"] == TOOL_NAME
+        assert resp[0].generated_content[1].role == MessageRole.tool
+        tool_output = resp[0].generated_content[1].content["message"]
+        assert tool_output == TOOL_OUTPUT
 
-    assert resp[0].generated_content[2].role == MessageRole.assistant
+        assert resp[0].generated_content[2].role == MessageRole.assistant
 
 
 @pytest.mark.asyncio
