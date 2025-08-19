@@ -15,6 +15,12 @@ EMBEDDING_MODELS = (
 )
 
 VISION_MODELS = (
+    "gpt-5-nano",
+    "gpt-5-nano-2025-08-07",
+    "gpt-5-mini",
+    "gpt-5-mini-2025-08-07",
+    "gpt-5",
+    "gpt-5-2025-08-07",
     "gpt-4.1-nano",
     "gpt-4.1-nano-2025-04-14",
     "gpt-4.1-mini",
@@ -30,6 +36,15 @@ VISION_MODELS = (
     "gpt-4-turbo-2024-04-09",
     "gpt-4.5-preview",
     "gpt-4.5-preview-2025-02-27",
+)
+
+_GPT_5_MODELS = (
+    "gpt-5-nano",
+    "gpt-5-nano-2025-08-07",
+    "gpt-5-mini",
+    "gpt-5-mini-2025-08-07",
+    "gpt-5",
+    "gpt-5-2025-08-07",
 )
 
 _GPT_4_MODELS = (
@@ -84,7 +99,7 @@ _GPT_3_MODELS = (
 )
 
 
-GPT_CHAT_MODELS = set(_GPT_4_MODELS + _GPT_3_MODELS)
+GPT_CHAT_MODELS = set(_GPT_5_MODELS + _GPT_4_MODELS + _GPT_3_MODELS)
 
 OAI_FINETUNE_MODELS = (
     "gpt-4.1",
@@ -116,7 +131,9 @@ def count_tokens(text: str, model_id: str) -> int:
 
 
 def get_max_context_length(model_id: str) -> int:
-    if "gpt-4.1" in model_id:
+    if "gpt-5" in model_id:
+        return 400_000
+    elif "gpt-4.1" in model_id:
         return 1_047_576
     elif "gpt-4o" in model_id:
         return 128_000
@@ -183,7 +200,11 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     Returns the (tokens per min, request per min) for the given model id.
     # go to: https://platform.openai.com/settings/organization/limits
     """
-    if "gpt-4o-mini" in model_id or "gpt-4.1-mini" in model_id or "gpt-4.1-nano" in model_id:
+    if "gpt-5-mini" in model_id or "gpt-5-nano" in model_id:
+        return 180_000_000, 30_000
+    elif "gpt-5" in model_id:
+        return 40_000_000, 15_000
+    elif "gpt-4o-mini" in model_id or "gpt-4.1-mini" in model_id or "gpt-4.1-nano" in model_id:
         return 150_000_000, 30_000
     elif "gpt-4o" in model_id or "gpt-4.1" in model_id:
         return 30_000_000, 10_000
@@ -236,6 +257,21 @@ def price_per_token(model_id: str) -> tuple[float, float]:
 
     # Prices not listed yet
     if model_id in (
+        "gpt-5-nano",
+        "gpt-5-nano-2025-08-07",
+    ):
+        prices = 0.05, 0.4
+    elif model_id in (
+        "gpt-5-mini",
+        "gpt-5-mini-2025-08-07",
+    ):
+        prices = 0.25, 2
+    elif model_id in (
+        "gpt-5",
+        "gpt-5-2025-08-07",
+    ):
+        prices = 1.25, 10
+    elif model_id in (
         "o3-pro",
         "o3-pro-2025-06-10",
     ):
