@@ -53,6 +53,8 @@ _DEFAULT_GLOBAL_INFERENCE_API: InferenceAPI | None = None
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODELS = {"deepseek-chat", "deepseek-reasoner"}
 
+OPENROUTER_MODELS = {"meta-llama/Llama-3.1-8B-Instruct", "meta-llama/Llama-3.3-70B-Instruct"}
+
 
 class InferenceAPI:
     """
@@ -74,6 +76,7 @@ class InferenceAPI:
         gray_swan_num_threads: int = 80,
         huggingface_num_threads: int = 100,
         together_num_threads: int = 80,
+        openrouter_num_threads: int = 80,
         vllm_num_threads: int = 8,
         deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = None,
@@ -103,11 +106,13 @@ class InferenceAPI:
         self.anthropic_num_threads = anthropic_num_threads
         self.openai_fraction_rate_limit = openai_fraction_rate_limit
         self.openai_base_url = openai_base_url
+        self.openrouter_num_threads = openrouter_num_threads
         # limit openai api calls to stop async jamming
         self.deepseek_semaphore = asyncio.Semaphore(deepseek_num_threads)
         self.openai_semaphore = asyncio.Semaphore(openai_num_threads)
         self.gemini_semaphore = asyncio.Semaphore(gemini_num_threads)
         self.openai_s2s_semaphore = asyncio.Semaphore(openai_s2s_num_threads)
+        self.openrouter_semaphore = asyncio.Semaphore(openrouter_num_threads)
         self.gemini_recitation_rate_check_volume = gemini_recitation_rate_check_volume
         self.gemini_recitation_rate_threshold = gemini_recitation_rate_threshold
         self.gray_swan_num_threads = gray_swan_num_threads
@@ -164,6 +169,13 @@ class InferenceAPI:
             prompt_history_dir=self.prompt_history_dir,
             base_url=self.openai_base_url,
             openai_api_key=openai_api_key,
+        )
+
+        self._openrouter = OpenAIChatModel(
+            frac_rate_limit=self.openai_fraction_rate_limit,
+            prompt_history_dir=self.prompt_history_dir,
+            base_url="https://openrouter.ai/api/v1",
+            openai_api_key=os.environ.get("OPENROUTER_API_KEY", None),
         )
 
         self._openai_moderation = OpenAIModerationModel()
@@ -250,6 +262,7 @@ class InferenceAPI:
             "together": self._together,
             "vllm": self._vllm,
             "deepseek": self._deepseek,
+            "openrouter": self._openrouter,
         }
 
     @classmethod
@@ -302,6 +315,8 @@ class InferenceAPI:
             return self._vllm
         elif model_id in DEEPSEEK_MODELS:
             return self._deepseek
+        elif model_id in OPENROUTER_MODELS:
+            return self._openrouter
         elif self.use_provider_if_model_not_found is not None:
             return self.provider_to_class[self.use_provider_if_model_not_found]
         raise ValueError(
@@ -407,8 +422,11 @@ class InferenceAPI:
         """
         if self.no_cache:
             use_cache = False
-
+        
         model_class = self.model_id_to_class(model_id, gemini_use_vertexai, force_provider)
+
+        #if isinstance(model_class, VLLMChatModel):
+        #    use_cache = False
 
         num_candidates = num_candidates_per_completion * n
 

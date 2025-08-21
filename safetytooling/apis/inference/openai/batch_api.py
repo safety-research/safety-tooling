@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 import json
 import logging
 import time
@@ -95,6 +96,7 @@ class OpenAIModelBatch:
 
         custom_ids = [self.get_custom_id(i, prompt) for i, prompt in enumerate(prompts)]
         set_custom_ids = set(custom_ids)
+        log_dir = log_dir / uuid.uuid4().hex
 
         input_file_path = self.prompts_to_file(model_id, prompts, log_dir, **kwargs)
         batch_file_object = self.client.files.create(file=open(input_file_path, "rb"), purpose="batch")

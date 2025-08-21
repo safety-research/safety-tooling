@@ -290,8 +290,9 @@ class Prompt(HashableBaseModel):
 
     def openai_format(
         self,
+        allow_assistant_last: bool = False,
     ) -> list[openai.types.chat.ChatCompletionMessageParam]:
-        if self.is_last_message_assistant():
+        if self.is_last_message_assistant() and not allow_assistant_last:
             raise ValueError(
                 f"OpenAI chat prompts cannot end with an assistant message. Got {self.messages[-1].role}: {self.messages[-1].content}"
             )

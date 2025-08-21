@@ -32,6 +32,14 @@ VISION_MODELS = (
     "gpt-4.5-preview-2025-02-27",
 )
 
+_GPT_5_MODELS = (
+    "gpt-5",
+    "gpt-5-2025-08-07",
+    "gpt-5-mini",
+    "gpt-5-mini-2025-08-07",
+    "gpt-5-nano",
+    "gpt-5-nano-2025-08-07",
+)
 _GPT_4_MODELS = (
     "gpt-4.1-nano",
     "gpt-4.1-nano-2025-04-14",
@@ -78,9 +86,15 @@ _GPT_3_MODELS = (
 )
 
 
-GPT_CHAT_MODELS = set(_GPT_4_MODELS + _GPT_3_MODELS)
+GPT_CHAT_MODELS = set(_GPT_5_MODELS + _GPT_4_MODELS + _GPT_3_MODELS)
 
 OAI_FINETUNE_MODELS = (
+    "gpt-5",
+    "gpt-5-2025-08-07",
+    "gpt-5-mini",
+    "gpt-5-mini-2025-08-07",
+    "gpt-5-nano",
+    "gpt-5-nano-2025-08-07",
     "gpt-4.1",
     "gpt-4.1-2025-04-14",
     "gpt-4.1-mini",

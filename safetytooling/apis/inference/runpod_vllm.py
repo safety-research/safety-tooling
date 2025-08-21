@@ -4,9 +4,9 @@ import logging
 import time
 from pathlib import Path
 from traceback import format_exc
-import json
 
 import aiohttp
+from transformers import AutoTokenizer
 
 from safetytooling.data_models import LLMResponse, Prompt, StopReason
 from safetytooling.utils import math_utils
@@ -22,13 +22,20 @@ VLLM_MODELS = {
 
 LOGGER = logging.getLogger(__name__)
 
+# Load Qwen tokenizer for completion API formatting
+try:
+    QWEN_TOKENIZER = AutoTokenizer.from_pretrained("qwen/Qwen3-32B", trust_remote_code=True)
+except Exception as e:
+    LOGGER.warning(f"Failed to load Qwen tokenizer: {e}")
+    QWEN_TOKENIZER = None
+
 
 class VLLMChatModel(InferenceAPIModel):
     @staticmethod
     def is_runpod_serverless(url: str) -> bool:
         """Detect if URL is RunPod serverless endpoint"""
-        return "runpod.ai" in url and ("/run" in url or url.endswith("/run"))
-    
+        return "api.runpod.ai" in url
+
     def __init__(
         self,
         num_threads: int,
@@ -47,7 +54,11 @@ class VLLMChatModel(InferenceAPIModel):
 
         self.vllm_base_url = vllm_base_url
         # Only add /chat/completions for standard VLLM endpoints, not RunPod serverless
-        if self.vllm_base_url.endswith("v1") and not self.is_runpod_serverless(self.vllm_base_url):
+        if (
+            self.vllm_base_url is not None
+            and self.vllm_base_url.endswith("v1")
+            and not self.is_runpod_serverless(self.vllm_base_url)
+        ):
             self.vllm_base_url += "/chat/completions"
 
         self.stop_reason_map = {
@@ -66,19 +77,6 @@ class VLLMChatModel(InferenceAPIModel):
                 raise RuntimeError(f"API Error: Status {response.status}, {reason}")
             return await response.json()
 
-    def adapt_runpod_response(self, runpod_response: dict) -> dict:
-        """Convert RunPod response format to OpenAI chat completions format"""
-        # Convert to OpenAI format
-        return {
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": runpod_response[0]['choices'][0]['tokens'][0]
-                },
-                "finish_reason": "stop"
-            }]
-        }
-    
     async def run_query_serverless(self, model_url: str, messages: list, params: dict) -> dict:
         """Handle RunPod serverless API with polling"""
         # Convert URL to RunPod serverless format
@@ -88,47 +86,56 @@ class VLLMChatModel(InferenceAPIModel):
         else:
             submit_url = model_url if model_url.endswith("/run") else f"{model_url}/run"
             base_url = model_url.replace("/run", "") if model_url.endswith("/run") else model_url
-        
-        # Prepare payload for RunPod serverless
+
+        # Check if this is a continuation case (last message from assistant)
+        last_message_is_assistant = messages and messages[-1].get("role") == "assistant"
+
+        if last_message_is_assistant:
+            # Handle continuation using completion API format
+            return await self.run_query_serverless_completion(model_url, messages, params)
+
+        # Prepare payload for RunPod serverless chat completions
         payload = {
             "input": {
-                "messages": messages,
-                "model": params["model"],
-                "sampling_params": {k: v for k, v in params.items() if k != "model"},
+                "openai_route": "/v1/chat/completions",
+                "openai_input": {
+                    "messages": messages,
+                    "model": params["model"],
+                    "sampling_params": {k: v for k, v in params.items() if k != "model"},
+                }
             }
         }
 
         start_time = time.time()
         max_time = 600
-        
+
         async with aiohttp.ClientSession() as session:
             async with session.post(submit_url, headers=self.headers, json=payload, timeout=60) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     raise RuntimeError(f"Failed to submit job: Status {response.status}, {error_text}")
                 job_data = await response.json()
-            
+
             job_id = job_data["id"]
-            
+
             # Poll for result
             status_url = f"{base_url}/status/{job_id}"
-            
+
             while time.time() - start_time < max_time:
                 await asyncio.sleep(1)  # Poll every 1 second
-                
+
                 async with session.get(status_url, headers=self.headers, timeout=30) as status_response:
                     if status_response.status != 200:
                         error_text = await status_response.text()
                         LOGGER.info(f"Status check failed: {error_text}")
                         continue
-                    
+
                     status_data = await status_response.json()
-                
+
                 status = status_data.get("status", "UNKNOWN")
-                
+
                 if status == "COMPLETED":
-                    output = status_data.get("output", {})
-                    return self.adapt_runpod_response(output)
+                    return status_data["output"][0]
                 elif status == "FAILED":
                     error_msg = status_data.get("error", "Unknown error")
                     raise RuntimeError(f"RunPod job failed: {error_msg}")
@@ -137,9 +144,158 @@ class VLLMChatModel(InferenceAPIModel):
                 else:
                     LOGGER.warning(f"Unknown status: {status}")
                     continue
-            
+
             raise RuntimeError(f"RunPod job timed out after {max_time} seconds")
-    
+
+    async def run_query_serverless_completion(self, model_url: str, messages: list, params: dict) -> dict:
+        """Handle RunPod serverless API with completion format for assistant message continuation"""
+        if QWEN_TOKENIZER is None:
+            raise RuntimeError("Qwen tokenizer not available - cannot use completion API for continuation")
+
+        # Convert URL to RunPod serverless format
+        if "/v1/chat/completions" in model_url:
+            submit_url = model_url.replace("/v1/chat/completions", "/run")
+            base_url = model_url.replace("/v1/chat/completions", "")
+        else:
+            submit_url = model_url if model_url.endswith("/run") else f"{model_url}/run"
+            base_url = model_url.replace("/run", "") if model_url.endswith("/run") else model_url
+
+        # Format messages using tokenizer chat template for continuation
+        # Remove the last assistant message and format the rest
+        messages_without_last = messages[:-1]
+        if messages_without_last:
+            base_prompt = QWEN_TOKENIZER.apply_chat_template(
+                messages_without_last, tokenize=False, add_generation_prompt=False
+            )
+        else:
+            base_prompt = ""
+
+        # Add the assistant message start and the partial content, but don't close it
+        last_content = messages[-1]["content"]
+        formatted_prompt = base_prompt + f"<|im_start|>assistant\n{last_content}"
+
+        LOGGER.debug(f"Using serverless completion API with formatted prompt: {repr(formatted_prompt[:200])}...")
+
+        # Prepare payload for RunPod serverless with completion format
+        payload = {
+            "input": {
+                "prompt": formatted_prompt,
+                "model": params["model"],
+                "sampling_params": {k: v for k, v in params.items() if k != "model"},
+            }
+        }
+
+        start_time = time.time()
+        max_time = 600
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(submit_url, headers=self.headers, json=payload, timeout=60) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise RuntimeError(f"Failed to submit completion job: Status {response.status}, {error_text}")
+                job_data = await response.json()
+
+            job_id = job_data["id"]
+
+            # Poll for result
+            status_url = f"{base_url}/status/{job_id}"
+
+            while time.time() - start_time < max_time:
+                await asyncio.sleep(1)  # Poll every 1 second
+
+                async with session.get(status_url, headers=self.headers, timeout=30) as status_response:
+                    if status_response.status != 200:
+                        error_text = await status_response.text()
+                        LOGGER.info(f"Status check failed: {error_text}")
+                        continue
+
+                    status_data = await status_response.json()
+
+                status = status_data.get("status", "UNKNOWN")
+
+                if status == "COMPLETED":
+                    output = status_data.get("output", {})
+                    # Convert completion response to chat format
+                    if "choices" in output and len(output["choices"]) > 0:
+                        # Transform completion response to chat format
+                        for choice in output["choices"]:
+                            if "text" in choice:
+                                choice["message"] = {"role": "assistant", "content": choice.pop("text", "")}
+                            # Map finish_reason if needed
+                            if "finish_reason" not in choice:
+                                choice["finish_reason"] = "stop"
+                    return output
+                elif status == "FAILED":
+                    error_msg = status_data.get("error", "Unknown error")
+                    raise RuntimeError(f"RunPod completion job failed: {error_msg}")
+                elif status in ["IN_QUEUE", "IN_PROGRESS"]:
+                    continue  # Keep polling
+                else:
+                    LOGGER.warning(f"Unknown status: {status}")
+                    continue
+
+            raise RuntimeError(f"RunPod completion job timed out after {max_time} seconds")
+
+    async def run_query_completion(self, model_url: str, messages: list, params: dict) -> dict:
+        """Handle completion API calls for assistant message continuation"""
+        if QWEN_TOKENIZER is None:
+            raise RuntimeError("Qwen tokenizer not available - cannot use completion API for continuation")
+
+        # Convert model_url from chat/completions to completions
+        if "/chat/completions" in model_url:
+            completion_url = model_url.replace("/chat/completions", "/completions")
+        elif model_url.endswith("/v1"):
+            completion_url = model_url + "/completions"
+        else:
+            completion_url = (
+                model_url.replace("/v1", "/v1/completions") if "/v1" in model_url else model_url + "/completions"
+            )
+
+        # Format messages using tokenizer chat template for continuation
+        # Remove the last assistant message and format the rest
+        messages_without_last = messages[:-1]
+        if messages_without_last:
+            base_prompt = QWEN_TOKENIZER.apply_chat_template(
+                messages_without_last, tokenize=False, add_generation_prompt=False
+            )
+        else:
+            base_prompt = ""
+
+        # Add the assistant message start and the partial content, but don't close it
+        last_content = messages[-1]["content"]
+        formatted_prompt = base_prompt + f"<|im_start|>assistant\n{last_content}"
+
+        LOGGER.debug(f"Using completion API with formatted prompt: {repr(formatted_prompt[:200])}...")
+
+        # Prepare payload for completion API
+        completion_payload = {
+            "model": params.get("model", "default"),
+            "prompt": formatted_prompt,
+            **{k: v for k, v in params.items() if k != "model"},
+        }
+
+        async with aiohttp.ClientSession() as session:
+            response = await self.query(completion_url, completion_payload, session)
+            if "error" in response:
+                if "<!DOCTYPE html>" in str(response) and "<title>" in str(response):
+                    reason = str(response).split("<title>")[1].split("</title>")[0]
+                else:
+                    reason = " ".join(str(response).split()[:20])
+                print(f"API Error: {reason}")
+                LOGGER.error(f"API Error: {reason}")
+                raise RuntimeError(f"API Error: {reason}")
+
+            # Convert completion API response to chat format
+            if "choices" in response and len(response["choices"]) > 0:
+                # Transform completion response to chat format
+                for choice in response["choices"]:
+                    choice["message"] = {"role": "assistant", "content": choice.pop("text", "")}
+                    # Map finish_reason if needed
+                    if "finish_reason" not in choice:
+                        choice["finish_reason"] = "stop"
+
+            return response
+
     async def run_query_sync(self, model_url: str, messages: list, params: dict) -> dict:
         """Handle synchronous VLLM API calls"""
         payload = {
@@ -159,13 +315,25 @@ class VLLMChatModel(InferenceAPIModel):
                 LOGGER.error(f"API Error: {reason}")
                 raise RuntimeError(f"API Error: {reason}")
             return response
-    
+
     async def run_query(self, model_url: str, messages: list, params: dict) -> dict:
-        """Route to appropriate query method based on URL type"""
+        """Route to appropriate query method based on URL type and message structure"""
+
+        # Check if last message is from assistant (continuation case)
+        last_message_is_assistant = messages and messages[-1].get("role") == "assistant"
+
         if self.is_runpod_serverless(model_url):
+            # For RunPod serverless endpoints, run_query_serverless now handles both cases
             return await self.run_query_serverless(model_url, messages, params)
         else:
-            return await self.run_query_sync(model_url, messages, params)
+            # For regular VLLM endpoints
+            if last_message_is_assistant:
+                # Use completion API for continuation
+                LOGGER.info("Using completion API for assistant message continuation")
+                return await self.run_query_completion(model_url, messages, params)
+            else:
+                # Use regular chat API
+                return await self.run_query_sync(model_url, messages, params)
 
     @staticmethod
     def convert_top_logprobs(data: dict) -> list[dict]:
@@ -217,7 +385,7 @@ class VLLMChatModel(InferenceAPIModel):
 
                     response_data = await self.run_query(
                         model_url,
-                        prompt.openai_format(),
+                        prompt.openai_format(allow_assistant_last=True),
                         kwargs,
                     )
                     api_duration = time.time() - api_start

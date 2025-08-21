@@ -95,6 +95,7 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         lora_trainable_modules=cfg.lora_trainable_modules,
         wandb_api_key=os.environ.get("WANDB_API_KEY"),
         wandb_project_name=cfg.wandb_project_name,
+        from_checkpoint=cfg.from_checkpoint,
     )
     LOGGER.info(f"Started fine-tuning job: {ft_job.id}")
 
@@ -118,22 +119,23 @@ async def main(cfg: TogetherFTConfig, verbose: bool = True):
         )
 
         # Upload files to wandb
-        upload_file_to_wandb(
-            file_path=cfg.train_file,
-            name=train_file_id,
-            type="together-finetune-training-file",
-            description="Training file for finetuning",
-            wandb_run=wrun,
-        )
+        # Currently turned off
+        #upload_file_to_wandb(
+            #file_path=cfg.train_file,
+            #name=train_file_id,
+            #type="together-finetune-training-file",
+            #description="Training file for finetuning",
+            #wandb_run=wrun,
+        #)
 
-        if cfg.val_file is not None:
-            upload_file_to_wandb(
-                file_path=cfg.val_file,
-                name=val_file_id,
-                type="together-finetune-validation-file",
-                description="Validation file for finetuning",
-                wandb_run=wrun,
-            )
+        #if cfg.val_file is not None:
+            #upload_file_to_wandb(
+                #file_path=cfg.val_file,
+                #name=val_file_id,
+                #type="together-finetune-validation-file",
+                #description="Validation file for finetuning",
+                #wandb_run=wrun,
+            #)
 
     LOGGER.info("Waiting for fine-tuning job to finish...")
     status = None
@@ -196,6 +198,7 @@ class TogetherFTConfig(FinetuneConfig):
     lora_dropout: float = 0.0
     lora_trainable_modules: str = "all-linear"
     suffix: str = ""  # Together suffix to append to the model name
+    from_checkpoint: str | None = None
 
     save_model: bool = False
 
