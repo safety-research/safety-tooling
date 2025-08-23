@@ -30,6 +30,8 @@ from safetytooling.utils.utils import get_repo_root
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
 from .cache_manager import BaseCacheManager, get_cache_manager
+from .openai.base import OpenAIModel
+from .progress_monitor import RateLimitProgressMonitor
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
@@ -90,6 +92,7 @@ class InferenceAPI:
         vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
         no_cache: bool = False,
         oai_embedding_batch_size: int = 2048,
+        show_progress: bool = False,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -153,11 +156,14 @@ class InferenceAPI:
             self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
             print(f"{self.cache_manager=}")
 
+        self.progress_monitor = RateLimitProgressMonitor(disable=not show_progress)
+
         self._openai_completion = OpenAICompletionModel(
             frac_rate_limit=self.openai_fraction_rate_limit,
             prompt_history_dir=self.prompt_history_dir,
             base_url=self.openai_base_url,
             openai_api_key=openai_api_key,
+            progress_monitor=self.progress_monitor,
         )
 
         self._openai_chat = OpenAIChatModel(
@@ -165,6 +171,7 @@ class InferenceAPI:
             prompt_history_dir=self.prompt_history_dir,
             base_url=self.openai_base_url,
             openai_api_key=openai_api_key,
+            progress_monitor=self.progress_monitor,
         )
 
         self._openai_moderation = OpenAIModerationModel()
@@ -176,30 +183,35 @@ class InferenceAPI:
             num_threads=self.anthropic_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             anthropic_api_key=anthropic_api_key,
+            progress_monitor=self.progress_monitor,
         )
 
         self._huggingface = HuggingFaceModel(
             num_threads=self.huggingface_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             token=os.environ.get("HF_TOKEN", None),
+            progress_monitor=self.progress_monitor,
         )
 
         self._gray_swan = GraySwanChatModel(
             num_threads=self.gray_swan_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=os.environ.get("GRAYSWAN_API_KEY", None),
+            api_key=(os.environ.get("GRAYSWAN_API_KEY") or None),
+            progress_monitor=self.progress_monitor,
         )
 
         self._together = TogetherChatModel(
             num_threads=self.together_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=os.environ.get("TOGETHER_API_KEY", None),
+            api_key=(os.environ.get("TOGETHER_API_KEY") or None),
+            progress_monitor=self.progress_monitor,
         )
 
         self._openrouter = OpenRouterChatModel(
             num_threads=self.openrouter_num_threads,
             prompt_history_dir=self.prompt_history_dir,
-            api_key=os.environ.get("OPENROUTER_API_KEY", None),
+            api_key=(os.environ.get("OPENROUTER_API_KEY") or None),
+            progress_monitor=self.progress_monitor,
         )
 
         self._gemini_vertex = GeminiVertexAIModel(prompt_history_dir=self.prompt_history_dir)
@@ -214,7 +226,8 @@ class InferenceAPI:
             num_threads=vllm_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             vllm_base_url=self.vllm_base_url,
-            runpod_api_key=os.environ.get("RUNPOD_API_KEY", None),
+            runpod_api_key=(os.environ.get("RUNPOD_API_KEY") or None),
+            progress_monitor=self.progress_monitor,
         )
 
         # DeepSeek uses the OpenAI API
@@ -223,6 +236,7 @@ class InferenceAPI:
             prompt_history_dir=self.prompt_history_dir,
             base_url=DEEPSEEK_BASE_URL,
             openai_api_key=os.environ.get("DEEPSEEK_API_KEY", None),
+            progress_monitor=self.progress_monitor,
         )
 
         self._batch_models = {}
@@ -642,6 +656,45 @@ class InferenceAPI:
         for response in candidate_responses:
             self.model_timings.setdefault(response.model_id, []).append(response.api_duration)
             self.model_wait_times.setdefault(response.model_id, []).append(response.duration - response.api_duration)
+
+        # Update progress monitor with usage info
+        if hasattr(self, "progress_monitor") and self.progress_monitor is not None:
+            try:
+                total_in_tokens = 0
+                total_out_tokens = 0
+                for response in candidate_responses:
+                    usage = getattr(response, "usage", None)
+                    if usage is not None:
+                        total_in_tokens += int(getattr(usage, "input_tokens", 0) or 0)
+                        total_out_tokens += int(getattr(usage, "output_tokens", 0) or 0)
+
+                # Register caps if OpenAI and resources are available
+                if isinstance(model_class, OpenAIModel):
+                    req_res = getattr(model_class, "request_capacity", {}).get(model_id, None)
+                    tok_res = getattr(model_class, "token_capacity", {}).get(model_id, None)
+                    if req_res is not None and tok_res is not None:
+                        self.progress_monitor.register_openai_model(model_id, req_res, tok_res)
+                    else:
+                        # requests-only when no resources are present
+                        self.progress_monitor.register_generic_model(model_id, show_token_bars=False)
+                else:
+                    # Only requests unless exact token usage is known
+                    show_token_bars = total_in_tokens > 0 or total_out_tokens > 0
+                    self.progress_monitor.register_generic_model(model_id, show_token_bars=show_token_bars)
+
+                # Increment requests by the number of real API calls made in this branch
+                request_increment = 1
+                if isinstance(model_class, AnthropicChatModel) or isinstance(model_class, HuggingFaceModel) or isinstance(model_class, GeminiModel) or isinstance(model_class, GeminiVertexAIModel):
+                    request_increment = num_candidates
+
+                await self.progress_monitor.update_openai_usage(
+                    model_id=model_id,
+                    input_tokens=(total_in_tokens if (total_in_tokens > 0) else None),
+                    output_tokens=(total_out_tokens if (total_out_tokens > 0) else None),
+                    request_increment=request_increment,
+                )
+            except Exception:
+                pass
 
         return responses
 

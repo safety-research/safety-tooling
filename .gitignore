@@ -1,3 +1,14 @@
+# Environment files
+.env
+.env.*
+
+# Local caches and artifacts
+.cache/
+.prompt_history/
+**/bin*.json
+**/bin*.json.lock
+*.log
+
 # Python stuff
 *.egg-info
 .ruff_cache

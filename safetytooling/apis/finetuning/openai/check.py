@@ -149,7 +149,7 @@ def openai_check_finetuning_data(
                 + f"which is over the max context length of {context_length}."
                 + "It will be truncated during fine-tuning"
             )
-            prompts[0].pretty_print([], print_fn=lambda x, *_, **__: logger.warn(x))
+            prompts[0].pretty_print([], print_fn=lambda x, *_, **__: logger.warning(x))
 
     # batch_size set to 0.2% of dataset size by default
     # https://community.openai.com/t/why-is-the-default-batch-size-set-to-1-for-fine-tuning-the-chatgpt-turbo-model/513129

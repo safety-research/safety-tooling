@@ -1,5 +1,6 @@
 """Basic tests for the api."""
 
+import os
 import pydantic
 import pytest
 
@@ -30,6 +31,7 @@ async def test_openai():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not available in environment or credits")
 async def test_claude_3():
     utils.setup_environment()
     resp = await InferenceAPI.get_default_global_api().ask_single_question(
@@ -45,6 +47,7 @@ async def test_claude_3():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not available in environment or credits")
 async def test_claude_3_with_system_prompt():
     utils.setup_environment()
     resp = await InferenceAPI.get_default_global_api().ask_single_question(
@@ -104,22 +107,24 @@ async def test_api_with_stop_parameter():
     assert ", 5" not in openai_resp[0]
     assert "4" in openai_resp[0]
 
-    # Test with Anthropic model
-    anthropic_resp = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_id="claude-3-haiku-20240307",
-        question="Count from 1 to 10: 1, 2, 3,",
-        max_tokens=20,
-        stop=[", 5"],  # Should stop before outputting ", 5"
-    )
+    # Test with Anthropic model (skip when no key/credits)
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        anthropic_resp = await InferenceAPI.get_default_global_api().ask_single_question(
+            model_id="claude-3-haiku-20240307",
+            question="Count from 1 to 10: 1, 2, 3,",
+            max_tokens=20,
+            stop=[", 5"],  # Should stop before outputting ", 5"
+        )
 
-    assert isinstance(anthropic_resp, list)
-    assert len(anthropic_resp) == 1
-    assert isinstance(anthropic_resp[0], str)
-    assert ", 5" not in anthropic_resp[0]
-    assert "4" in anthropic_resp[0]
+        assert isinstance(anthropic_resp, list)
+        assert len(anthropic_resp) == 1
+        assert isinstance(anthropic_resp[0], str)
+        assert ", 5" not in anthropic_resp[0]
+        assert "4" in anthropic_resp[0]
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not available in environment or credits")
 async def test_anthropic_accepts_seed_parameter():
     """Test that the seed parameter is ignored without error for Anthropic models."""
     utils.setup_environment()
@@ -137,6 +142,7 @@ async def test_anthropic_accepts_seed_parameter():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not available in environment or credits")
 async def test_anthropic_rejects_invalid_parameters():
     """Test that invalid parameters raise TypeError with Anthropic models."""
     utils.setup_environment()

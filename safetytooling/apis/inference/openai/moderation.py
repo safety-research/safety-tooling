@@ -53,7 +53,7 @@ class OpenAIModerationModel:
                 return response
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                 time.sleep(1.5**i)
 
         raise RuntimeError(f"Failed to get a response from the API after {max_attempts} attempts.")

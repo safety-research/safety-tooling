@@ -40,6 +40,7 @@ class AnthropicChatModel(InferenceAPIModel):
         num_threads: int,
         prompt_history_dir: Path | None = None,
         anthropic_api_key: str | None = None,
+        progress_monitor: object | None = None,
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
@@ -50,6 +51,7 @@ class AnthropicChatModel(InferenceAPIModel):
 
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
         self.kwarg_change_name = {"stop": "stop_sequences"}
+        self.progress_monitor = progress_monitor
 
     async def __call__(
         self,
@@ -107,7 +109,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     error_info = (
                         f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                     )
-                    LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                    LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                     error_list.append(error_info)
                     api_duration = time.time() - api_start
                     await asyncio.sleep(1.5**i)
@@ -207,6 +209,26 @@ class AnthropicChatModel(InferenceAPIModel):
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:
             prompt.pretty_print(responses)
+
+        # Update progress monitor with exact Anthropic usage if available
+        if self.progress_monitor is not None and responses is not None and len(responses) > 0:
+            try:
+                usage = getattr(responses[0], "usage", None)
+                in_tok = getattr(usage, "input_tokens", None) if usage is not None else None
+                out_tok = getattr(usage, "output_tokens", None) if usage is not None else None
+                # requests-only if no exact tokens
+                show_tokens = (isinstance(in_tok, int) and in_tok > 0) or (isinstance(out_tok, int) and out_tok > 0)
+                self.progress_monitor.register_generic_model(model_id, show_token_bars=show_tokens)
+                asyncio.create_task(
+                    self.progress_monitor.update_openai_usage(
+                        model_id=model_id,
+                        input_tokens=(int(in_tok) if isinstance(in_tok, int) else None),
+                        output_tokens=(int(out_tok) if isinstance(out_tok, int) else None),
+                        request_increment=1,
+                    )
+                )
+            except Exception:
+                pass
 
         return responses
 
