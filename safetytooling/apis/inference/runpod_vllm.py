@@ -188,19 +188,6 @@ class VLLMChatModel(InferenceAPIModel):
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:
             prompt.pretty_print(responses)
-        # Update progress monitor: only requests for now (no exact token usage available)
-        if self.progress_monitor is not None and responses is not None and len(responses) > 0:
-            try:
-                self.progress_monitor.register_generic_model(model_id, show_token_bars=False)
-                asyncio.create_task(
-                    self.progress_monitor.update_openai_usage(
-                        model_id=model_id,
-                        input_tokens=None,
-                        output_tokens=None,
-                        request_increment=1,
-                    )
-                )
-            except Exception:
-                pass
+        # Progress monitoring is handled centrally in InferenceAPI to avoid double counting.
 
         return responses

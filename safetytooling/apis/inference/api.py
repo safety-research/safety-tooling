@@ -687,7 +687,7 @@ class InferenceAPI:
                 if isinstance(model_class, AnthropicChatModel) or isinstance(model_class, HuggingFaceModel) or isinstance(model_class, GeminiModel) or isinstance(model_class, GeminiVertexAIModel):
                     request_increment = num_candidates
 
-                await self.progress_monitor.update_openai_usage(
+                await self.progress_monitor.update_usage(
                     model_id=model_id,
                     input_tokens=(total_in_tokens if (total_in_tokens > 0) else None),
                     output_tokens=(total_out_tokens if (total_out_tokens > 0) else None),

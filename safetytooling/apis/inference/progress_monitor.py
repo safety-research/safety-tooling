@@ -170,7 +170,7 @@ class RateLimitProgressMonitor:
             self._bars[model_id] = (req_bar, None, None)
             self._next_position += 1
 
-    async def update_openai_usage(
+    async def update_usage(
         self,
         model_id: str,
         input_tokens: Optional[int],

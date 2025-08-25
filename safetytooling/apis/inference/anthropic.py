@@ -210,25 +210,7 @@ class AnthropicChatModel(InferenceAPIModel):
         if print_prompt_and_response:
             prompt.pretty_print(responses)
 
-        # Update progress monitor with exact Anthropic usage if available
-        if self.progress_monitor is not None and responses is not None and len(responses) > 0:
-            try:
-                usage = getattr(responses[0], "usage", None)
-                in_tok = getattr(usage, "input_tokens", None) if usage is not None else None
-                out_tok = getattr(usage, "output_tokens", None) if usage is not None else None
-                # requests-only if no exact tokens
-                show_tokens = (isinstance(in_tok, int) and in_tok > 0) or (isinstance(out_tok, int) and out_tok > 0)
-                self.progress_monitor.register_generic_model(model_id, show_token_bars=show_tokens)
-                asyncio.create_task(
-                    self.progress_monitor.update_openai_usage(
-                        model_id=model_id,
-                        input_tokens=(int(in_tok) if isinstance(in_tok, int) else None),
-                        output_tokens=(int(out_tok) if isinstance(out_tok, int) else None),
-                        request_increment=1,
-                    )
-                )
-            except Exception:
-                pass
+        # Progress monitoring is handled centrally in InferenceAPI to avoid double counting.
 
         return responses
 

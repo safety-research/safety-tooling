@@ -102,19 +102,4 @@ class GraySwanChatModel(InferenceAPIModel):
         if print_prompt_and_response:
             prompt.pretty_print(responses)
 
-        # Update progress monitor: requests only
-        if self.progress_monitor is not None:
-            try:
-                self.progress_monitor.register_generic_model(model_id, show_token_bars=False)
-                asyncio.create_task(
-                    self.progress_monitor.update_openai_usage(
-                        model_id=model_id,
-                        input_tokens=None,
-                        output_tokens=None,
-                        request_increment=1,
-                    )
-                )
-            except Exception:
-                pass
-
         return responses

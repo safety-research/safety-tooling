@@ -147,32 +147,6 @@ class TogetherChatModel(InferenceAPIModel):
         if print_prompt_and_response:
             prompt.pretty_print(responses)
 
-        # Update progress monitor: requests only (no token bars) unless usage available
-        if self.progress_monitor is not None and responses is not None and len(responses) > 0:
-            try:
-                # Together's SDK may include tokens on response_data.usage; if present, aggregate
-                total_in = 0
-                total_out = 0
-                usage = getattr(response_data, "usage", None)
-                if usage is not None:
-                    in_tok = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
-                    out_tok = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None)
-                    if in_tok is not None:
-                        total_in = int(in_tok)
-                    if out_tok is not None:
-                        total_out = int(out_tok)
-
-                show_tokens = (total_in > 0 or total_out > 0)
-                self.progress_monitor.register_generic_model(model_id, show_token_bars=show_tokens)
-                asyncio.create_task(
-                    self.progress_monitor.update_openai_usage(
-                        model_id=model_id,
-                        input_tokens=(total_in if total_in > 0 else None),
-                        output_tokens=(total_out if total_out > 0 else None),
-                        request_increment=1,
-                    )
-                )
-            except Exception:
-                pass
+        # Progress monitoring is handled centrally in InferenceAPI to avoid double counting.
 
         return responses

@@ -193,20 +193,6 @@ class OpenRouterChatModel(InferenceAPIModel):
         if print_prompt_and_response:
             prompt.pretty_print(responses)
 
-        # Update progress monitor: show tokens if usage present
-        if self.progress_monitor is not None and responses is not None and len(responses) > 0:
-            try:
-                show_tokens = (total_in > 0 or total_out > 0)
-                self.progress_monitor.register_generic_model(model_id, show_token_bars=show_tokens)
-                asyncio.create_task(
-                    self.progress_monitor.update_openai_usage(
-                        model_id=model_id,
-                        input_tokens=(total_in if total_in > 0 else None),
-                        output_tokens=(total_out if total_out > 0 else None),
-                        request_increment=1,
-                    )
-                )
-            except Exception:
-                pass
+        # Progress monitoring is handled centrally in InferenceAPI to avoid double counting.
 
         return responses
