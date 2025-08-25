@@ -132,19 +132,6 @@ response = await API(
 )
 ```
 
-#### Progress Bars for Rate Limits
-
-Enable a multi-progress UI to visualize per-model rate limit usage (requests/min, input tok/min, output tok/min) by passing `show_progress=True` when creating the API:
-
-```
-API = InferenceAPI(cache_dir=Path(".cache"), show_progress=True)
-```
-
-Notes:
-- For OpenAI models, request and token caps are read from headers/dummy probes, so bars reflect actual caps and rolling usage.
-- For other providers (Anthropic, HuggingFace, Together, OpenRouter, VLLM), caps are unknown, so bars scale dynamically with observed usage.
-- Bars update live as calls complete; disable rendering (but keep metrics) with `show_progress=False` (default).
-
 The InferenceAPI class supports running new models when they come out without needing to update the codebase. However, you have to pass `force_provider` to the API object call. For example, if you want to run gpt-4-new-model, you can do:
 ```
 response = await API(
