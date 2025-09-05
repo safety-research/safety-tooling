@@ -20,6 +20,7 @@ class GraySwanChatModel(InferenceAPIModel):
         num_threads: int,
         prompt_history_dir: Path | None = None,
         api_key: str | None = None,
+        progress_monitor: object | None = None,
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
@@ -32,6 +33,7 @@ class GraySwanChatModel(InferenceAPIModel):
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
+        self.progress_monitor = progress_monitor
 
     async def __call__(
         self,
@@ -71,7 +73,7 @@ class GraySwanChatModel(InferenceAPIModel):
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                 error_list.append(error_info)
                 api_duration = time.time() - api_start
                 await asyncio.sleep(1.5**i)

@@ -304,7 +304,7 @@ class GeminiModel(InferenceAPIModel):
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying in {1.5**i} seconds. (Attempt {i})")
+                LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying in {1.5**i} seconds. (Attempt {i})")
                 await asyncio.sleep(1.5**i)
             else:
                 break

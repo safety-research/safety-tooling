@@ -25,7 +25,7 @@ def create_test_prompt():
     )
 
 
-@pytest.mark.skipif("OPENROUTER_API_KEY" not in os.environ, reason="OPENROUTER_API_KEY not available in environment")
+@pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="OPENROUTER_API_KEY not available in environment")
 @pytest.mark.asyncio
 async def test_openrouter_init():
     api = InferenceAPI(
@@ -48,7 +48,7 @@ async def test_openrouter_init():
     assert isinstance(provider_forced, OpenRouterChatModel)
 
 
-@pytest.mark.skipif("TOGETHER_API_KEY" not in os.environ, reason="TOGETHER_API_KEY not available in environment")
+@pytest.mark.skipif(not os.environ.get("TOGETHER_API_KEY"), reason="TOGETHER_API_KEY not available in environment")
 @pytest.mark.asyncio
 async def test_together_init():
     api = InferenceAPI(
@@ -70,7 +70,7 @@ async def test_together_init():
     assert isinstance(provider_forced, TogetherChatModel)
 
 
-@pytest.mark.skipif("OPENROUTER_API_KEY" not in os.environ, reason="OPENROUTER_API_KEY not available in environment")
+@pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="OPENROUTER_API_KEY not available in environment")
 @pytest.mark.asyncio
 async def test_openrouter_call():
     api = InferenceAPI(

@@ -46,6 +46,7 @@ class TogetherChatModel(InferenceAPIModel):
         num_threads: int,
         prompt_history_dir: Path | None = None,
         api_key: str | None = None,
+        progress_monitor: object | None = None,
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
@@ -54,6 +55,7 @@ class TogetherChatModel(InferenceAPIModel):
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
+        self.progress_monitor = progress_monitor
 
     @staticmethod
     def convert_top_logprobs(data) -> list[dict]:
@@ -107,11 +109,11 @@ class TogetherChatModel(InferenceAPIModel):
             except (TypeError, InvalidRequestError) as e:
                 raise e
             except ServiceUnavailableError:
-                LOGGER.warn(f"Service Unavailable or Rate Limited for {model_id}")
+                LOGGER.warning(f"Service Unavailable or Rate Limited for {model_id}")
                 await asyncio.sleep(10)
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                 error_list.append(error_info)
                 api_duration = time.time() - api_start
                 await asyncio.sleep(1.5**i)
@@ -144,5 +146,7 @@ class TogetherChatModel(InferenceAPIModel):
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:
             prompt.pretty_print(responses)
+
+        # Progress monitoring is handled centrally in InferenceAPI to avoid double counting.
 
         return responses

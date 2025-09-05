@@ -25,6 +25,7 @@ class OpenRouterChatModel(InferenceAPIModel):
         num_threads: int,
         prompt_history_dir: Path | None = None,
         api_key: str | None = None,
+        progress_monitor: object | None = None,
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
@@ -36,6 +37,7 @@ class OpenRouterChatModel(InferenceAPIModel):
         else:
             self.aclient = None
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
+        self.progress_monitor = progress_monitor
 
     @staticmethod
     def convert_top_logprobs(data) -> list[dict]:
@@ -99,7 +101,7 @@ class OpenRouterChatModel(InferenceAPIModel):
                     ):
                         # sometimes gemini will never return a response
                         if model_id == "google/gemini-2.0-flash-001":
-                            LOGGER.warn(f"Empty response from {model_id} (returning empty response)")
+                            LOGGER.warning(f"Empty response from {model_id} (returning empty response)")
                             return [
                                 LLMResponse(
                                     model_id=model_id,
@@ -124,7 +126,7 @@ class OpenRouterChatModel(InferenceAPIModel):
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                 error_list.append(error_info)
                 api_duration = time.time() - api_start
                 await asyncio.sleep(1.5**i)
@@ -144,25 +146,53 @@ class OpenRouterChatModel(InferenceAPIModel):
             "n", 1
         ), f"Expected {kwargs.get('n', 1)} choices, got {len(response_data.choices)}"
 
-        responses = [
-            LLMResponse(
-                model_id=model_id,
-                completion=choice.message.content,
-                stop_reason=choice.finish_reason,
-                api_duration=api_duration,
-                duration=duration,
-                cost=0,
-                logprobs=(
-                    self.convert_top_logprobs(choice.logprobs)
-                    if hasattr(choice, "logprobs") and choice.logprobs is not None
-                    else None
-                ),
+        responses = []
+        total_in = 0
+        total_out = 0
+        for choice in response_data.choices:
+            # OpenRouter may include usage at top-level
+            usage = getattr(response_data, "usage", None)
+            if usage is not None:
+                # usage may be a dict-like object
+                in_tok = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
+                out_tok = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None)
+            else:
+                in_tok = None
+                out_tok = None
+            if in_tok is not None:
+                total_in += int(in_tok)
+            if out_tok is not None:
+                total_out += int(out_tok)
+
+            responses.append(
+                LLMResponse(
+                    model_id=model_id,
+                    completion=choice.message.content,
+                    stop_reason=choice.finish_reason,
+                    api_duration=api_duration,
+                    duration=duration,
+                    cost=0,
+                    logprobs=(
+                        self.convert_top_logprobs(choice.logprobs)
+                        if hasattr(choice, "logprobs") and choice.logprobs is not None
+                        else None
+                    ),
+                    usage=(
+                        None
+                        if usage is None
+                        else type("U", (), {
+                            "input_tokens": int(in_tok) if in_tok is not None else None,
+                            "output_tokens": int(out_tok) if out_tok is not None else None,
+                            "total_tokens": int((in_tok or 0) + (out_tok or 0)),
+                        })()
+                    ),
+                )
             )
-            for choice in response_data.choices
-        ]
 
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:
             prompt.pretty_print(responses)
+
+        # Progress monitoring is handled centrally in InferenceAPI to avoid double counting.
 
         return responses

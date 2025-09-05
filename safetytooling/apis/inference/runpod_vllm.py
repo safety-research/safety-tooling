@@ -27,6 +27,7 @@ class VLLMChatModel(InferenceAPIModel):
         prompt_history_dir: Path | None = None,
         vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
         runpod_api_key: str | None = None,
+        progress_monitor: object | None = None,
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
@@ -45,6 +46,7 @@ class VLLMChatModel(InferenceAPIModel):
             "length": StopReason.MAX_TOKENS.value,
             "stop": StopReason.STOP_SEQUENCE.value,
         }
+        self.progress_monitor = progress_monitor
 
     async def query(self, model_url: str, payload: dict, session: aiohttp.ClientSession, timeout: int = 1000) -> dict:
         async with session.post(model_url, headers=self.headers, json=payload, timeout=timeout) as response:
@@ -155,7 +157,7 @@ class VLLMChatModel(InferenceAPIModel):
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                 await asyncio.sleep(1.5**i)
             else:
                 break
@@ -186,5 +188,6 @@ class VLLMChatModel(InferenceAPIModel):
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:
             prompt.pretty_print(responses)
+        # Progress monitoring is handled centrally in InferenceAPI to avoid double counting.
 
         return responses

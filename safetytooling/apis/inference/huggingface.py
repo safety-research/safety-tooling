@@ -34,6 +34,7 @@ class HuggingFaceModel(InferenceAPIModel):
         num_threads: int,
         token: str,
         prompt_history_dir: Path | None = None,
+        progress_monitor: object | None = None,
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
@@ -56,6 +57,7 @@ class HuggingFaceModel(InferenceAPIModel):
         }
 
         self.tokenizers = {}
+        self.progress_monitor = progress_monitor
 
     def count_tokens(self, text, model_name):
         if model_name not in self.tokenizers:
@@ -169,10 +171,10 @@ class HuggingFaceModel(InferenceAPIModel):
                     raise e
 
                 if "503 Service Unavailable" in str(e):
-                    LOGGER.warn(f"503 Service Unavailable error. Waiting 60 seconds before retrying. (Attempt {i})")
+                    LOGGER.warning(f"503 Service Unavailable error. Waiting 60 seconds before retrying. (Attempt {i})")
                     await asyncio.sleep(60)
                 else:
-                    LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                    LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                     await asyncio.sleep(1.5**i)
             else:
                 break
@@ -207,5 +209,7 @@ class HuggingFaceModel(InferenceAPIModel):
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:
             prompt.pretty_print(responses)
+
+        # Progress monitoring is handled centrally in InferenceAPI to avoid double counting.
 
         return responses

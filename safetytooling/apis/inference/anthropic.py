@@ -40,6 +40,7 @@ class AnthropicChatModel(InferenceAPIModel):
         num_threads: int,
         prompt_history_dir: Path | None = None,
         anthropic_api_key: str | None = None,
+        progress_monitor: object | None = None,
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
@@ -50,6 +51,7 @@ class AnthropicChatModel(InferenceAPIModel):
 
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
         self.kwarg_change_name = {"stop": "stop_sequences"}
+        self.progress_monitor = progress_monitor
 
     async def __call__(
         self,
@@ -107,7 +109,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     error_info = (
                         f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
                     )
-                    LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                    LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                     error_list.append(error_info)
                     api_duration = time.time() - api_start
                     await asyncio.sleep(1.5**i)
@@ -207,6 +209,8 @@ class AnthropicChatModel(InferenceAPIModel):
         self.add_response_to_prompt_file(prompt_file, responses)
         if print_prompt_and_response:
             prompt.pretty_print(responses)
+
+        # Progress monitoring is handled centrally in InferenceAPI to avoid double counting.
 
         return responses
 

@@ -61,12 +61,14 @@ class OpenAIModel(InferenceAPIModel):
         prompt_history_dir: Path | None = None,
         base_url: str | None = None,
         openai_api_key: str | None = None,
+        progress_monitor: object | None = None,
     ):
         self.frac_rate_limit = frac_rate_limit
         self.prompt_history_dir = prompt_history_dir
         self.model_ids = set()
         self.base_url = base_url
         self.openai_api_key = openai_api_key
+        self.progress_monitor = progress_monitor
 
         if openai_api_key:
             self.aclient = openai.AsyncClient(api_key=openai_api_key, base_url=self.base_url)
@@ -125,6 +127,17 @@ class OpenAIModel(InferenceAPIModel):
         self.token_capacity[model_id] = token_capacity
         self.request_capacity[model_id] = request_capacity
 
+        # Register model with progress monitor
+        if self.progress_monitor is not None:
+            try:
+                self.progress_monitor.register_openai_model(
+                    model_id=model_id,
+                    request_resource=request_capacity,
+                    token_resource=token_capacity,
+                )
+            except Exception:
+                pass
+
     async def __call__(
         self,
         model_id: str,
@@ -168,7 +181,7 @@ class OpenAIModel(InferenceAPIModel):
                 raise e
             except Exception as e:
                 error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
-                LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
+                LOGGER.warning(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                 await asyncio.sleep(1.5**i)
             else:
                 break
