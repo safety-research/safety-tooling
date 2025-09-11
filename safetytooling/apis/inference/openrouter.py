@@ -14,12 +14,11 @@ from safetytooling.utils.tool_utils import convert_tools_to_openai
 from .model import InferenceAPIModel
 
 OPENROUTER_MODELS = {
-    "x-ai/grok-3-beta",
+    "x-ai/grok-4",
     "google/gemini-2.0-flash-001",
     "mistral/ministral-8b",
     "mistralai/mistral-large-2411",
     "google/gemini-2.5-flash-preview",
-    "google/gemini-2.0-flash-001",
     "deepseek/deepseek-v3-base:free",
     "deepseek/deepseek-r1-zero:free",
     "meta-llama/llama-3.1-405b",
@@ -29,23 +28,6 @@ OPENROUTER_MODELS = {
     "meta-llama/llama-3.1-8b-instruct",
     "meta-llama/llama-3.1-70b-instruct",
     "meta-llama/llama-3.3-70b-instruct",
-    "meta-llama/llama-3.1-405b-instruct",
-    "nousresearch/hermes-3-llama-3.1-405b",
-    "mistralai/mistral-small-24b-instruct-2501",
-}
-
-# Models that support tool calling
-OPENROUTER_TOOL_MODELS = {
-    "google/gemini-2.0-flash-001",
-    "google/gemini-2.5-flash-preview",
-    "mistral/ministral-8b",
-    "mistralai/mistral-large-2411",
-    "meta-llama/llama-3.1-405b",
-    "meta-llama/llama-3.1-405b:free",
-    "nousresearch/hermes-3-llama-3.1-70b",
-    # DeepInfra models that support tools
-    "meta-llama/llama-3.1-8b-instruct",
-    "meta-llama/llama-3.1-70b-instruct",
     "meta-llama/llama-3.1-405b-instruct",
     "nousresearch/hermes-3-llama-3.1-405b",
     "mistralai/mistral-small-24b-instruct-2501",
@@ -196,8 +178,8 @@ class OpenRouterChatModel(InferenceAPIModel):
                             role=MessageRole.tool,
                             content={
                                 "tool_call_id": tool_call.id,
-                                "name": tool_call.function.name,
-                                "content": str(tool_result),
+                                "tool_name": tool_call.function.name,
+                                "message": str(tool_result),
                             },
                         )
                         all_generated_content.append(tool_msg)
@@ -218,8 +200,8 @@ class OpenRouterChatModel(InferenceAPIModel):
                             role=MessageRole.tool,
                             content={
                                 "tool_call_id": tool_call.id,
-                                "name": tool_call.function.name,
-                                "content": f"Error executing tool: {str(e)}",
+                                "tool_name": tool_call.function.name,
+                                "message": f"Error executing tool: {str(e)}",
                             },
                         )
                         all_generated_content.append(error_msg)
@@ -238,8 +220,8 @@ class OpenRouterChatModel(InferenceAPIModel):
                         role=MessageRole.tool,
                         content={
                             "tool_call_id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "content": f"Tool {tool_call.function.name} not found",
+                            "tool_name": tool_call.function.name,
+                            "message": f"Tool {tool_call.function.name} not found",
                         },
                     )
                     all_generated_content.append(error_msg)
@@ -272,7 +254,6 @@ class OpenRouterChatModel(InferenceAPIModel):
         # Convert tools if provided
         openai_tools = None
         if tools:
-            assert model_id in OPENROUTER_TOOL_MODELS, f"Model {model_id} does not support tools"
             openai_tools = convert_tools_to_openai(tools)
 
         start = time.time()

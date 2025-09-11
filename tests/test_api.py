@@ -52,7 +52,7 @@ async def test_tool_call():
     tools = [
         StructuredTool.from_function(func=testToolFunc, name="Thermometer_tool", description="Gives the temperature.")
     ]
-    for model in ["claude-3-5-haiku-20241022", "gpt-4o-mini"]:
+    for model in ["claude-3-5-haiku-20241022", "gpt-4o-mini", "x-ai/grok-4"]:
         resp = await InferenceAPI(cache_dir=None)(
             model_id=model,
             prompt=Prompt(
@@ -77,6 +77,11 @@ async def test_tool_call():
             tool_use_content = [x for x in resp[0].generated_content[0].content if x["type"] == "tool_use"]
             assert len(tool_use_content) == 1
             assert tool_use_content[0]["name"] == TOOL_NAME
+        elif model == "x-ai/grok-4":
+            # OpenRouter models use OpenAI-style format with tool calls in a list
+            tool_call_content = [x for x in resp[0].generated_content[0].content if x["type"] == "tool_call"]
+            assert len(tool_call_content) == 1
+            assert tool_call_content[0]["function"]["name"] == TOOL_NAME
 
         # The call to the tool
         assert resp[0].generated_content[1].role == MessageRole.tool

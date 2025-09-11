@@ -38,8 +38,6 @@ VISION_MODELS = {
     "claude-3-7-sonnet-20250219",
 }
 
-ANTHROPIC_TOOL_MODELS = ANTHROPIC_MODELS
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -190,7 +188,6 @@ class AnthropicChatModel(InferenceAPIModel):
                 tool_with_content_message.pop("type")  # don't need this
                 tool_with_content_message["tool_name"] = tool_block.name
                 all_generated_content.append(ChatMessage(role=MessageRole.tool, content=tool_with_content_message))
-                print(tool_with_content_message)
 
         return response, all_generated_content, total_usage
 
