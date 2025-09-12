@@ -45,7 +45,7 @@ from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
 from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS, is_finetune_gpt_model
 from .openrouter import OPENROUTER_MODELS, OpenRouterChatModel
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
-from .runpod_vllm import VLLM_MODELS, VLLMChatModel
+from .runpod_vllm import CHAT_COMPLETION_VLLM_MODELS, COMPLETION_VLLM_MODELS, VLLMChatModel
 from .together import TOGETHER_MODELS, TogetherChatModel
 
 LOGGER = logging.getLogger(__name__)
@@ -310,7 +310,7 @@ class InferenceAPI:
             return self._together
         elif model_id in OPENROUTER_MODELS or model_id.startswith("openrouter/"):
             return self._openrouter
-        elif model_id in VLLM_MODELS:
+        elif model_id in CHAT_COMPLETION_VLLM_MODELS or model_id in COMPLETION_VLLM_MODELS:
             return self._vllm
         elif model_id in DEEPSEEK_MODELS:
             return self._deepseek

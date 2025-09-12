@@ -2,6 +2,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 
+from torchtyping import TensorType
+
 import openai
 import pydantic
 
@@ -81,6 +83,9 @@ class LLMResponse(pydantic.BaseModel):
     api_failures: int | None = 0
     batch_custom_id: str | None = None
     usage: Usage | None = None
+    
+    # Generic field for custom API response data, that will not be cached
+    extra_fields: Dict[str, Any] | None = None
 
     model_config = pydantic.ConfigDict(protected_namespaces=())
 

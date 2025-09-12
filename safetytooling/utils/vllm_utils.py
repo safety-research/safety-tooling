@@ -313,12 +313,12 @@ async def deploy_model_vllm_locally(
                 preexec_fn=os.setsid,
             )
 
-        # Register model in VLLM_MODELS
-        from safetytooling.apis.inference.runpod_vllm import VLLM_MODELS
+        # Register model in CHAT_COMPLETION_VLLM_MODELS (default to chat completions)
+        from safetytooling.apis.inference.runpod_vllm import CHAT_COMPLETION_VLLM_MODELS
 
         model_key = model_name or base_model
         base_url = f"http://0.0.0.0:{port}"
-        VLLM_MODELS[model_key] = f"{base_url}/v1/chat/completions"
+        CHAT_COMPLETION_VLLM_MODELS[model_key] = f"{base_url}/v1/chat/completions"
 
         # Create deployment object
         deployment = VLLMDeployment(

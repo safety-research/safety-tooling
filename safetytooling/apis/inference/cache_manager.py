@@ -256,6 +256,12 @@ class FileBasedCacheManager(BaseCacheManager):
         cache_file, prompt_hash = self.get_cache_file(prompt, params)
         cache_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Temporarily remove extra_fields to avoid caching large activation/logit data
+        saved_extra_fields = []
+        for response in responses:
+            saved_extra_fields.append(response.extra_fields)
+            response.extra_fields = None
+
         new_cache_entry = LLMCache(prompt=prompt, params=params, responses=responses)
 
         with filelock.FileLock(str(cache_file) + ".lock"):
@@ -266,6 +272,10 @@ class FileBasedCacheManager(BaseCacheManager):
 
             cache_data[prompt_hash] = new_cache_entry.model_dump_json()
             save_json(cache_file, cache_data)
+        
+        # Restore extra_fields after caching and serialization
+        for response, extra_fields in zip(responses, saved_extra_fields):
+            response.extra_fields = extra_fields
 
     def get_moderation_file(self, texts: list[str]) -> tuple[Path, str]:
         hashes = [deterministic_hash(t) for t in texts]
@@ -459,8 +469,18 @@ class RedisCacheManager(BaseCacheManager):
         cache_dir, prompt_hash = self.get_cache_file(prompt, params)
         key = self._make_key(f"{cache_dir}/{prompt_hash}")
 
+        # Temporarily remove extra_fields to avoid caching large activation/logit data
+        saved_extra_fields = []
+        for response in responses:
+            saved_extra_fields.append(response.extra_fields)
+            response.extra_fields = None
+
         new_cache_entry = LLMCache(prompt=prompt, params=params, responses=responses)
         self.db.set(key, new_cache_entry.model_dump_json())
+        
+        # Restore extra_fields after caching and serialization
+        for response, extra_fields in zip(responses, saved_extra_fields):
+            response.extra_fields = extra_fields
 
     def get_moderation_file(self, texts: list[str]) -> tuple[Path, str]:
         hashes = [deterministic_hash(t) for t in texts]

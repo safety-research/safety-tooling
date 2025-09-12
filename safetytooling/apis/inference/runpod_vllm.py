@@ -1,23 +1,29 @@
 import asyncio
+import base64
 import collections
 import logging
+import pickle
 import time
 from pathlib import Path
 from traceback import format_exc
 
 import aiohttp
 
-from safetytooling.data_models import LLMResponse, Prompt, StopReason
+from safetytooling.data_models import LLMResponse, MessageRole, Prompt, StopReason
 from safetytooling.utils import math_utils
 
 from .model import InferenceAPIModel
 
-VLLM_MODELS = {
+CHAT_COMPLETION_VLLM_MODELS = {
     "dummy": "https://pod-port.proxy.runpod.net/v1/chat/completions",
+    # Add more chat completion models and their endpoints as needed
+}
+
+COMPLETION_VLLM_MODELS = {
     "meta-llama/Llama-3.1-70B": "https://98gzngudd59oss-8000.proxy.runpod.net/v1/completions",
     "meta-llama/Llama-3.1-8B": "https://98gzngudd59oss-8000.proxy.runpod.net/v1/completions",
     "google/gemma-3-27b-pt": "https://98gzngudd59oss-8000.proxy.runpod.net/v1/completions",
-    # Add more models and their endpoints as needed
+    # Add more completion models and their endpoints as needed
 }
 
 LOGGER = logging.getLogger(__name__)
@@ -126,7 +132,13 @@ class VLLMChatModel(InferenceAPIModel):
     ) -> list[LLMResponse]:
         start = time.time()
 
-        model_url = VLLM_MODELS.get(model_id, self.vllm_base_url)
+        # Determine if we should use completions format based on prompt structure
+        use_completions_format = prompt.is_none_in_messages()
+        
+        if use_completions_format:
+            model_url = COMPLETION_VLLM_MODELS.get(model_id, self.vllm_base_url.replace("/chat/completions", "/completions"))
+        else:
+            model_url = CHAT_COMPLETION_VLLM_MODELS.get(model_id, self.vllm_base_url)
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
@@ -145,9 +157,17 @@ class VLLMChatModel(InferenceAPIModel):
                 async with self.available_requests:
                     api_start = time.time()
 
+                    # For completions format, pass simple content; for chat, use together_format
+                    if use_completions_format:
+                        # Use direct content access to avoid stripping whitespace from __str__
+                        assert len(prompt.messages) == 1 and prompt.messages[0].role == MessageRole.none
+                        messages = [{"content": prompt.messages[0].content}]
+                    else:
+                        messages = prompt.together_format()
+                    
                     response_data = await self.run_query(
                         model_url,
-                        prompt.together_format(),
+                        messages,
                         kwargs,
                         continue_final_message=prompt.is_last_message_assistant(),
                     )
@@ -185,6 +205,29 @@ class VLLMChatModel(InferenceAPIModel):
             LOGGER.error(f"Invalid response format: {response_data}")
             raise RuntimeError(f"Invalid response format: {response_data}")
 
+        # Build extra_fields with custom API data, converting to tensors where appropriate
+        extra_fields = {}
+        if response_data.get("prompt_tokens") is not None:
+            extra_fields["prompt_tokens"] = response_data["prompt_tokens"]
+        if response_data.get("completion_tokens") is not None:
+            extra_fields["completion_tokens"] = response_data["completion_tokens"]
+        if response_data.get("activations") is not None:
+            activations = response_data["activations"]
+            converted_activations = {}
+            if "prompt" in activations:
+                # Decode base64-encoded pickled tensor dict
+                prompt_data = pickle.loads(base64.b64decode(activations["prompt"]))
+                converted_activations["prompt"] = {int(k): v for k, v in prompt_data.items()}
+            if "completion" in activations:
+                # Decode base64-encoded pickled tensor dict  
+                completion_data = pickle.loads(base64.b64decode(activations["completion"]))
+                converted_activations["completion"] = {int(k): v for k, v in completion_data.items()}
+            extra_fields["activations"] = converted_activations
+        if response_data.get("logits") is not None:
+            # Decode base64-encoded pickled tensor
+            logits_data = pickle.loads(base64.b64decode(response_data["logits"]))
+            extra_fields["logits"] = logits_data
+        
         responses = [
             LLMResponse(
                 model_id=model_id,
@@ -196,6 +239,7 @@ class VLLMChatModel(InferenceAPIModel):
                 duration=duration,
                 cost=0,
                 logprobs=self.convert_top_logprobs(choice["logprobs"]) if choice.get("logprobs") is not None else None,
+                extra_fields=extra_fields if extra_fields else None,
             )
             for choice in response_data["choices"]
         ]
