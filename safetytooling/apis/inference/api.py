@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import time
@@ -9,6 +10,7 @@ from itertools import chain
 from pathlib import Path
 from typing import Awaitable, Callable, Literal
 
+import cloudpickle
 import matplotlib.pyplot as plt
 import numpy as np
 from langchain.tools import BaseTool
@@ -428,6 +430,19 @@ class InferenceAPI:
 
         assert "top_logprobs" not in kwargs, "top_logprobs is not supported, pass an integer with `logprobs` instead"
 
+        # Handle interventions separately for caching - serialize them to base64 strings
+        cache_kwargs = kwargs.copy()
+        if "interventions" in cache_kwargs:
+            interventions = cache_kwargs["interventions"]
+            if interventions:
+                # Serialize interventions for cache key
+                serialized_interventions = {}
+                for layer_id, intervention in interventions.items():
+                    pickled_data = cloudpickle.dumps(intervention)
+                    encoded_data = base64.b64encode(pickled_data).decode('utf-8')
+                    serialized_interventions[str(layer_id)] = encoded_data
+                cache_kwargs["interventions"] = serialized_interventions
+
         # used for caching and type checking
         llm_cache_params = LLMParams(
             model=model_id,
@@ -435,7 +450,7 @@ class InferenceAPI:
             insufficient_valids_behaviour=insufficient_valids_behaviour,
             num_candidates_per_completion=num_candidates_per_completion,
             tools=make_tools_hashable(tools),
-            **kwargs,
+            **cache_kwargs,
         )
         cached_responses, cached_results, failed_cache_responses = [], [], []
 

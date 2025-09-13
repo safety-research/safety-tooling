@@ -6,8 +6,10 @@ import pickle
 import time
 from pathlib import Path
 from traceback import format_exc
+from typing import Dict, Optional
 
 import aiohttp
+import cloudpickle
 
 from safetytooling.data_models import LLMResponse, MessageRole, Prompt, StopReason
 from safetytooling.utils import math_utils
@@ -67,10 +69,9 @@ class VLLMChatModel(InferenceAPIModel):
             return await response.json()
 
     async def run_query(
-        self, model_url: str, messages: list, params: dict, continue_final_message: bool = False
+        self, model_url: str, messages: list, params: dict, continue_final_message: bool = False, interventions: Optional[Dict[int, "Intervention"]] = None
     ) -> dict:
         # Check if the model URL is a non-chat endpoint
-        ### TODO: Kinda jank, find a better solution
         if "/chat/" not in model_url:
             assert len(messages) == 1, "Make sure that there is only one message with the entire prompt"
             payload = {
@@ -92,6 +93,16 @@ class VLLMChatModel(InferenceAPIModel):
         else:
             payload["continue_final_message"] = False
             payload["add_generation_prompt"] = True
+
+        # Serialize interventions if provided
+        if interventions:
+            serialized_interventions = {}
+            for layer_id, intervention in interventions.items():
+                # Cloudpickle the intervention and base64 encode it
+                pickled_data = cloudpickle.dumps(intervention)
+                encoded_data = base64.b64encode(pickled_data).decode('utf-8')
+                serialized_interventions[str(layer_id)] = encoded_data
+            payload["interventions"] = serialized_interventions
 
         async with aiohttp.ClientSession() as session:
             response = await self.query(model_url, payload, session)
@@ -128,6 +139,7 @@ class VLLMChatModel(InferenceAPIModel):
         print_prompt_and_response: bool,
         max_attempts: int,
         is_valid=lambda x: True,
+        interventions: Optional[Dict[int, "Intervention"]] = None,
         **kwargs,
     ) -> list[LLMResponse]:
         start = time.time()
@@ -170,6 +182,7 @@ class VLLMChatModel(InferenceAPIModel):
                         messages,
                         kwargs,
                         continue_final_message=prompt.is_last_message_assistant(),
+                        interventions=interventions,
                     )
                     api_duration = time.time() - api_start
 
