@@ -430,18 +430,14 @@ class InferenceAPI:
 
         assert "top_logprobs" not in kwargs, "top_logprobs is not supported, pass an integer with `logprobs` instead"
 
-        # Handle interventions separately for caching - serialize them to base64 strings
+        # Handle interventions separately for caching - compute hash of serialized interventions
         cache_kwargs = kwargs.copy()
+        interventions_hash = None
         if "interventions" in cache_kwargs:
-            interventions = cache_kwargs["interventions"]
-            if interventions:
-                # Serialize interventions for cache key
-                serialized_interventions = {}
-                for layer_id, intervention in interventions.items():
-                    pickled_data = cloudpickle.dumps(intervention)
-                    encoded_data = base64.b64encode(pickled_data).decode('utf-8')
-                    serialized_interventions[str(layer_id)] = encoded_data
-                cache_kwargs["interventions"] = serialized_interventions
+            raw_interventions = cache_kwargs.pop("interventions")  # Remove from cache_kwargs
+            interventions_hash = {
+                layer_id: intervention.cache_key() for layer_id, intervention in raw_interventions.items()
+            }
 
         # used for caching and type checking
         llm_cache_params = LLMParams(
@@ -450,6 +446,7 @@ class InferenceAPI:
             insufficient_valids_behaviour=insufficient_valids_behaviour,
             num_candidates_per_completion=num_candidates_per_completion,
             tools=make_tools_hashable(tools),
+            interventions_hash=interventions_hash,  # Pass hash as a proper field
             **cache_kwargs,
         )
         cached_responses, cached_results, failed_cache_responses = [], [], []

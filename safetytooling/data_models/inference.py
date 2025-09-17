@@ -27,6 +27,7 @@ class LLMParams(HashableBaseModel):
     logit_bias: dict[int, float] | None = None
     stop: list[str] | None = None
     tools: tuple[str, ...] | None = None
+    interventions_hash: dict[int, str] | None = None  # Dict of layer_id -> intervention hash for cache uniqueness
     model_config = pydantic.ConfigDict(extra="allow")  # Allow unknown kwargs e.g. response_format for OpenAI
     unknown_kwargs: dict[str, Any] = pydantic.Field(default_factory=dict)
 
