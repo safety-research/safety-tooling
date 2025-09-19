@@ -140,6 +140,7 @@ class VLLMChatModel(InferenceAPIModel):
         max_attempts: int,
         is_valid=lambda x: True,
         interventions: Optional[Dict[int, "Intervention"]] = None,
+        continue_final_message: Optional[bool] = None,
         **kwargs,
     ) -> list[LLMResponse]:
         start = time.time()
@@ -177,11 +178,14 @@ class VLLMChatModel(InferenceAPIModel):
                     else:
                         messages = prompt.together_format()
                     
+                    if continue_final_message is None:
+                        continue_final_message = prompt.is_last_message_assistant()
+
                     response_data = await self.run_query(
                         model_url,
                         messages,
                         kwargs,
-                        continue_final_message=prompt.is_last_message_assistant(),
+                        continue_final_message=continue_final_message,
                         interventions=interventions,
                     )
                     api_duration = time.time() - api_start
