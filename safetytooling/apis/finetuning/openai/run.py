@@ -25,7 +25,7 @@ from tenacity import (
 
 import openai
 import openai.types.fine_tuning
-from openai import APIConnectionError, RateLimitError
+from openai import NOT_GIVEN, APIConnectionError, RateLimitError
 from safetytooling.apis.finetuning.openai.check import openai_check_finetuning_data
 from safetytooling.apis.inference.openai import utils as openai_utils
 from safetytooling.data_models.finetune import FinetuneConfig
@@ -97,6 +97,7 @@ async def queue_finetune(
                         },
                     },
                     validation_file=val_file_id,
+                    seed=cfg.seed if cfg.seed is not None else NOT_GIVEN,
                 )
             elif cfg.method == "dpo":
                 ft_job = await client.fine_tuning.jobs.create(
@@ -114,6 +115,7 @@ async def queue_finetune(
                         },
                     },
                     validation_file=val_file_id,
+                    seed=cfg.seed if cfg.seed is not None else NOT_GIVEN,
                 )
             elif cfg.method == "reinforcement":
                 with open(cfg.config.grader_config, "r") as f:
@@ -133,6 +135,7 @@ async def queue_finetune(
                         },
                     },
                     validation_file=val_file_id,
+                    seed=cfg.seed if cfg.seed is not None else NOT_GIVEN,
                 )
 
     return ft_job
