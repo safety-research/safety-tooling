@@ -182,7 +182,7 @@ class FileBasedCacheManager(BaseCacheManager):
 
             if cached_result is not None:
                 cache_file, _ = self.get_cache_file(prompt=individual_prompt, params=params)
-                LOGGER.info(f"Loaded cache for prompt from {cache_file}")
+                #LOGGER.info(f"Loaded cache for prompt from {cache_file}")
 
                 prop_empty_completions = sum(
                     1 for response in cached_result.responses if response.completion == ""
@@ -390,7 +390,7 @@ class RedisCacheManager(BaseCacheManager):
 
             if cached_result is not None:
                 cache_dir, _ = self.get_cache_file(prompt=individual_prompt, params=params)
-                LOGGER.info(f"Loaded cache for prompt from {cache_dir}")
+                # LOGGER.info(f"Loaded cache for prompt from {cache_dir}")
 
                 prop_empty_completions = sum(
                     1 for response in cached_result.responses if response.completion == ""

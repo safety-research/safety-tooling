@@ -388,6 +388,15 @@ class VLLMChatModel(InferenceAPIModel):
                         prompt.openai_format(allow_assistant_last=True),
                         kwargs,
                     )
+                    # If we use the completion API, the format is a bit different and we need to reformat things
+                    if isinstance(response_data, list):
+                        response_data = {
+                            "choices": [{
+                                "message": {"content": response_data[0]["choices"][0]["tokens"][0]},
+                                "finish_reason": "stop_sequence",
+                            }]
+                        }
+
                     api_duration = time.time() - api_start
 
                     if not response_data.get("choices"):

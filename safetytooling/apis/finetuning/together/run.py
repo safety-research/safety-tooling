@@ -31,7 +31,7 @@ async def upload_finetuning_file(
     LOGGER.info(f"Uploading {file_path} to Together...")
     if not file_path.exists():
         raise FileNotFoundError(f"File {file_path} does not exist")
-    if file_path.suffix != ".jsonl":
+    if file_path.suffix not in [".jsonl", ".parquet"]:
         raise ValueError(f"File {file_path} must have a .jsonl extension")
     response = client.files.upload(file=str(file_path))
     file_id = response.id

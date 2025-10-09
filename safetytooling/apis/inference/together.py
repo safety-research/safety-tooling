@@ -37,6 +37,8 @@ TOGETHER_MODELS = {
     "Qwen/Qwen2.5-Coder-32B-Instruct",
     "Qwen/Qwen2.5-72B-Instruct-Turbo",
     "Qwen/QwQ-32B-Preview",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
 }
 LOGGER = logging.getLogger(__name__)
 
