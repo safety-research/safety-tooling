@@ -24,6 +24,7 @@ OPENROUTER_MODELS = {
     "meta-llama/llama-3.1-405b",
     "meta-llama/llama-3.1-405b:free",
     "nousresearch/hermes-3-llama-3.1-70b",
+    "nousresearch/hermes-4-70b",
     # DeepInfra models accessible through OpenRouter
     "meta-llama/llama-3.1-8b-instruct",
     "meta-llama/llama-3.1-70b-instruct",

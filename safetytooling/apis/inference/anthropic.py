@@ -30,6 +30,7 @@ ANTHROPIC_MODELS = {
     "claude-opus-4-1-20250805",
     "claude-opus-4-20250514",
     "claude-sonnet-4-20250514",
+    "claude-sonnet-4-5-20250929",
 }
 
 VISION_MODELS = {
