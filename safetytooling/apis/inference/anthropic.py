@@ -266,7 +266,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     api_duration = time.time() - api_start
                     if not is_valid(response):
                         raise RuntimeError(f"Invalid response according to is_valid {response}")
-                except (TypeError, anthropic.NotFoundError) as e:
+                except (TypeError, anthropic.NotFoundError, anthropic.BadRequestError) as e:
                     raise e
                 except Exception as e:
                     error_info = (
