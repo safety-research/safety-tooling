@@ -236,7 +236,7 @@ class VLLMChatModel(InferenceAPIModel):
                 prompt_data = pickle.loads(base64.b64decode(activations["prompt"]))
                 converted_activations["prompt"] = {int(k): v for k, v in prompt_data.items()}
             if "completion" in activations:
-                # Decode base64-encoded pickled tensor dict  
+                # Decode base64-encoded pickled tensor dict
                 completion_data = pickle.loads(base64.b64decode(activations["completion"]))
                 converted_activations["completion"] = {int(k): v for k, v in completion_data.items()}
             extra_fields["activations"] = converted_activations
@@ -244,6 +244,12 @@ class VLLMChatModel(InferenceAPIModel):
             # Decode base64-encoded pickled tensor
             logits_data = pickle.loads(base64.b64decode(response_data["logits"]))
             extra_fields["logits"] = logits_data
+        if response_data.get("intervention_metadata") is not None:
+            # Pass through intervention metadata (dict of layer_id -> metadata_dict)
+            # Convert layer_id keys from strings to ints for consistency
+            extra_fields["intervention_metadata"] = {
+                int(k): v for k, v in response_data["intervention_metadata"].items()
+            }
         
         responses = [
             LLMResponse(
