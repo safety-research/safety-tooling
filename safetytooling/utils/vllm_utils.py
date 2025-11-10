@@ -17,6 +17,7 @@ import psutil
 import torch
 from aiohttp.client_exceptions import ClientConnectorError
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import HFValidationError
 
 from safetytooling.utils.hf_utils import get_lora_rank, resolve_lora_model
 
@@ -68,7 +69,7 @@ class VLLMDeployment:
             LOGGER.error(f"Error while closing vLLM process: {e}")
 
         # Clear CUDA memory
-        if torch.cuda.is_available():
+        if torch.cuda is not None and torch.cuda.is_available():
             try:
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()
@@ -259,10 +260,13 @@ async def deploy_model_vllm_locally(
             # Download model files to cache before starting server
             for adapter in params["lora_adapters"]:
                 LOGGER.info(f"Pre-downloading LoRA adapter {adapter} to cache...")
-                snapshot_download(
-                    adapter,
-                    cache_dir=f"{hf_cache_dir}/hub",
-                )
+                try:
+                    snapshot_download(
+                        adapter,
+                        cache_dir=f"{hf_cache_dir}/hub",
+                    )
+                except HFValidationError:
+                    pass  # It's probably a local model.
 
         script = (
             f"vllm serve {params['model']} \\\n"
