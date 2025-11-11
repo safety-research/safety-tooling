@@ -46,7 +46,9 @@ dependencies = [
     "pytest-asyncio==0.26.0",
     "pytest-xdist==3.6.1",
     "huggingface_hub",
-    "langchain"
+    "langchain",
+    "vllm",
+    "torch"
 ]
 
 [tool.setuptools]
