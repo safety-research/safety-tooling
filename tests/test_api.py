@@ -47,7 +47,7 @@ async def test_tool_call():
     def testToolFunc():  # This gets appended to output and then model responds
         return TOOL_OUTPUT
 
-    from langchain.tools import StructuredTool
+    from langchain_core.tools import StructuredTool
 
     tools = [
         StructuredTool.from_function(func=testToolFunc, name="Thermometer_tool", description="Gives the temperature.")
