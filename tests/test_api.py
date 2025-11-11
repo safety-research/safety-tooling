@@ -30,6 +30,7 @@ async def test_openai():
     assert isinstance(resp[1], str)
 
 
+@pytest.mark.skip(reason="Skipping tool call test while langchain environment issue is resolved.")
 @pytest.mark.asyncio
 async def test_tool_call():
     """
