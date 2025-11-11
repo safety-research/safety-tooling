@@ -237,7 +237,9 @@ async def deploy_model_vllm_locally(
 
         is_slurm = "SLURM_JOB_ID" in env
         if is_slurm and set_visible_devices:
-            raise RuntimeError("It looks like you're running on a slurm cluster. You probably want to pass set_visible_devices=False.")
+            raise RuntimeError(
+                "It looks like you're running on a slurm cluster. You probably want to pass set_visible_devices=False."
+            )
 
         if set_visible_devices:
             # Get number of available GPUs
