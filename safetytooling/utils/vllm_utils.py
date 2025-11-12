@@ -209,6 +209,7 @@ async def deploy_model_vllm_locally(
     hf_cache_dir: str = "/root/.cache/huggingface",
     vllm_log_dir: str = "/root/logs/vllm",
     set_visible_devices: bool = True,
+    chat_template: str = None,
 ) -> VLLMDeployment:
     """Deploy a model locally using vLLM serve
 
@@ -319,6 +320,9 @@ async def deploy_model_vllm_locally(
             )
             for adapter in params["lora_adapters"]:
                 script += f"        {adapter}={adapter} \\\n"
+
+        if chat_template:
+            script += f"    --chat-template {chat_template}"
 
         LOGGER.info(f"Starting vLLM process with command:\n{script}")
         LOGGER.info(f"Logging to: {log_file}")
