@@ -17,6 +17,7 @@ import psutil
 import torch
 from aiohttp.client_exceptions import ClientConnectorError
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import HFValidationError
 
 from safetytooling.utils.hf_utils import get_lora_rank, resolve_lora_model
 
@@ -68,7 +69,7 @@ class VLLMDeployment:
             LOGGER.error(f"Error while closing vLLM process: {e}")
 
         # Clear CUDA memory
-        if torch.cuda.is_available():
+        if torch.cuda is not None and torch.cuda.is_available():
             try:
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()
@@ -139,11 +140,12 @@ def deployment_cleanup_context():
             _active_deployments.append(deployment)
 
 
-async def wait_for_server(url: str, timeout: int = 300, check_interval: int = 5) -> bool:
+async def wait_for_server(url: str, process: subprocess.Popen, timeout: int = 300, check_interval: int = 5) -> bool:
     """Wait for server to be ready by polling health endpoint.
 
     Args:
         url: Base URL of the server
+        process: The subprocess running the server
         timeout: Maximum time to wait in seconds
         check_interval: Time between checks in seconds
 
@@ -154,6 +156,10 @@ async def wait_for_server(url: str, timeout: int = 300, check_interval: int = 5)
     health_url = f"{url}/health"
 
     while time.time() - start_time < timeout:
+        # Check if process has crashed
+        if process.poll() is not None:
+            raise RuntimeError(f"vLLM process crashed during startup with exit code {process.returncode}")
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(health_url) as response:
@@ -202,6 +208,7 @@ async def deploy_model_vllm_locally(
     server_timeout: int = 1000,
     hf_cache_dir: str = "/root/.cache/huggingface",
     vllm_log_dir: str = "/root/logs/vllm",
+    set_visible_devices: bool = True,
 ) -> VLLMDeployment:
     """Deploy a model locally using vLLM serve
 
@@ -225,14 +232,27 @@ async def deploy_model_vllm_locally(
         raise RuntimeError("vLLM is not installed. Please install it using `uv pip install vllm`")
 
     with deployment_cleanup_context() as set_deployment:
-        # Get number of available GPUs
-        n_gpus = torch.cuda.device_count()
+        # Set environment variables
+        env = os.environ.copy()
+
+        is_slurm = "SLURM_JOB_ID" in env
+        if is_slurm and set_visible_devices:
+            raise RuntimeError(
+                "It looks like you're running on a slurm cluster. You probably want to pass set_visible_devices=False."
+            )
+
+        if set_visible_devices:
+            # Get number of available GPUs
+            n_gpus = torch.cuda.device_count()
+
+            env["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(n_gpus))
+        else:
+            n_gpus = len(env["CUDA_VISIBLE_DEVICES"].split(","))
+
+        LOGGER.info(f"Using {n_gpus} GPUs: {env['CUDA_VISIBLE_DEVICES']}")
         if n_gpus == 0:
             raise RuntimeError("No GPUs available")
 
-        # Set environment variables
-        env = os.environ.copy()
-        env["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(n_gpus))
         env["HF_HUB_DOWNLOAD_TIMEOUT"] = "600"  # 10 minutes instead of default 10 seconds
         env["TRANSFORMERS_CACHE"] = f"{hf_cache_dir}/hub"
         env["HF_HOME"] = f"{hf_cache_dir}"
@@ -259,10 +279,13 @@ async def deploy_model_vllm_locally(
             # Download model files to cache before starting server
             for adapter in params["lora_adapters"]:
                 LOGGER.info(f"Pre-downloading LoRA adapter {adapter} to cache...")
-                snapshot_download(
-                    adapter,
-                    cache_dir=f"{hf_cache_dir}/hub",
-                )
+                try:
+                    snapshot_download(
+                        adapter,
+                        cache_dir=f"{hf_cache_dir}/hub",
+                    )
+                except HFValidationError:
+                    pass  # It's probably a local model.
 
         script = (
             f"vllm serve {params['model']} \\\n"
@@ -334,7 +357,7 @@ async def deploy_model_vllm_locally(
         set_deployment(deployment)
 
         # Wait for server to be ready
-        if not await wait_for_server(base_url, timeout=server_timeout):
+        if not await wait_for_server(base_url, process, timeout=server_timeout):
             deployment.close()
             raise RuntimeError(f"Server failed to start within {server_timeout} seconds. Check logs at {log_file}")
 
