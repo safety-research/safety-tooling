@@ -295,7 +295,7 @@ async def deploy_model_vllm_locally(
             f"    --max-model-len {params['max_model_len']} \\\n"
             f"    --max-num-seqs {params['max_num_seqs']} \\\n"
             f"    --enable-prefix-caching \\\n"
-            f"    --port {params['port']}"
+            f"    --port {params['port']} --gpu-memory-utilization 0.8"
         )
 
         if "bnb-4bit" in params["model"]:
