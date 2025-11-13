@@ -87,9 +87,7 @@ class RunPodClient:
 
         try:
             # Use GraphQL endpoint
-            response = requests.post(
-                self.GRAPHQL_ENDPOINT, json={"query": query}, headers=self.headers, timeout=30
-            )
+            response = requests.post(self.GRAPHQL_ENDPOINT, json={"query": query}, headers=self.headers, timeout=30)
             response.raise_for_status()
 
             data = response.json()
@@ -211,9 +209,7 @@ def is_pod_running(pod: Dict) -> bool:
     return desired_status == "RUNNING" and has_runtime
 
 
-def generate_ssh_config_entry(
-    pod: Dict, user: str = "root", identity_file: Optional[str] = None
-) -> Optional[str]:
+def generate_ssh_config_entry(pod: Dict, user: str = "root", identity_file: Optional[str] = None) -> Optional[str]:
     """
     Generate SSH config entry for a pod.
 
@@ -366,9 +362,7 @@ Examples:
         """,
     )
 
-    parser.add_argument(
-        "--cluster-name", type=str, help="Filter pods by cluster name (for Instant Clusters)"
-    )
+    parser.add_argument("--cluster-name", type=str, help="Filter pods by cluster name (for Instant Clusters)")
 
     parser.add_argument(
         "--output-path",
@@ -385,9 +379,7 @@ Examples:
         help="Path to SSH private key (e.g., ~/.ssh/id_rsa)",
     )
 
-    parser.add_argument(
-        "--no-backup", action="store_true", help="Don't backup existing config file"
-    )
+    parser.add_argument("--no-backup", action="store_true", help="Don't backup existing config file")
 
     args = parser.parse_args()
 
