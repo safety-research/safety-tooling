@@ -210,6 +210,7 @@ async def deploy_model_vllm_locally(
     vllm_log_dir: str = "/root/logs/vllm",
     set_visible_devices: bool = True,
     chat_template: str = None,
+    gpu_memory_utilization: float = None,
 ) -> VLLMDeployment:
     """Deploy a model locally using vLLM serve
 
@@ -295,7 +296,7 @@ async def deploy_model_vllm_locally(
             f"    --max-model-len {params['max_model_len']} \\\n"
             f"    --max-num-seqs {params['max_num_seqs']} \\\n"
             f"    --enable-prefix-caching \\\n"
-            f"    --port {params['port']} --gpu-memory-utilization 0.8"
+            f"    --port {params['port']}"
         )
 
         if "bnb-4bit" in params["model"]:
@@ -322,7 +323,10 @@ async def deploy_model_vllm_locally(
                 script += f"        {adapter}={adapter} \\\n"
 
         if chat_template:
-            script += f"    --chat-template {chat_template}"
+            script += f"    --chat-template {chat_template} \\\n"
+
+        if gpu_memory_utilization:
+            script += f"    --gpu-memory-utilization {gpu_memory_utilization} \\\n"
 
         LOGGER.info(f"Starting vLLM process with command:\n{script}")
         LOGGER.info(f"Logging to: {log_file}")
