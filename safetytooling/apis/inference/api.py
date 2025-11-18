@@ -430,14 +430,14 @@ class InferenceAPI:
 
         assert "top_logprobs" not in kwargs, "top_logprobs is not supported, pass an integer with `logprobs` instead"
 
-        # Handle interventions separately for caching - compute hash of serialized interventions
-        cache_kwargs = kwargs.copy()
-        interventions_hash = None
-        if "interventions" in cache_kwargs:
-            raw_interventions = cache_kwargs.pop("interventions")  # Remove from cache_kwargs
-            interventions_hash = {
-                layer_id: intervention.cache_key() for layer_id, intervention in raw_interventions.items()
-            }
+        # Don't cache requests with intervention or cache_layers (mechanistic interpretability features)
+        has_intervention = "intervention" in kwargs and kwargs["intervention"] is not None
+        has_cache_layers = "cache_layers" in kwargs and kwargs.get("cache_layers")
+        skip_cache = has_intervention or has_cache_layers
+
+        # Extract intervention and cache_layers from kwargs before creating LLMParams
+        # (they can't be serialized for caching)
+        kwargs_for_cache = {k: v for k, v in kwargs.items() if k not in ["intervention", "cache_layers"]}
 
         # used for caching and type checking
         llm_cache_params = LLMParams(
@@ -446,12 +446,11 @@ class InferenceAPI:
             insufficient_valids_behaviour=insufficient_valids_behaviour,
             num_candidates_per_completion=num_candidates_per_completion,
             tools=make_tools_hashable(tools),
-            interventions_hash=interventions_hash,  # Pass hash as a proper field
-            **cache_kwargs,
+            **kwargs_for_cache,
         )
         cached_responses, cached_results, failed_cache_responses = [], [], []
 
-        if self.cache_manager is not None and use_cache:
+        if self.cache_manager is not None and use_cache and not skip_cache:
             cached_responses, cached_results, failed_cache_responses = self.cache_manager.process_cached_responses(
                 prompt=prompt,
                 params=llm_cache_params,
@@ -493,7 +492,6 @@ class InferenceAPI:
             isinstance(model_class, AnthropicChatModel)
             or isinstance(model_class, HuggingFaceModel)
             or isinstance(model_class, OpenRouterChatModel)
-            or isinstance(model_class, VLLMChatModel)
         ):
             if isinstance(model_class, HuggingFaceModel):
                 kwargs["model_url"] = huggingface_model_url
@@ -589,6 +587,7 @@ class InferenceAPI:
                 prompt,
                 self.print_prompt_and_response or print_prompt_and_response,
                 max_attempts_per_api_call,
+                n=num_candidates,
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                 **kwargs,
             )
