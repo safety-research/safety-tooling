@@ -28,3 +28,5 @@ SECRETS
 .env
 __pycache__/
 SECRETS.test
+
+build/
