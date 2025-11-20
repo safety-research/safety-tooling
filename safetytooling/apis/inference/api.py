@@ -430,14 +430,18 @@ class InferenceAPI:
 
         assert "top_logprobs" not in kwargs, "top_logprobs is not supported, pass an integer with `logprobs` instead"
 
-        # Don't cache requests with intervention or cache_layers (mechanistic interpretability features)
+        # Don't cache requests with cache_layers (want fresh activations)
+        # But DO cache with interventions (include hash in cache key)
         has_intervention = "intervention" in kwargs and kwargs["intervention"] is not None
         has_cache_layers = "cache_layers" in kwargs and kwargs.get("cache_layers")
-        skip_cache = has_intervention or has_cache_layers
+        skip_cache = has_cache_layers
 
-        # Extract intervention and cache_layers from kwargs before creating LLMParams
-        # (they can't be serialized for caching)
-        kwargs_for_cache = {k: v for k, v in kwargs.items() if k not in ["intervention", "cache_layers"]}
+        # Extract cache_layers from kwargs (can't be serialized)
+        # For interventions, use str() to get hash for cache key
+        kwargs_for_cache = {k: v for k, v in kwargs.items() if k != "cache_layers"}
+        if has_intervention:
+            kwargs_for_cache["intervention_hash"] = str(kwargs["intervention"])
+            kwargs_for_cache.pop("intervention", None)
 
         # used for caching and type checking
         llm_cache_params = LLMParams(
