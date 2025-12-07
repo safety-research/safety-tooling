@@ -11,7 +11,12 @@ from anthropic import AsyncAnthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 from langchain.tools import BaseTool
-
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r"Pydantic serializer warnings:"
+)
 from safetytooling.data_models import ChatMessage, LLMResponse, MessageRole, Prompt, Usage
 from safetytooling.utils.tool_utils import convert_tools_to_anthropic
 
@@ -247,13 +252,27 @@ class AnthropicChatModel(InferenceAPIModel):
                             chat_messages, model_id, sys_prompt, anthropic_tools, tools, **kwargs
                         )
                     else:
-                        response = await self.aclient.messages.create(
-                            messages=chat_messages,
-                            model=model_id,
-                            max_tokens=kwargs.pop("max_tokens", 2000),
-                            **kwargs,
-                            **(dict(system=sys_prompt) if sys_prompt else {}),
-                        )
+                        use_beta_api = "output_format" in kwargs
+                        if use_beta_api:
+                            kwargs["betas"] = ["structured-outputs-2025-11-13"] # betas parameter is required for structured outputs
+                            try:
+                                response = await self.aclient.beta.messages.parse(
+                                    messages=chat_messages,
+                                    model=model_id,
+                                    **kwargs,
+                                    **(dict(system=sys_prompt) if sys_prompt else {}),
+                                )
+                            except Exception as api_error:
+                                print(f"API call failed with error: {type(api_error).__name__}: {str(api_error)}")
+                                raise
+                        else:
+                            response = await self.aclient.messages.create(
+                                messages=chat_messages,
+                                model=model_id,
+                                max_tokens=kwargs.pop("max_tokens", 2000),
+                                **kwargs,
+                                **(dict(system=sys_prompt) if sys_prompt else {}),
+                            )
                         # Convert content blocks to serializable format and store as single message
                         content_list = self._convert_content_blocks_to_list(response.content)
                         generated_content = [ChatMessage(role=MessageRole.assistant, content=content_list)]
@@ -444,16 +463,19 @@ class AnthropicModelBatch:
 
     def _extract_text_completion(self, generated_content: list[ChatMessage]) -> str:
         """Extract the final text completion from generated content."""
-        text_parts = []
-        for msg in generated_content:
-            if isinstance(msg.content, str):
-                text_parts.append(msg.content)
-            elif isinstance(msg.content, list):
-                # Extract text from content blocks
-                for block in msg.content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        text_parts.append(block.get("text", ""))
-        return "\n".join(text_parts) if text_parts else ""
+        try:
+            text_parts = []
+            for msg in generated_content:
+                if isinstance(msg.content, str):
+                    text_parts.append(msg.content)
+                elif isinstance(msg.content, list):
+                    # Extract text from content blocks
+                    for block in msg.content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+            return "\n".join(text_parts) if text_parts else ""
+        except Exception as e:
+            raise ValueError(f"Error extracting text completion: {e}")
 
     async def __call__(
         self,
