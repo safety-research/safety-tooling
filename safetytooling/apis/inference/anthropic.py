@@ -31,6 +31,8 @@ ANTHROPIC_MODELS = {
     "claude-opus-4-20250514",
     "claude-sonnet-4-20250514",
     "claude-sonnet-4-5-20250929",
+    "claude-haiku-4-5",
+    "claude-haiku-4-5-20251001",
 }
 
 VISION_MODELS = {
@@ -53,9 +55,9 @@ class AnthropicChatModel(InferenceAPIModel):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
         if anthropic_api_key:
-            self.aclient = AsyncAnthropic(api_key=anthropic_api_key)
+            self.aclient = AsyncAnthropic(api_key=anthropic_api_key, timeout=600.0)
         else:
-            self.aclient = AsyncAnthropic()
+            self.aclient = AsyncAnthropic(timeout=600.0)
 
         self.available_requests = asyncio.BoundedSemaphore(int(self.num_threads))
         self.kwarg_change_name = {"stop": "stop_sequences"}
@@ -368,19 +370,27 @@ class AnthropicModelBatch:
         """Retrieve a message batch."""
         return self.client.messages.batches.retrieve(batch_id)
 
-    async def poll_message_batch(self, batch_id: str) -> dict:
-        """Poll a message batch until it is completed."""
+    async def poll_message_batch(self, batch_id: str, poll_time: int = 60) -> dict:
+        """Poll a message batch until it is completed.
+
+        Args:
+            batch_id: The ID of the batch to poll
+            poll_time: Time to wait between polls in seconds (default: 60)
+        """
         message_batch = None
-        minutes_elapsed = 0
+        polls_elapsed = 0
         while True:
             message_batch = self.retrieve_message_batch(batch_id)
             if message_batch.processing_status == "ended":
                 return message_batch
-            if minutes_elapsed % 60 == 59:
+            # Log every 60 minutes
+            polls_per_minute = 60 // poll_time
+            if polls_elapsed > 0 and polls_elapsed % (60 * polls_per_minute) == 0:
+                minutes_elapsed = polls_elapsed // polls_per_minute
                 LOGGER.debug(f"Batch {batch_id} is still processing... ({minutes_elapsed} minutes elapsed)")
                 print(f"Batch {batch_id} is still processing... ({minutes_elapsed} minutes elapsed)")
-            await asyncio.sleep(60)  # Sleep for 1 minute
-            minutes_elapsed += 1
+            await asyncio.sleep(poll_time)
+            polls_elapsed += 1
 
     def list_message_batches(self, limit: int = 20) -> list[dict]:
         """List all message batches in the workspace."""
@@ -460,6 +470,7 @@ class AnthropicModelBatch:
         prompts: list[Prompt],
         max_tokens: int,
         log_dir: Path | None = None,
+        poll_time: int = 60,
         **kwargs,
     ) -> tuple[list[LLMResponse], str]:
         assert max_tokens is not None, "Anthropic batch API requires max_tokens to be specified"
@@ -479,7 +490,7 @@ class AnthropicModelBatch:
                 json.dump(batch_response.model_dump(mode="json"), f)
         print(f"Batch {batch_id} created with {len(prompts)} requests")
 
-        _ = await self.poll_message_batch(batch_id)
+        _ = await self.poll_message_batch(batch_id, poll_time=poll_time)
 
         results = self.retrieve_message_batch_results(batch_id)
         LOGGER.info(f"{results[0]=}")
