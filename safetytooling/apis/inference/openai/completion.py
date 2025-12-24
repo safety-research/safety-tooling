@@ -18,8 +18,17 @@ LOGGER = logging.getLogger(__name__)
 class OpenAICompletionModel(OpenAIModel):
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+
         url = "https://api.openai.com/v1/completions" if self.base_url is None else self.base_url + "/v1/completions"
-        api_key = os.environ["OPENAI_API_KEY"]
+
+        if self.openai_api_key:
+            api_key = self.openai_api_key
+        else:
+            # We know it exists in environment because _ensure_client() passed
+            api_key = os.environ.get("OPENAI_API_KEY")
+
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
@@ -47,7 +56,11 @@ class OpenAICompletionModel(OpenAIModel):
         return prompt_tokens + completion_tokens
 
     async def _make_api_call(self, prompt: Prompt, model_id, start_time, **params) -> list[LLMResponse]:
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+
         LOGGER.debug(f"Making {model_id} call")
+
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
         api_start = time.time()
         api_response: openai.types.Completion = await self.aclient.completions.create(

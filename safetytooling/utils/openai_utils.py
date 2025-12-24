@@ -5,7 +5,6 @@ import openai
 import openai.types
 import openai.types.chat
 import openai.types.chat.chat_completion
-import scipy.special
 import tiktoken
 
 from safetytooling.utils import utils
@@ -77,7 +76,7 @@ def get_top_chat_logprobs(
             max_tokens=1,
             n=1,
             logprobs=True,
-            top_logprobs=5,
+            top_logprobs=n_logprobs,
             seed=seed,
             stop=[],
             **kwargs,
@@ -94,31 +93,5 @@ def get_top_chat_logprobs(
         )
         for top_logprobs in base_resp.choices[0].logprobs.content[0].top_logprobs
     }
-
-    BIAS = -100
-    while len(logprob_dict) < n_logprobs:
-        log_masked_sum = scipy.special.logsumexp([logprob for logprob, _, _ in logprob_dict.values()])
-        unmasked_sum = -scipy.special.expm1(log_masked_sum)
-        log_unmasked_sum = np.log(unmasked_sum)
-
-        resp = query_api(logit_bias={token_idx: BIAS for token_idx in logprob_dict.keys()})
-        for top_logprob in resp.choices[0].logprobs.content[0].top_logprobs:
-            if len(logprob_dict) >= n_logprobs:
-                break
-
-            token_str = top_logprob.token
-            if token_str in ["<|end|>", "<|endoftext|>"]:
-                token_idx = tokenizer.eot_token
-            else:
-                token_idx = tokenizer.encode_single_token(bytes(top_logprob.bytes))
-
-            biased_logprob = top_logprob.logprob
-            true_logprob = biased_logprob + np.logaddexp(log_masked_sum + BIAS, log_unmasked_sum)
-
-            logprob_dict[token_idx] = (
-                true_logprob,
-                token_str,
-                resp.system_fingerprint,
-            )
 
     return logprob_dict

@@ -47,6 +47,7 @@ class ExperimentConfigBase:
     vllm_base_url: str = "http://localhost:8000/v1/chat/completions"
     openai_tag: str = "OPENAI_API_KEY1"
     anthropic_tag: str = "ANTHROPIC_API_KEY"
+    openrouter_tag: str = "OPENROUTER_API_KEY"
     print_prompt_and_response: bool = False
 
     datetime_str: str = dataclasses.field(init=False)
@@ -130,7 +131,11 @@ class ExperimentConfigBase:
 
         # Do remaining environment setup after we set up our logging, so that
         # our basicConfig is the one that gets used.
-        utils.setup_environment(openai_tag=self.openai_tag, anthropic_tag=self.anthropic_tag)
+        utils.setup_environment(
+            openai_tag=self.openai_tag,
+            anthropic_tag=self.anthropic_tag,
+            openrouter_tag=self.openrouter_tag,
+        )
 
     def log_api_cost(self, metadata: dict[str, str] | None = None):
         if metadata is None:

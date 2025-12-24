@@ -46,6 +46,7 @@ def setup_environment(
     logging_level: str = "info",
     openai_tag: str = "OPENAI_API_KEY",
     anthropic_tag: str = "ANTHROPIC_API_KEY",
+    openrouter_tag: str = "OPENROUTER_API_KEY",
 ):
     setup_logging(logging_level)
     load_success = dotenv.load_dotenv(override=True)
@@ -61,6 +62,8 @@ def setup_environment(
         os.environ["OPENAI_API_KEY"] = os.environ[openai_tag]
     if anthropic_tag in os.environ:
         os.environ["ANTHROPIC_API_KEY"] = os.environ[anthropic_tag]
+    if openrouter_tag in os.environ:
+        os.environ["OPENROUTER_API_KEY"] = os.environ[openrouter_tag]
     # warn if we do not have an openai api key
     if "OPENAI_API_KEY" not in os.environ:
         LOGGER.warning("OPENAI_API_KEY not found in environment, OpenAI API will not be available")

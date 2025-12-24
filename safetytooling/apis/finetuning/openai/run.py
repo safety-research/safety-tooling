@@ -27,6 +27,7 @@ import openai
 import openai.types.fine_tuning
 from openai import APIConnectionError, RateLimitError
 from safetytooling.apis.finetuning.openai.check import openai_check_finetuning_data
+from safetytooling.apis.inference.openai import utils as openai_utils
 from safetytooling.data_models.finetune import FinetuneConfig
 from safetytooling.utils import utils
 
@@ -110,6 +111,25 @@ async def queue_finetune(
                                 "batch_size": cfg.batch_size,
                                 "beta": cfg.beta,
                             }
+                        },
+                    },
+                    validation_file=val_file_id,
+                )
+            elif cfg.method == "reinforcement":
+                with open(cfg.config.grader_config, "r") as f:
+                    grader = json.load(f)
+                ft_job = await client.fine_tuning.jobs.create(
+                    model=cfg.model,
+                    training_file=train_file_id,
+                    method={
+                        "type": "reinforcement",
+                        "reinforcement": {
+                            "hyperparameters": {
+                                "n_epochs": cfg.n_epochs,
+                                "learning_rate_multiplier": cfg.learning_rate_multiplier,
+                                "batch_size": cfg.batch_size,
+                            },
+                            "grader": grader,
                         },
                     },
                     validation_file=val_file_id,
@@ -242,8 +262,13 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
             case "succeeded":
                 LOGGER.info("Fine-tuning job succeeded.")
                 wrun.summary.update(ft_job.model_dump())
-                assert ft_job.trained_tokens is not None
-                train_cost_usd = ft_job.trained_tokens * train_cost_est.cost_per_1k_tokens_usd / 1000
+                if cfg.model in openai_utils.FT_HOURLY_PRICING_MODELS:
+                    assert ft_job.finished_at is not None
+                    assert ft_job.created_at is not None
+                    train_cost_usd = train_cost_est.cost_per_hour_usd * (ft_job.finished_at - ft_job.created_at) / 3600
+                else:
+                    assert ft_job.trained_tokens is not None
+                    train_cost_usd = ft_job.trained_tokens * train_cost_est.cost_per_1m_tokens_usd / 1_000_000
                 wrun.summary.update({"train_cost_usd": train_cost_usd})
                 break
 
@@ -311,11 +336,17 @@ async def main(cfg: OpenAIFTConfig, extra_config: dict = None, verbose: bool = T
 
 
 @dataclasses.dataclass
+class ReinforcementConfig:
+    grader_config: str
+
+
+@dataclasses.dataclass
 class OpenAIFTConfig(FinetuneConfig):
     learning_rate_multiplier: float | str = "auto"
     batch_size: int | str = "auto"
     beta: float | str = "auto"  # for dpo
-    method: Literal["supervised", "dpo"] = "supervised"
+    method: Literal["supervised", "dpo", "reinforcement"] = "supervised"
+    config: ReinforcementConfig | None = None
 
 
 if __name__ == "__main__":

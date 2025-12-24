@@ -1,7 +1,10 @@
 import collections
+import copy
+import json
 import logging
 import os
 import time
+from traceback import format_exc
 
 import httpx
 import openai
@@ -9,13 +12,15 @@ import openai.types
 import openai.types.chat
 import pydantic
 import requests
+from langchain.tools import BaseTool
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-from safetytooling.data_models import LLMResponse, Prompt, Usage
+from safetytooling.data_models import ChatMessage, LLMResponse, MessageRole, Prompt, Usage
 from safetytooling.utils import math_utils
+from safetytooling.utils.tool_utils import convert_tools_to_openai
 
 from .base import OpenAIModel
-from .utils import count_tokens, get_rate_limit, price_per_token
+from .utils import get_rate_limit, price_per_token
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,15 +28,21 @@ LOGGER = logging.getLogger(__name__)
 class OpenAIChatModel(OpenAIModel):
     @retry(stop=stop_after_attempt(8), wait=wait_fixed(2))
     async def _get_dummy_response_header(self, model_id: str):
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+
         url = (
             "https://api.openai.com/v1/chat/completions"
             if self.base_url is None
             else self.base_url + "/v1/chat/completions"
         )
-        if self.openai_api_key is None:
-            api_key = os.environ["OPENAI_API_KEY"]
-        else:
+
+        # Use the API key that's already been validated
+        if self.openai_api_key:
             api_key = self.openai_api_key
+        else:
+            # We know it exists in environment because _ensure_client() passed
+            api_key = os.environ.get("OPENAI_API_KEY")
 
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         data = {
@@ -89,8 +100,132 @@ class OpenAIChatModel(OpenAIModel):
 
         return top_logprobs
 
-    async def _make_api_call(self, prompt: Prompt, model_id, start_time, **kwargs) -> list[LLMResponse]:
+    async def _execute_tool_loop(self, chat_messages, model_id, openai_tools, tools, api_func, **kwargs):
+        """Handle tool execution loop and return all generated content."""
+        current_messages = chat_messages.copy()
+        total_usage = Usage(input_tokens=0, output_tokens=0)
+        all_generated_content = []
+
+        response = await api_func(
+            messages=current_messages,
+            model=model_id,
+            tools=openai_tools,
+            **kwargs,
+        )
+        if response.usage:
+            total_usage.input_tokens += response.usage.prompt_tokens
+            total_usage.output_tokens += response.usage.completion_tokens
+        self._raise_any_response_errors(response, messages=current_messages, model_id=model_id)
+        # remove n param so it's default 1 now
+        if "n" in kwargs:
+            kwargs.pop("n")
+        result_choices = []
+        # for n>1, we need to run tool stuff on each choice seperately
+        for choice in response.choices:
+            choice_messages = copy.deepcopy(current_messages)
+            choice_generated_content = []
+            while True:
+                choice_generated_content.append(ChatMessage(role=MessageRole.assistant, content=choice.model_dump()))
+                choice_messages.append(choice.message)
+                if choice.message.tool_calls is None or len(choice.message.tool_calls) == 0:
+                    break
+                tool_results = []
+                for tool_call in choice.message.tool_calls:
+                    langchain_tool = next((t for t in tools if t.name == tool_call.function.name), None)
+                    if langchain_tool:
+                        try:
+                            tool_arguments = json.loads(tool_call.function.arguments)
+                            # Execute the tool
+                            if hasattr(langchain_tool, "ainvoke"):
+                                tool_result = await langchain_tool.ainvoke(tool_arguments)
+                            elif hasattr(langchain_tool, "invoke"):
+                                tool_result = langchain_tool.invoke(tool_arguments)
+                            else:
+                                raise ValueError(f"Tool {langchain_tool.name} does not have an invoke method")
+
+                            result_dict = {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": str(tool_result),
+                            }
+                            tool_results.append(result_dict)
+                        except Exception as e:
+                            error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
+                            LOGGER.warn(
+                                f"Encountered tool call {langchain_tool.name} error: {error_info}, passing error to LLM."
+                            )
+                            result_dict = {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": f"Error executing tool: {str(e)}",
+                                # "is_error": True,
+                            }
+                            tool_results.append(result_dict)
+                    else:
+                        result_dict = {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": f"Tool {tool_call.function.name} not found",
+                            # "is_error": True,
+                        }
+                        tool_results.append(result_dict)
+
+                # replace 'content' with 'message' so it looks nicer
+                for tool_call, tool_result in zip(choice.message.tool_calls, tool_results):
+                    tool_with_content_message = copy.deepcopy(tool_result)
+                    message = tool_with_content_message.pop("content")
+                    tool_with_content_message["message"] = message
+                    tool_with_content_message["tool_name"] = tool_call.function.name
+                    choice_generated_content.append(
+                        ChatMessage(role=MessageRole.tool, content=tool_with_content_message)
+                    )
+                choice_messages.extend(tool_results)
+                choice_response = await api_func(
+                    messages=choice_messages,
+                    model=model_id,
+                    tools=openai_tools,
+                    **kwargs,
+                )
+                self._raise_any_response_errors(choice_response, messages=choice_messages, model_id=model_id)
+                if choice_response.usage:
+                    total_usage.input_tokens += choice_response.usage.prompt_tokens
+                    total_usage.output_tokens += choice_response.usage.completion_tokens
+                choice = choice_response.choices[0]
+            all_generated_content.append(choice_generated_content)
+            result_choices.append(choice)
+        return result_choices, all_generated_content, total_usage
+
+    def _raise_any_response_errors(self, api_response: openai.types.chat.ChatCompletion, messages, model_id, **kwargs):
+        if hasattr(api_response, "error") and (
+            "Rate limit exceeded" in api_response.error["message"] or api_response.error["code"] == 429
+        ):  # OpenRouter routes through the error messages from the different providers, so we catch them here
+            dummy_request = httpx.Request(
+                method="POST",
+                url="https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {self.openai_api_key}"},
+                json={"messages": messages, "model": model_id, **kwargs},
+            )
+            raise openai.RateLimitError(
+                api_response.error["message"],
+                response=httpx.Response(status_code=429, text=api_response.error["message"], request=dummy_request),
+                body=api_response.error,
+            )
+        if (
+            api_response.choices is None or api_response.usage.prompt_tokens == api_response.usage.total_tokens
+        ):  # this sometimes happens on OpenRouter; we want to raise an error
+            raise RuntimeError(f"No tokens were generated for {model_id}")
+
+    async def _make_api_call(
+        self, prompt: Prompt, model_id, start_time, tools: list[BaseTool] | None = None, **kwargs
+    ) -> list[LLMResponse]:
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+
         LOGGER.debug(f"Making {model_id} call")
+
+        openai_tools = None
+        if tools:
+            openai_tools = convert_tools_to_openai(tools)
 
         # convert completion logprobs api to chat logprobs api
         if "logprobs" in kwargs:
@@ -122,57 +257,62 @@ class OpenAIChatModel(OpenAIModel):
             )
         else:
             api_func = self.aclient.chat.completions.create
-        api_response: openai.types.chat.ChatCompletion = await api_func(
-            messages=prompt.openai_format(),
-            model=model_id,
-            **kwargs,
-        )
-        if hasattr(api_response, "error") and (
-            "Rate limit exceeded" in api_response.error["message"] or api_response.error["code"] == 429
-        ):  # OpenRouter routes through the error messages from the different providers, so we catch them here
-            dummy_request = httpx.Request(
-                method="POST",
-                url="https://api.openai.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {self.openai_api_key}"},
-                json={"messages": prompt.openai_format(), "model": model_id, **kwargs},
+
+        if openai_tools is None:
+            # non-tool use
+            api_response: openai.types.chat.ChatCompletion = await api_func(
+                messages=prompt.openai_format(),
+                model=model_id,
+                **kwargs,
             )
-            raise openai.RateLimitError(
-                api_response.error["message"],
-                response=httpx.Response(status_code=429, text=api_response.error["message"], request=dummy_request),
-                body=api_response.error,
+            self._raise_any_response_errors(api_response, messages=prompt.openai_format(), model_id=model_id)
+            choices = api_response.choices
+            all_generated_content = [
+                [ChatMessage(role=MessageRole.assistant, content=choice.model_dump())]
+                for choice in api_response.choices
+            ]
+            if api_response.usage is not None:
+                total_usage = Usage(
+                    input_tokens=api_response.usage.prompt_tokens,
+                    output_tokens=api_response.usage.completion_tokens,
+                    total_tokens=api_response.usage.total_tokens,
+                    prompt_tokens_details=(
+                        api_response.usage.prompt_tokens_details.model_dump()
+                        if hasattr(api_response.usage, "prompt_tokens_details")
+                        and api_response.usage.prompt_tokens_details is not None
+                        else None
+                    ),
+                    completion_tokens_details=(
+                        api_response.usage.completion_tokens_details.model_dump()
+                        if hasattr(api_response.usage, "completion_tokens_details")
+                        and api_response.usage.completion_tokens_details is not None
+                        else None
+                    ),
+                )
+            else:
+                total_usage = None
+        else:
+            # tool use
+            choices, all_generated_content, total_usage = await self._execute_tool_loop(
+                chat_messages=prompt.openai_format(),
+                model_id=model_id,
+                openai_tools=openai_tools,
+                tools=tools,
+                api_func=api_func,
+                **kwargs,
             )
-        if (
-            api_response.choices is None or api_response.usage.prompt_tokens == api_response.usage.total_tokens
-        ):  # this sometimes happens on OpenRouter; we want to raise an error
-            raise RuntimeError(f"No tokens were generated for {model_id}")
+
+        # Calculate cost
+        input_token_cost, output_token_cost = price_per_token(model_id)
+        input_cost = input_token_cost * total_usage.input_tokens if total_usage else 0
+        output_cost = output_token_cost * total_usage.output_tokens if total_usage else 0
+
+        # Timing
         api_duration = time.time() - api_start
         duration = time.time() - start_time
-        context_token_cost, completion_token_cost = price_per_token(model_id)
-        if api_response.usage is not None:
-            context_cost = api_response.usage.prompt_tokens * context_token_cost
-            current_usage = Usage(
-                input_tokens=api_response.usage.prompt_tokens,
-                output_tokens=api_response.usage.completion_tokens,
-                total_tokens=api_response.usage.total_tokens,
-                prompt_tokens_details=(
-                    api_response.usage.prompt_tokens_details.model_dump()
-                    if hasattr(api_response.usage, "prompt_tokens_details")
-                    and api_response.usage.prompt_tokens_details is not None
-                    else None
-                ),
-                completion_tokens_details=(
-                    api_response.usage.completion_tokens_details.model_dump()
-                    if hasattr(api_response.usage, "completion_tokens_details")
-                    and api_response.usage.completion_tokens_details is not None
-                    else None
-                ),
-            )
-        else:
-            context_cost = 0
-            current_usage = None
 
         responses = []
-        for choice in api_response.choices:
+        for choice, generated_content in zip(choices, all_generated_content):
             if choice.message.content is None or choice.finish_reason is None:
                 raise RuntimeError(f"No content or finish reason for {model_id}")
             responses.append(
@@ -182,9 +322,10 @@ class OpenAIChatModel(OpenAIModel):
                     stop_reason=choice.finish_reason,
                     api_duration=api_duration,
                     duration=duration,
-                    cost=context_cost + count_tokens(choice.message.content, model_id) * completion_token_cost,
+                    cost=input_cost + output_cost,
                     logprobs=(self.convert_top_logprobs(choice.logprobs) if choice.logprobs is not None else None),
-                    usage=current_usage,
+                    usage=total_usage,
+                    generated_content=generated_content,
                 )
             )
         self.add_response_to_prompt_file(prompt_file, responses)
@@ -196,6 +337,9 @@ class OpenAIChatModel(OpenAIModel):
         model_id,
         **kwargs,
     ) -> openai.AsyncStream[openai.types.chat.ChatCompletionChunk]:
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+
         return await self.aclient.chat.completions.create(
             messages=prompt.openai_format(),
             model=model_id,

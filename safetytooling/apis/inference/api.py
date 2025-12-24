@@ -11,6 +11,7 @@ from typing import Awaitable, Callable, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
+from langchain.tools import BaseTool
 from tqdm.auto import tqdm
 from typing_extensions import Self
 
@@ -26,6 +27,7 @@ from safetytooling.data_models import (
     Prompt,
     TaggedModeration,
 )
+from safetytooling.utils.tool_utils import make_tools_hashable
 from safetytooling.utils.utils import get_repo_root
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
@@ -40,7 +42,7 @@ from .openai.completion import OpenAICompletionModel
 from .openai.embedding import OpenAIEmbeddingModel
 from .openai.moderation import OpenAIModerationModel
 from .openai.s2s import OpenAIS2SModel, S2SRateLimiter
-from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS
+from .openai.utils import COMPLETION_MODELS, GPT_CHAT_MODELS, S2S_MODELS, is_finetune_gpt_model
 from .openrouter import OPENROUTER_MODELS, OpenRouterChatModel
 from .opensource.batch_inference import BATCHED_MODELS, BatchModel
 from .runpod_vllm import VLLM_MODELS, VLLMChatModel
@@ -76,7 +78,7 @@ class InferenceAPI:
         huggingface_num_threads: int = 100,
         together_num_threads: int = 80,
         openrouter_num_threads: int = 80,
-        vllm_num_threads: int = 8,
+        vllm_num_threads: int = 20,
         deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
@@ -215,6 +217,7 @@ class InferenceAPI:
             num_threads=vllm_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             vllm_base_url=self.vllm_base_url,
+            runpod_api_key=os.environ.get("RUNPOD_API_KEY", None),
         )
 
         # DeepSeek uses the OpenAI API
@@ -288,7 +291,7 @@ class InferenceAPI:
                 return self.provider_to_class[force_provider]
         elif model_id in COMPLETION_MODELS:
             return self._openai_completion
-        elif model_id in GPT_CHAT_MODELS or model_id.startswith("ft:gpt") or model_id.startswith("gpt"):
+        elif model_id in GPT_CHAT_MODELS or model_id.startswith("gpt") or is_finetune_gpt_model(model_id):
             return self._openai_chat
         elif model_id in ANTHROPIC_MODELS or model_id.startswith("claude"):
             return self._anthropic_chat
@@ -388,6 +391,7 @@ class InferenceAPI:
         huggingface_model_url: str | None = None,
         force_provider: str | None = None,
         use_cache: bool = True,
+        tools: list[BaseTool] | None = None,
         **kwargs,
     ) -> list[LLMResponse]:
         """
@@ -414,6 +418,7 @@ class InferenceAPI:
             huggingface_model_url: If specified, use this model URL for HuggingFace models.
             force_provider: If specified, force the API call to use the specified provider.
             use_cache: Whether to use the cache.
+            tools: List of tools to use for the model.
         """
         if self.no_cache:
             use_cache = False
@@ -430,6 +435,7 @@ class InferenceAPI:
             n=n,
             insufficient_valids_behaviour=insufficient_valids_behaviour,
             num_candidates_per_completion=num_candidates_per_completion,
+            tools=make_tools_hashable(tools),
             **kwargs,
         )
         cached_responses, cached_results, failed_cache_responses = [], [], []
@@ -476,6 +482,7 @@ class InferenceAPI:
             isinstance(model_class, AnthropicChatModel)
             or isinstance(model_class, HuggingFaceModel)
             or isinstance(model_class, OpenRouterChatModel)
+            or isinstance(model_class, VLLMChatModel)
         ):
             if isinstance(model_class, HuggingFaceModel):
                 kwargs["model_url"] = huggingface_model_url
@@ -490,6 +497,7 @@ class InferenceAPI:
                                 self.print_prompt_and_response or print_prompt_and_response,
                                 max_attempts_per_api_call,
                                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                                tools=tools,
                                 **kwargs,
                             )
                             for _ in range(num_candidates)
@@ -563,6 +571,16 @@ class InferenceAPI:
                 is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
                 **kwargs,
             )
+
+        elif isinstance(model_class, VLLMChatModel):
+            candidate_responses = await model_class(
+                model_id,
+                prompt,
+                self.print_prompt_and_response or print_prompt_and_response,
+                max_attempts_per_api_call,
+                is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                **kwargs,
+            )
         else:
             # At this point, the request should be for DeepSeek or OpenAI, which use the same API.
             expected_chat_models = [OpenAIChatModel, OpenAICompletionModel]
@@ -594,6 +612,7 @@ class InferenceAPI:
                         max_attempts_per_api_call,
                         n=num_candidates,
                         is_valid=(is_valid if insufficient_valids_behaviour == "retry" else lambda _: True),
+                        tools=tools,
                         **kwargs,
                     )
 

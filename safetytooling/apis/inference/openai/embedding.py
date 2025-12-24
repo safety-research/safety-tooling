@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 import traceback
 
@@ -20,7 +21,12 @@ class OpenAIEmbeddingModel:
         self.num_threads = 1
         self.batch_size = batch_size  # Max batch size for embedding endpoint
 
-        self.aclient = openai.AsyncClient()
+        # Simple check for API key
+        if "OPENAI_API_KEY" in os.environ:
+            self.aclient = openai.AsyncClient()
+        else:
+            self.aclient = None
+
         self.available_requests = asyncio.BoundedSemaphore(self.num_threads)
 
     async def embed(
@@ -29,6 +35,9 @@ class OpenAIEmbeddingModel:
         max_attempts: int = 5,
         **kwargs,
     ) -> EmbeddingResponseBase64:
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+
         assert params.model_id in EMBEDDING_MODELS
 
         if params.dimensions is not None:

@@ -15,6 +15,12 @@ EMBEDDING_MODELS = (
 )
 
 VISION_MODELS = (
+    "gpt-5-nano",
+    "gpt-5-nano-2025-08-07",
+    "gpt-5-mini",
+    "gpt-5-mini-2025-08-07",
+    "gpt-5",
+    "gpt-5-2025-08-07",
     "gpt-4.1-nano",
     "gpt-4.1-nano-2025-04-14",
     "gpt-4.1-mini",
@@ -32,6 +38,15 @@ VISION_MODELS = (
     "gpt-4.5-preview-2025-02-27",
 )
 
+_GPT_5_MODELS = (
+    "gpt-5-nano",
+    "gpt-5-nano-2025-08-07",
+    "gpt-5-mini",
+    "gpt-5-mini-2025-08-07",
+    "gpt-5",
+    "gpt-5-2025-08-07",
+)
+
 _GPT_4_MODELS = (
     "gpt-4.1-nano",
     "gpt-4.1-nano-2025-04-14",
@@ -41,14 +56,21 @@ _GPT_4_MODELS = (
     "gpt-4.1-2025-04-14",
     "gpt-4.5-preview",
     "gpt-4.5-preview-2025-02-27",
+    "o4-mini",
+    "o4-mini-2025-04-16",
     "o3-mini",
     "o3-mini-2025-01-31",
+    "o3",
+    "o3-2025-04-16",
+    "o3-pro",
+    "o3-pro-2025-06-10",
     "o1-mini",
     "o1-mini-2024-09-12",
     "o1-preview",
     "o1-preview-2024-09-12",
     "o1",
     "o1-2024-12-17",
+    "o4-mini-2025-04-16",
     "gpt-4o-mini",
     "gpt-4o-mini-2024-07-18",
     "gpt-4o",
@@ -77,13 +99,15 @@ _GPT_3_MODELS = (
 )
 
 
-GPT_CHAT_MODELS = set(_GPT_4_MODELS + _GPT_3_MODELS)
+GPT_CHAT_MODELS = set(_GPT_5_MODELS + _GPT_4_MODELS + _GPT_3_MODELS)
 
 OAI_FINETUNE_MODELS = (
     "gpt-4.1",
     "gpt-4.1-2025-04-14",
     "gpt-4.1-mini",
     "gpt-4.1-mini-2025-04-14",
+    "gpt-4.1-nano",
+    "gpt-4.1-nano-2025-04-14",
     "gpt-3.5-turbo-1106",
     "gpt-3.5-turbo-0613",
     "gpt-3.5-turbo",
@@ -93,6 +117,8 @@ OAI_FINETUNE_MODELS = (
     "babbage-002",
 )
 S2S_MODELS = "gpt-4o-s2s"
+
+FT_HOURLY_PRICING_MODELS = ("o4-mini-2025-04-16",)
 
 
 def count_tokens(text: str, model_id: str) -> int:
@@ -105,7 +131,9 @@ def count_tokens(text: str, model_id: str) -> int:
 
 
 def get_max_context_length(model_id: str) -> int:
-    if "gpt-4.1" in model_id:
+    if "gpt-5" in model_id:
+        return 400_000
+    elif "gpt-4.1" in model_id:
         return 1_047_576
     elif "gpt-4o" in model_id:
         return 128_000
@@ -113,7 +141,18 @@ def get_max_context_length(model_id: str) -> int:
         return 16_384
 
     match model_id:
-        case "o1" | "o1-2024-12-17" | "o3-mini" | "o3-mini-2025-01-31":
+        case (
+            "o1"
+            | "o1-2024-12-17"
+            | "o3-mini"
+            | "o3-mini-2025-01-31"
+            | "o3"
+            | "o3-2025-04-16"
+            | "o3-pro"
+            | "o3-pro-2025-06-10"
+            | "o4-mini"
+            | "o4-mini-2025-04-16"
+        ):
             return 200_000
         case (
             "o1-mini"
@@ -161,7 +200,11 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
     Returns the (tokens per min, request per min) for the given model id.
     # go to: https://platform.openai.com/settings/organization/limits
     """
-    if "gpt-4o-mini" in model_id or "gpt-4.1-nano" in model_id:
+    if "gpt-5-mini" in model_id or "gpt-5-nano" in model_id:
+        return 180_000_000, 30_000
+    elif "gpt-5" in model_id:
+        return 40_000_000, 15_000
+    elif "gpt-4o-mini" in model_id or "gpt-4.1-mini" in model_id or "gpt-4.1-nano" in model_id:
         return 150_000_000, 30_000
     elif "gpt-4o" in model_id or "gpt-4.1" in model_id:
         return 30_000_000, 10_000
@@ -169,11 +212,18 @@ def get_rate_limit(model_id: str) -> tuple[int, int]:
         return 50_000_000, 10_000
 
     match model_id:
-        case "o1" | "o1-2024-12-17":
-            return 30_000_000, 1_000
-        case "o1-mini" | "o1-mini-2024-09-12" | "o3-mini" | "o3-mini-2025-01-31":
+        case "o1-mini" | "o1-mini-2024-09-12" | "o3-mini" | "o3-mini-2025-01-31" | "o4-mini" | "o4-mini-2025-04-16":
             return 150_000_000, 30_000
-        case "o1-preview" | "o1-preview-2024-09-12":
+        case (
+            "o1"
+            | "o1-2024-12-17"
+            | "o1-preview"
+            | "o1-preview-2024-09-12"
+            | "o3"
+            | "o3-2025-04-16"
+            | "o3-pro"
+            | "o3-pro-2025-06-10"
+        ):
             return 30_000_000, 10_000
         case (
             "gpt-4-turbo"
@@ -207,16 +257,46 @@ def price_per_token(model_id: str) -> tuple[float, float]:
 
     # Prices not listed yet
     if model_id in (
+        "gpt-5-nano",
+        "gpt-5-nano-2025-08-07",
+    ):
+        prices = 0.05, 0.4
+    elif model_id in (
+        "gpt-5-mini",
+        "gpt-5-mini-2025-08-07",
+    ):
+        prices = 0.25, 2
+    elif model_id in (
+        "gpt-5",
+        "gpt-5-2025-08-07",
+    ):
+        prices = 1.25, 10
+    elif model_id in (
+        "o3-pro",
+        "o3-pro-2025-06-10",
+    ):
+        prices = 20, 80
+    elif model_id in (
+        "o3",
+        "o3-2025-04-16",
+    ):
+        prices = 2, 8
+    elif model_id in (
         "o1",
         "o1-2024-12-17",
         "o1-preview",
         "o1-preview-2024-09-12",
     ):
         prices = 15, 60
-    elif model_id in ("o3-mini", "o3-mini-2025-01-31"):
-        prices = 1.10, 4.40
-    elif model_id in ("o1-mini", "o1-mini-2024-09-12"):
-        prices = 1.10, 4.40
+    elif model_id in (
+        "o4-mini",
+        "o4-mini-2025-04-16",
+        "o3-mini",
+        "o3-mini-2025-01-31",
+        "o1-mini",
+        "o1-mini-2024-09-12",
+    ):
+        prices = 1.1, 4.4
     elif model_id in (
         "gpt-4.1-nano",
         "gpt-4.1-nano-2025-04-14",
@@ -225,6 +305,7 @@ def price_per_token(model_id: str) -> tuple[float, float]:
     elif model_id in (
         "gpt-4.1-mini",
         "gpt-4.1-mini-2025-04-14",
+        "o4-mini-2025-04-16",
     ):
         prices = 0.4, 1.6
     elif model_id in (
@@ -297,28 +378,54 @@ def price_per_token(model_id: str) -> tuple[float, float]:
 
 def finetune_price_per_token(model_id: str) -> float | None:
     """
-    Returns price per 1000 tokens.
+    Returns price per 1M tokens.
     Returns None if the model does not support fine-tuning.
 
     See https://openai.com/pricing and
     https://platform.openai.com/docs/guides/fine-tuning/what-models-can-be-fine-tuned
     for details.
     """
-    if "gpt-4.1-mini" in model_id:
-        return 0.005
+    if "gpt-4.1-nano" in model_id:
+        return 1.5
     elif "gpt-4o-mini" in model_id:
-        return 0.003
+        return 3
+    elif "gpt-4.1-mini" in model_id:
+        return 5
     elif "gpt-4o" in model_id or "gpt-4.1" in model_id:
-        return 0.025
+        return 25
     elif "ft:gpt-3.5-turbo" in model_id:
-        return 0.008
+        return 8
 
     match model_id:
         case "gpt-3.5-turbo-1106" | "gpt-3.5-turbo-0613" | "gpt-3.5-turbo":
-            return 0.008
+            return 8
         case "davinci-002":
-            return 0.006
+            return 6
         case "babbage-002":
-            return 0.0004
+            return 0.4
         case _:
             return None
+
+
+def finetune_price_per_hour(model_id: str) -> float | None:
+    match model_id:
+        case "o4-mini" | "o4-mini-2025-04-16":
+            return 100
+        case _:
+            return None
+
+
+def is_finetune_gpt_model(model_id: str) -> bool:
+    """
+    Check if the model is a finetune model of a GPT model.
+    Based on the format ft:base-model:org-id::ft-id
+    """
+    if not model_id.startswith("ft:"):
+        return False
+
+    parts = model_id.split(":")
+    if len(parts) < 4:
+        return False
+
+    base_model = parts[1]
+    return base_model in GPT_CHAT_MODELS

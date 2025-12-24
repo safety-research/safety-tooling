@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 from pathlib import Path
 from traceback import format_exc
@@ -65,11 +66,14 @@ class OpenAIModel(InferenceAPIModel):
         self.prompt_history_dir = prompt_history_dir
         self.model_ids = set()
         self.base_url = base_url
+        self.openai_api_key = openai_api_key
+
         if openai_api_key:
             self.aclient = openai.AsyncClient(api_key=openai_api_key, base_url=self.base_url)
-        else:
+        elif "OPENAI_API_KEY" in os.environ:
             self.aclient = openai.AsyncClient(base_url=self.base_url)
-        self.openai_api_key = openai_api_key
+        else:
+            self.aclient = None
 
         self.token_capacity = dict()
         self.request_capacity = dict()
@@ -92,6 +96,9 @@ class OpenAIModel(InferenceAPIModel):
         raise NotImplementedError
 
     async def add_model_id(self, model_id: str):
+        if self.aclient is None:
+            raise RuntimeError("OpenAI API key must be set either via parameter or OPENAI_API_KEY environment variable")
+
         if model_id in self.model_ids:
             return
 
