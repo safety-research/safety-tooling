@@ -56,6 +56,7 @@ class BatchInferenceAPI:
         anthropic_api_key: str | None = None,
         openai_api_key: str | None = None,
         no_cache: bool = False,
+        max_mem_usage_mb: float = 5_000,
     ):
         """Initialize the BatchInferenceAPI.
 
@@ -96,7 +97,7 @@ class BatchInferenceAPI:
         self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         self.cache_manager = None
         if self.cache_dir is not None and not self.no_cache:
-            self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
+            self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis, max_mem_usage_mb=max_mem_usage_mb)
             print(f"{self.cache_manager=}")
 
         self._anthropic_batch = AnthropicModelBatch(anthropic_api_key=anthropic_api_key)

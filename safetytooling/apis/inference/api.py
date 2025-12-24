@@ -92,6 +92,7 @@ class InferenceAPI:
         vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
         no_cache: bool = False,
         oai_embedding_batch_size: int = 2048,
+        max_mem_usage_mb: float = 5_000,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -152,7 +153,7 @@ class InferenceAPI:
         self.cache_manager: BaseCacheManager | None = None
         self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
         if self.cache_dir is not None:
-            self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis)
+            self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis, max_mem_usage_mb=max_mem_usage_mb)
             print(f"{self.cache_manager=}")
 
         self._openai_completion = OpenAICompletionModel(
