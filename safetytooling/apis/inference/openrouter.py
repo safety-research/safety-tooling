@@ -269,6 +269,7 @@ class OpenRouterChatModel(InferenceAPIModel):
         generated_content = []
         duration = None
         api_duration = None
+        reasoning = None
 
         error_list = []
         for i in range(max_attempts):
@@ -295,6 +296,13 @@ class OpenRouterChatModel(InferenceAPIModel):
 
                     api_duration = time.time() - api_start
 
+                    # Extract reasoning trace if present (for reasoning models like DeepSeek-R1, o1)
+                    reasoning = None
+                    if response_data.choices and response_data.choices[0].message:
+                        msg = response_data.choices[0].message
+                        if hasattr(msg, "reasoning") and msg.reasoning:
+                            reasoning = msg.reasoning
+
                     if (
                         response_data.choices is None
                         or len(response_data.choices) == 0
@@ -314,6 +322,7 @@ class OpenRouterChatModel(InferenceAPIModel):
                                 LLMResponse(
                                     model_id=model_id,
                                     completion="",
+                                    reasoning=reasoning,
                                     generated_content=[],
                                     stop_reason="stop_sequence",
                                     api_duration=api_duration,
@@ -356,10 +365,15 @@ class OpenRouterChatModel(InferenceAPIModel):
             assert not tools, "Multiple choices not supported with tools"
             responses = []
             for choice in response_data.choices:
+                # Extract per-choice reasoning if available
+                choice_reasoning = None
+                if hasattr(choice.message, "reasoning") and choice.message.reasoning:
+                    choice_reasoning = choice.message.reasoning
                 responses.append(
                     LLMResponse(
                         model_id=model_id,
                         completion=choice.message.content or "",
+                        reasoning=choice_reasoning,
                         generated_content=[self._convert_message_to_chat_message(choice.message)],
                         stop_reason=choice.finish_reason,
                         api_duration=api_duration,
@@ -378,6 +392,7 @@ class OpenRouterChatModel(InferenceAPIModel):
                 LLMResponse(
                     model_id=model_id,
                     completion=completion,
+                    reasoning=reasoning,
                     generated_content=generated_content,
                     stop_reason=response_data.choices[0].finish_reason,
                     api_duration=api_duration,
