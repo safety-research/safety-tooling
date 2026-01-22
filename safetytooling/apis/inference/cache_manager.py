@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import threading
 from collections import deque
 from itertools import chain
 from pathlib import Path
@@ -145,14 +146,19 @@ class FileBasedCacheManager(BaseCacheManager):
         self.sizes = {}  # Track the size of each cache file in memory
         self.total_usage_mb = 0
         self.max_mem_usage_mb = max_mem_usage_mb
+        self._cache_lock = threading.Lock()  # Protects in_memory_cache access
 
     def remove_entry(self, cache_file: Path):
-        self.in_memory_cache.pop(cache_file)
+        # Use pop with default to handle race conditions where multiple coroutines
+        # try to remove the same entry (both found it as the smallest in free_space_for)
+        self.in_memory_cache.pop(cache_file, None)
 
         if self.max_mem_usage_mb is not None:
-            size = self.sizes.pop(cache_file)
-            self.total_usage_mb -= size
-            LOGGER.info(f"Removed entry from mem cache. Freed {size} MB.")
+            # Always try to remove from sizes to prevent infinite loops in free_space_for
+            size = self.sizes.pop(cache_file, 0)
+            if size > 0:
+                self.total_usage_mb -= size
+                LOGGER.info(f"Removed entry from mem cache. Freed {size} MB.")
 
     def add_entry(self, cache_file: Path, contents: dict):
         self.in_memory_cache[cache_file] = contents
@@ -204,13 +210,27 @@ class FileBasedCacheManager(BaseCacheManager):
         if not cache_file.exists():
             return None
 
-        if (cache_file not in self.in_memory_cache) or (prompt_hash not in self.in_memory_cache[cache_file]):
+        # Use .get() to avoid KeyError from race conditions during cache eviction.
+        # Multiple coroutines can trigger add_entry -> free_space_for -> remove_entry
+        # which evicts entries while other coroutines are accessing them.
+        cached_entry = self.in_memory_cache.get(cache_file)
+
+        if cached_entry is None or prompt_hash not in cached_entry:
+            # Cache miss - need to load from disk
             LOGGER.info(f"Cache miss, loading from disk: {cache_file=}, {prompt_hash=}, {params}")
             with filelock.FileLock(str(cache_file) + ".lock"):
                 contents = load_json(cache_file)
                 self.add_entry(cache_file, contents)
         else:
-            contents = self.in_memory_cache[cache_file]
+            # Cache hit - but the entry could be evicted between the check above
+            # and this access, so use .get() again to be safe
+            contents = self.in_memory_cache.get(cache_file)
+            if contents is None:
+                # Entry was evicted - reload from disk
+                LOGGER.info(f"Cache entry evicted during access, reloading from disk: {cache_file=}, {prompt_hash=}, {params}")
+                with filelock.FileLock(str(cache_file) + ".lock"):
+                    contents = load_json(cache_file)
+                    self.add_entry(cache_file, contents)
 
         data = contents.get(prompt_hash, None)
         return None if data is None else LLMCache.model_validate_json(data)
