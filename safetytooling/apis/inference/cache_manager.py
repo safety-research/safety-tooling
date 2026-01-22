@@ -227,7 +227,9 @@ class FileBasedCacheManager(BaseCacheManager):
             contents = self.in_memory_cache.get(cache_file)
             if contents is None:
                 # Entry was evicted - reload from disk
-                LOGGER.info(f"Cache entry evicted during access, reloading from disk: {cache_file=}, {prompt_hash=}, {params}")
+                LOGGER.info(
+                    f"Cache entry evicted during access, reloading from disk: {cache_file=}, {prompt_hash=}, {params}"
+                )
                 with filelock.FileLock(str(cache_file) + ".lock"):
                     contents = load_json(cache_file)
                     self.add_entry(cache_file, contents)
@@ -353,12 +355,10 @@ class FileBasedCacheManager(BaseCacheManager):
         for i in range(len(responses)):
             responses[i].api_failures = failed_cache_responses[0][i].api_failures + 1
 
-        LOGGER.info(
-            f"""Updating previous failures for: \n
+        LOGGER.info(f"""Updating previous failures for: \n
                     {prompt} \n
                     with responses: \n
-                    {responses}"""
-        )
+                    {responses}""")
         return responses
 
     def save_cache(self, prompt: Prompt, params: LLMParams, responses: list):
@@ -556,12 +556,10 @@ class RedisCacheManager(BaseCacheManager):
         for i in range(len(responses)):
             responses[i].api_failures = failed_cache_responses[0][i].api_failures + 1
 
-        LOGGER.info(
-            f"""Updating previous failures for: \n
+        LOGGER.info(f"""Updating previous failures for: \n
                     {prompt} \n
                     with responses: \n
-                    {responses}"""
-        )
+                    {responses}""")
         return responses
 
     def save_cache(self, prompt: Prompt, params: LLMParams, responses: list):
