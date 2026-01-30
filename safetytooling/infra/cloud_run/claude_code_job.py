@@ -60,6 +60,8 @@ class ClaudeCodeJobConfig:
         memory: Memory limit up to 32Gi (default: 2Gi)
         skip_permissions: Use --dangerously-skip-permissions (default: True)
         image: Container image (default: google-cloud-cli:slim). Must have gcloud CLI.
+        pre_command: Shell command to run before Claude Code (e.g., git config)
+        post_command: Shell command to run after Claude Code
     """
 
     project_id: str
@@ -72,6 +74,8 @@ class ClaudeCodeJobConfig:
     memory: str = "2Gi"
     skip_permissions: bool = True
     image: str = DEFAULT_IMAGE
+    pre_command: str | None = None
+    post_command: str | None = None
 
 
 @dataclass
@@ -173,6 +177,14 @@ class ClaudeCodeJob:
         if system_prompt:
             system_prompt_arg = '--system-prompt "$(cat /tmp/system_prompt.txt)"'
 
+        pre_command_section = ""
+        if self.config.pre_command:
+            pre_command_section = f"{self.config.pre_command}"
+
+        post_command_section = ""
+        if self.config.post_command:
+            post_command_section = f"{self.config.post_command}"
+
         script = f"""
 set -e
 echo "=== Claude Code Job Starting ==="
@@ -210,11 +222,11 @@ echo "Starting Claude Code..."
 set +e
 su - claude -c '
 export ANTHROPIC_API_KEY="{api_key}"
-git config --global user.email "claude@example.com"
-git config --global user.name "Claude"
 cd /workspace
+{pre_command_section}
 claude {claude_flags_str} {system_prompt_arg} "$(cat /tmp/task.txt)" > /workspace/output/response.txt 2>&1
 echo $? > /workspace/output/exitcode.txt
+{post_command_section}
 '
 set -e
 
