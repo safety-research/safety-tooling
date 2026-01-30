@@ -54,7 +54,8 @@ class ClaudeCodeClientConfig:
         region: GCP region (default: us-central1)
         model: Claude model to use (default: claude-opus-4-5-20251101)
         max_turns: Maximum conversation turns (default: 100)
-        timeout: Job timeout in seconds (default: 600)
+        timeout: Job timeout in seconds (default: 600). Should include ~2min for setup
+                 (installing nodejs, npm, claude-code CLI, creating user).
         cpu: vCPUs - 1, 2, 4, or 8 (default: 1)
         memory: Memory limit up to 32Gi (default: 2Gi)
         skip_permissions: Use --dangerously-skip-permissions (default: True)
@@ -163,7 +164,7 @@ class ClaudeCodeClient:
             image=self.config.image,
             cpu=self.config.cpu,
             memory=self.config.memory,
-            timeout=self.config.timeout + 120,  # Extra buffer for setup
+            timeout=self.config.timeout,
             env={},
         )
         self._cloud_run = CloudRunClient(cloud_run_config)
