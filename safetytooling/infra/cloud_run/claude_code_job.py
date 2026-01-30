@@ -41,8 +41,8 @@ from .cloud_run_job import (
     CloudRunJobError,
 )
 
-# Cloud Run image with gcloud CLI pre-installed
-CLOUDRUN_IMAGE = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
+# Default Cloud Run image with gcloud CLI pre-installed
+DEFAULT_IMAGE = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
 
 
 @dataclass
@@ -59,6 +59,7 @@ class ClaudeCodeJobConfig:
         cpu: vCPUs - 1, 2, 4, or 8 (default: 2)
         memory: Memory limit up to 32Gi (default: 4Gi)
         skip_permissions: Use --dangerously-skip-permissions (default: True)
+        image: Container image (default: google-cloud-cli:slim). Must have gcloud CLI.
     """
 
     project_id: str
@@ -70,6 +71,7 @@ class ClaudeCodeJobConfig:
     cpu: str = "2"
     memory: str = "4Gi"
     skip_permissions: bool = True
+    image: str = DEFAULT_IMAGE
 
 
 @dataclass
@@ -263,7 +265,7 @@ echo "=== Claude Code Job Complete ==="
 
         # Configure Cloud Run job
         cloud_run_config = CloudRunJobConfig(
-            image=CLOUDRUN_IMAGE,
+            image=self.config.image,
             project_id=self.config.project_id,
             gcs_bucket=self.config.gcs_bucket,
             region=self.config.region,
