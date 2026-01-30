@@ -1,8 +1,10 @@
 # Cloud Run Module
 
-Run Claude Code in ephemeral GCP Cloud Run containers with GCS-based file I/O.
+Run tasks in ephemeral GCP Cloud Run containers with GCS-based file I/O.
 
 ## Quick Start
+
+### Claude Code (high-level)
 
 ```python
 from safetytooling.infra.cloud_run import ClaudeCodeJob, ClaudeCodeJobConfig
@@ -21,40 +23,85 @@ print(result.response)
 print(result.transcript)  # Full conversation history
 ```
 
+### Custom Containers (low-level)
+
+```python
+from safetytooling.infra.cloud_run import CloudRunJob, CloudRunJobConfig
+
+config = CloudRunJobConfig(
+    image="python:3.11-slim",
+    project_id="my-project",
+    gcs_bucket="my-bucket",
+)
+
+with CloudRunJob(config) as job:
+    job.send_inputs({"repo": Path("./my_repo"), "data.json": Path("./config.json")})
+    result = job.run("cd /workspace/input/repo && python script.py")
+    output_dir = job.receive_outputs()
+
+print(f"Exit code: {result.returncode}")
+print(f"Outputs at: {output_dir}")
+```
+
 ## Prerequisites
 
 1. **GCP Project** with Cloud Run and Cloud Storage APIs enabled
 2. **GCS Bucket** for file transfer
 3. **Authentication**: `gcloud auth application-default login` or service account
-4. **Anthropic API Key**: Set `ANTHROPIC_API_KEY` env var or pass to `run()`
+4. **Anthropic API Key** (for ClaudeCodeJob): Set `ANTHROPIC_API_KEY` env var or pass to `run()`
 
 ## How It Works
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────────────────────┐
 │ Local files │────▶│ GCS bucket  │────▶│ Cloud Run container         │
-│             │     │             │     │  ┌─────────────────────┐    │
-│ inputs={    │     │ inputs/     │     │  │ Claude Code         │    │
-│   "repo": / │     │ {hash}.tgz  │     │  │ - reads /workspace/ │    │
-│ }           │     │             │     │  │ - writes /output/   │    │
-└─────────────┘     │ outputs/    │◀────│  └─────────────────────┘    │
+│             │     │             │     │                             │
+│ inputs={    │     │ inputs/     │     │  /workspace/input/repo/     │
+│   "repo": / │     │ {hash}.tgz  │     │  /workspace/output/         │
+│ }           │     │             │     │                             │
+└─────────────┘     │ outputs/    │◀────│  (your command runs here)   │
        ▲            │ {job}.tgz   │     └─────────────────────────────┘
        │            └─────────────┘
-       │                  │
        └──────────────────┘
          Download outputs
 ```
 
-1. **Tar and hash** local inputs
-2. **Upload to GCS** (skipped if hash already exists - content-addressed caching)
-3. **Create Cloud Run Job** that:
-   - Downloads inputs from GCS
-   - Installs Claude Code
-   - Runs your task
-   - Uploads outputs to GCS
+1. **Tar and hash** local inputs (deterministic tarball for caching)
+2. **Upload to GCS** (skipped if hash already exists - content-addressed)
+3. **Create Cloud Run Job** that downloads inputs, runs command, uploads outputs
 4. **Download outputs** and return result
 
 ## API Reference
+
+### CloudRunJobConfig
+
+```python
+CloudRunJobConfig(
+    image: str,            # Container image (must have gcloud CLI)
+    project_id: str,       # GCP project ID (required)
+    gcs_bucket: str,       # GCS bucket for file I/O (required)
+    region: str = "us-central1",
+    cpu: str = "2",        # vCPUs: 1, 2, 4, or 8
+    memory: str = "4Gi",   # Up to 32Gi
+    timeout: int = 3600,   # Job timeout in seconds
+    env: dict = {},        # Environment variables
+    name_prefix: str = "ephemeral",
+)
+```
+
+### CloudRunJob
+
+```python
+with CloudRunJob(config) as job:
+    # Send inputs to /workspace/input/
+    job.send_inputs({"name": Path("local/path")})
+    
+    # Run command
+    result = job.run("your-command", timeout=300)
+    
+    # Get outputs from /workspace/output/
+    output_dir = job.receive_outputs()
+```
 
 ### ClaudeCodeJobConfig
 
@@ -77,7 +124,7 @@ ClaudeCodeJobConfig(
 ```python
 result = ClaudeCodeJob(config).run(
     task: str,                        # The prompt for Claude Code
-    inputs: dict[str, Path] = None,   # Files to make available
+    inputs: dict[str, Path] = None,   # Files at /workspace/input/
     system_prompt: str = None,        # Custom system prompt / constitution
     claude_config_dir: Path = None,   # Custom .claude/ directory
     api_key: str = None,              # Default: ANTHROPIC_API_KEY env var
@@ -96,17 +143,26 @@ result.duration_seconds  # float: Total execution time
 
 ## Workspace Layout
 
-Inside the container, Claude Code sees:
+Inside the container:
 
 ```
 /workspace/              <- Working directory
 ├── input/
 │   ├── repo/            <- from inputs={"repo": Path(...)}
 │   └── data.json        <- from inputs={"data.json": Path(...)}
-└── output/              <- Claude writes results here
+└── output/              <- Write results here (retrieved by receive_outputs)
 ```
 
-Reference inputs in your task as `input/repo`, `input/data.json`, etc.
+Reference inputs in your commands as `/workspace/input/repo`, etc.
+
+## Caching
+
+Two levels of caching minimize redundant work:
+
+1. **In-memory cache**: Same input paths within a process skip re-tarring
+2. **GCS cache**: Same content hash across processes/machines skips re-uploading
+
+Content hashing uses MD5 of the tarball. Tarballs are deterministic (sorted entries, zeroed timestamps) so identical files = identical hash = cache hit.
 
 ## Parallel Execution
 
@@ -136,49 +192,20 @@ with ThreadPoolExecutor(max_workers=50) as executor:
     results = [f.result() for f in futures]
 ```
 
-## Caching
-
-Two levels of caching minimize redundant work:
-
-1. **In-memory cache**: Same input paths within a process skip re-tarring
-2. **GCS cache**: Same content hash across processes/machines skips re-uploading
-
-Content hashing uses MD5 of the tarball, so identical files = identical hash = cache hit.
-
 ## GCS Cleanup
 
 Outputs are deleted after download. For inputs, set up a lifecycle policy:
 
 ```bash
-# lifecycle.json
+cat > lifecycle.json << 'EOF'
 {
   "rule": [
-    {"action": {"type": "Delete"}, "condition": {"age": 7, "matchesPrefix": ["claude-code-inputs/"]}}
+    {"action": {"type": "Delete"}, "condition": {"age": 7, "matchesPrefix": ["cloudrun-inputs/"]}}
   ]
 }
+EOF
 
 gsutil lifecycle set lifecycle.json gs://your-bucket
-```
-
-## Low-Level: CloudRunJob
-
-For custom containers (not Claude Code), use `CloudRunJob` directly:
-
-```python
-from safetytooling.infra.cloud_run import CloudRunJob, CloudRunJobConfig
-
-config = CloudRunJobConfig(
-    image="python:3.11-slim",
-    project_id="my-project",
-    gcs_bucket="my-bucket",
-)
-
-with CloudRunJob(config) as job:
-    job.send_files({"local/data": "input/data"})
-    result = job.run("python /workspace/input/data/script.py")
-    job.receive_files({"output/results.json": "local/results.json"})
-
-print(result.stdout)
 ```
 
 ## Cost
@@ -187,13 +214,13 @@ Cloud Run Jobs pricing (as of 2024):
 - ~$0.00002400/vCPU-second
 - ~$0.00000250/GiB-second
 
-A typical 2-minute Claude Code review with 2 vCPUs and 4GB RAM costs ~$0.006.
+A typical 2-minute job with 2 vCPUs and 4GB RAM costs ~$0.006.
 
 ## Troubleshooting
 
 **"API key required"**: Set `ANTHROPIC_API_KEY` env var or pass `api_key=` to `run()`.
 
-**Job timeout**: Increase `timeout` in config. Default is 600s (10 min).
+**Job timeout**: Increase `timeout` in config. Default is 600s for ClaudeCodeJob, 3600s for CloudRunJob.
 
 **"quota exceeded"**: Run `gcloud auth application-default set-quota-project PROJECT_ID`.
 
