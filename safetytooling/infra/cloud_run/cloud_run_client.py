@@ -9,12 +9,16 @@ Usage:
         gcs_bucket="my-bucket",
     ))
 
-    # Single run
-    result = client.run(command="echo hello", inputs={"data": Path("./data")})
+    # Single task
+    result = client.run_single(command="echo hello", inputs={"data": Path("./data")})
     print(result.stdout)
 
-    # Run same command 100 times in parallel
-    results = client.run(command="echo hello", inputs={"data": Path("./data")}, n=100)
+    # Multiple tasks in parallel
+    results = client.run([
+        {"id": "task-1", "command": "echo hello", "n": 10},
+        {"id": "task-2", "command": "echo world", "n": 5},
+    ])
+    # Returns: {"task-1": [Result, ...], "task-2": [Result, ...]}
 
 Data Flow:
     1. Local tars inputs -> content hash -> upload to GCS (if not cached)
@@ -120,11 +124,15 @@ class CloudRunClient:
             gcs_bucket="my-bucket",
         ))
 
-        # Single run
-        result = client.run(command="python script.py", inputs={"repo": repo_path})
+        # Single task (convenience method)
+        result = client.run_single(command="python script.py", inputs={"repo": repo_path})
 
-        # Run 100 times in parallel
-        results = client.run(command="python script.py", inputs={"repo": repo_path}, n=100)
+        # Multiple tasks in parallel
+        results = client.run([
+            {"id": "task-1", "command": "python script.py", "inputs": {"repo": repo_path}, "n": 10},
+            {"id": "task-2", "command": "python other.py", "inputs": {"repo": repo_path}, "n": 5},
+        ])
+        # Returns: {"task-1": [Result, ...], "task-2": [Result, ...]}
     """
 
     # Class-level caches for efficiency across parallel runs
@@ -146,97 +154,33 @@ class CloudRunClient:
 
     def run(
         self,
-        tasks: list[dict] | str,
-        inputs: dict[str, Path] | None = None,
-        timeout: int | None = None,
-        n: int | None = None,
-        max_workers: int | None = None,
-        progress: bool = True,
-    ) -> dict[str, list[CloudRunResult]] | CloudRunResult | list[CloudRunResult]:
-        """
-        Run command(s) in Cloud Run container(s).
-
-        Two calling conventions:
-
-        1. Task list (new, preferred):
-            tasks = [
-                {"id": "task-1", "command": "...", "inputs": {...}, "n": 10},
-                {"id": "task-2", "command": "...", "inputs": {...}, "n": 5},
-            ]
-            results = client.run(tasks)
-            # Returns: {"task-1": [Result, ...], "task-2": [Result, ...]}
-
-        2. Single command (legacy):
-            result = client.run(command="echo hello", inputs={...})
-            results = client.run(command="echo hello", inputs={...}, n=10)
-
-        Task dict fields:
-            id: Unique identifier for this task (required)
-            command: Shell command to execute (required)
-            inputs: Dict mapping names to local paths (optional)
-            n: Number of times to run this task (default: 1)
-            timeout: Per-task timeout override (optional)
-
-        Args:
-            tasks: List of task dicts, OR a command string (legacy)
-            inputs: Inputs for legacy single-command mode
-            timeout: Timeout for legacy mode (default: from config)
-            n: Repetition count for legacy mode
-            max_workers: Max concurrent jobs (default: unlimited)
-            progress: Show progress bar (requires tqdm)
-
-        Returns:
-            Task list mode: dict mapping task id -> list of results
-            Legacy mode: CloudRunResult or list[CloudRunResult]
-        """
-        # Legacy single-command mode
-        if isinstance(tasks, str):
-            command = tasks
-            timeout = timeout or self.config.timeout
-
-            if n is None:
-                return self._run_single(command, inputs, timeout)
-
-            # Parallel runs of same command
-            results: dict[int, CloudRunResult] = {}
-
-            def run_one_legacy(idx: int) -> tuple[int, CloudRunResult]:
-                try:
-                    result = self._run_single(command, inputs, timeout)
-                    return idx, result
-                except Exception as e:
-                    return idx, CloudRunResult(
-                        stdout="",
-                        stderr="",
-                        output_dir=Path("/dev/null"),
-                        returncode=1,
-                        duration_seconds=0,
-                        error=e,
-                    )
-
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {executor.submit(run_one_legacy, i): i for i in range(n)}
-
-                iterator = as_completed(futures)
-                if progress and tqdm is not None:
-                    iterator = tqdm(iterator, total=n, desc="Running jobs")
-
-                for future in iterator:
-                    idx, result = future.result()
-                    results[idx] = result
-
-            return [results[i] for i in range(n)]
-
-        # New task list mode
-        return self._run_tasks(tasks, max_workers=max_workers, progress=progress)
-
-    def _run_tasks(
-        self,
         tasks: list[dict],
         max_workers: int | None = None,
         progress: bool = True,
     ) -> dict[str, list[CloudRunResult]]:
-        """Run a list of tasks, each potentially multiple times."""
+        """
+        Run tasks in Cloud Run containers.
+
+        Args:
+            tasks: List of task dicts with fields:
+                id: Unique identifier for this task (required)
+                command: Shell command to execute (required)
+                inputs: Dict mapping names to local paths (optional)
+                n: Number of times to run this task (default: 1)
+                timeout: Per-task timeout override (optional)
+            max_workers: Max concurrent jobs (default: unlimited)
+            progress: Show progress bar (requires tqdm)
+
+        Returns:
+            Dict mapping task id -> list of results
+
+        Example:
+            results = client.run([
+                {"id": "task-1", "command": "echo hello", "inputs": {"data": Path("./data")}, "n": 10},
+                {"id": "task-2", "command": "echo world", "n": 5},
+            ])
+            # Returns: {"task-1": [Result, ...], "task-2": [Result, ...]}
+        """
         # Expand tasks into individual jobs
         # Each job is (task_id, run_index, command, inputs, timeout)
         jobs = []
@@ -291,6 +235,34 @@ class CloudRunClient:
             final_results[task_id] = [results_by_task[task_id][i] for i in range(task_n)]
 
         return final_results
+
+    def run_single(
+        self,
+        command: str,
+        inputs: dict[str, Path] | None = None,
+        timeout: int | None = None,
+    ) -> CloudRunResult:
+        """
+        Convenience method to run a single command.
+
+        Args:
+            command: Shell command to execute
+            inputs: Dict mapping names to local paths
+            timeout: Job timeout in seconds (default: from config)
+
+        Returns:
+            CloudRunResult
+
+        Example:
+            result = client.run_single(
+                command="python script.py",
+                inputs={"repo": Path("./my_repo")},
+            )
+        """
+        results = self.run(
+            [{"id": "_single", "command": command, "inputs": inputs, "timeout": timeout or self.config.timeout}]
+        )
+        return results["_single"][0]
 
     def _run_single(
         self,

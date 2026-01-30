@@ -15,49 +15,53 @@ client = ClaudeCodeClient(ClaudeCodeClientConfig(
     gcs_bucket="my-bucket",
 ))
 
-# Single task
-result = client.run(
+# Single task (convenience method)
+result = client.run_single(
     task="Review this PR for security issues",
     inputs={"repo": Path("./my_repo")},
 )
 print(result.response)
 
-# Same task 100 times (measure variance)
-results = client.run(
-    task="Review this code for vulnerabilities",
-    inputs={"repo": Path("./my_repo")},
-    n=100,
-)
-flagged = sum(1 for r in results if r.success and "vulnerability" in r.response.lower())
-print(f"Flagged in {flagged}/{len(results)} runs")
-
-# Multiple different tasks
-results = client.run(tasks=[
-    {"task": "Review for XSS", "inputs": {"repo": repo}},
-    {"task": "Review for SQLi", "inputs": {"repo": repo}},
+# Multiple different tasks in parallel
+results = client.run([
+    {"id": "xss-review", "task": "Review for XSS vulnerabilities", "inputs": {"repo": repo}, "n": 10},
+    {"id": "sqli-review", "task": "Review for SQL injection", "inputs": {"repo": repo}, "n": 10},
 ])
+# Returns: {"xss-review": [Result, ...], "sqli-review": [Result, ...]}
+
+# Aggregate results
+for task_id, task_results in results.items():
+    flagged = sum(1 for r in task_results if r.success and "vulnerability" in r.response.lower())
+    print(f"{task_id}: flagged in {flagged}/{len(task_results)} runs")
 ```
 
 ## Custom Containers (low-level)
 
 ```python
-from safetytooling.infra.cloud_run import CloudRunJob, CloudRunJobConfig
+from safetytooling.infra.cloud_run import CloudRunClient, CloudRunClientConfig
 
-config = CloudRunJobConfig(
-    image="gcr.io/my-project/my-image:latest",  # Full image path
+client = CloudRunClient(CloudRunClientConfig(
     project_id="my-project",
     gcs_bucket="my-bucket",
-)
+    image="gcr.io/my-project/my-image:latest",
+))
 
-with CloudRunJob(config) as job:
-    job.send_inputs({"repo": Path("./my_repo"), "data.json": Path("./config.json")})
-    result = job.run("cd /workspace/input/repo && python script.py")
-    output_dir = job.receive_outputs()
+# Single command (convenience method)
+result = client.run_single(
+    command="cd /workspace/input/repo && python script.py",
+    inputs={"repo": Path("./my_repo"), "data.json": Path("./config.json")},
+)
 
 print(f"Exit code: {result.returncode}")
 print(f"stdout: {result.stdout}")
 print(f"stderr: {result.stderr}")
-print(f"Outputs at: {output_dir}")
+print(f"Outputs at: {result.output_dir}")
+
+# Multiple commands in parallel
+results = client.run([
+    {"id": "task-1", "command": "python script1.py", "inputs": {"repo": repo}, "n": 10},
+    {"id": "task-2", "command": "python script2.py", "inputs": {"repo": repo}, "n": 5},
+])
 ```
 
 ## Prerequisites
@@ -117,17 +121,35 @@ ClaudeCodeClientConfig(
 ### ClaudeCodeClient.run()
 
 ```python
-result = client.run(
+results = client.run(
+    tasks: list[dict],                # List of task dicts (see below)
+    system_prompt: str = None,        # Default system prompt for all tasks
+    claude_config_dir: Path = None,   # Custom .claude/ directory
+    api_key: str = None,              # Default: ANTHROPIC_API_KEY env var
+    max_workers: int = None,          # Max parallel jobs (default: unlimited)
+    progress: bool = True,            # Show progress bar (requires tqdm)
+)
+# Returns: dict mapping task id -> list of ClaudeCodeResult
+```
+
+**Task dict fields:**
+- `id` (required): Unique identifier for this task
+- `task` (required): The prompt/instruction for Claude Code
+- `inputs` (optional): Dict of {name: local_path}
+- `system_prompt` (optional): Override the default system prompt for this task
+- `n` (optional): Number of times to run this task (default: 1)
+
+### ClaudeCodeClient.run_single()
+
+```python
+result = client.run_single(
     task: str,                        # The prompt for Claude Code
     inputs: dict[str, Path] = None,   # Files at /workspace/input/
     system_prompt: str = None,        # Custom system prompt / constitution
     claude_config_dir: Path = None,   # Custom .claude/ directory
     api_key: str = None,              # Default: ANTHROPIC_API_KEY env var
-    n: int = None,                    # Run same task N times (returns list)
-    tasks: list[dict] = None,         # Run different tasks (returns list)
-    max_workers: int = None,          # Max parallel jobs (default: unlimited)
-    progress: bool = True,            # Show progress bar (requires tqdm)
 )
+# Returns: ClaudeCodeResult
 ```
 
 ### ClaudeCodeResult
@@ -142,38 +164,63 @@ result.success           # bool: True if no error occurred
 result.error             # Exception | None: Error if task failed
 ```
 
-### CloudRunJobConfig
+### CloudRunClientConfig
 
 ```python
-CloudRunJobConfig(
-    image: str,            # Full container image path (e.g., "gcr.io/project/image:tag")
+CloudRunClientConfig(
     project_id: str,       # GCP project ID (required)
     gcs_bucket: str,       # GCS bucket for file I/O (required)
+    name_prefix: str = "cloudrun",
     region: str = "us-central1",
+    image: str = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim",
     cpu: str = "1",        # vCPUs: 1, 2, 4, or 8
     memory: str = "2Gi",   # Up to 32Gi
-    timeout: int = 3600,   # Job timeout in seconds
+    timeout: int = 600,    # Job timeout in seconds
     env: dict = {},        # Environment variables
-    name_prefix: str = "ephemeral",
 )
 ```
 
 **Note on `image`**: Must be a full image path that Cloud Run can pull. The image must have `gcloud` CLI installed for GCS file transfer.
 
-### CloudRunJob
+### CloudRunClient.run()
 
 ```python
-with CloudRunJob(config) as job:
-    # Send inputs to /workspace/input/
-    job.send_inputs({"name": Path("local/path")})
-    
-    # Run command
-    result = job.run("your-command", timeout=300)
-    
-    # Get outputs from /workspace/output/ (idempotent, can call multiple times)
-    output_dir = job.receive_outputs()
+results = client.run(
+    tasks: list[dict],      # List of task dicts (see below)
+    max_workers: int = None,  # Max parallel jobs (default: unlimited)
+    progress: bool = True,    # Show progress bar (requires tqdm)
+)
+# Returns: dict mapping task id -> list of CloudRunResult
+```
 
-# result.stdout and result.stderr contain command output
+**Task dict fields:**
+- `id` (required): Unique identifier for this task
+- `command` (required): Shell command to execute
+- `inputs` (optional): Dict mapping names to local paths
+- `n` (optional): Number of times to run this task (default: 1)
+- `timeout` (optional): Override the default timeout for this task
+
+### CloudRunClient.run_single()
+
+```python
+result = client.run_single(
+    command: str,                   # Shell command to execute
+    inputs: dict[str, Path] = None, # Files at /workspace/input/
+    timeout: int = None,            # Job timeout (default: from config)
+)
+# Returns: CloudRunResult
+```
+
+### CloudRunResult
+
+```python
+result.stdout            # str: Command stdout
+result.stderr            # str: Command stderr
+result.output_dir        # Path: Local dir with /workspace/output contents
+result.returncode        # int: Exit code
+result.duration_seconds  # float: Total execution time
+result.success           # bool: True if no error and returncode == 0
+result.error             # Exception | None: Error if job failed
 ```
 
 ## Workspace Layout
@@ -185,7 +232,7 @@ Inside the container:
 ├── input/
 │   ├── repo/            <- from inputs={"repo": Path(...)}
 │   └── data.json        <- from inputs={"data.json": Path(...)}
-└── output/              <- Write results here (retrieved by receive_outputs)
+└── output/              <- Write results here (retrieved after job completes)
 ```
 
 ## Caching
@@ -225,7 +272,7 @@ A typical 2-minute job with 1 vCPU and 2GB RAM costs ~$0.003.
 
 **"API key required"**: Set `ANTHROPIC_API_KEY` env var or pass `api_key=` to `run()`.
 
-**Job timeout**: Increase `timeout` in config. Default is 600s for ClaudeCodeClient, 3600s for CloudRunJob.
+**Job timeout**: Increase `timeout` in config. Default is 600s for ClaudeCodeClient, 3600s for CloudRunClient.
 
 **"quota exceeded"**: Run `gcloud auth application-default set-quota-project PROJECT_ID`.
 

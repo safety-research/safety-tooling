@@ -16,18 +16,18 @@ Usage:
     # Or pass explicitly
     client = ClaudeCodeClient(project_id="my-project", gcs_bucket="my-bucket")
 
-    # Single task
-    result = client.run(
+    # Single task (convenience method)
+    result = client.run_single(
         task="Review the code for security issues",
         inputs={"repo": Path("./my_repo")},
     )
 
-    # Same task N times (for measuring variance)
-    results = client.run(
-        task="Review the code for security issues",
-        inputs={"repo": Path("./my_repo")},
-        n=100,
-    )
+    # Multiple tasks in parallel
+    results = client.run([
+        {"id": "review-1", "task": "Review for XSS", "inputs": {"repo": repo}, "n": 10},
+        {"id": "review-2", "task": "Review for SQLi", "inputs": {"repo": repo}, "n": 5},
+    ])
+    # Returns: {"review-1": [Result, ...], "review-2": [Result, ...]}
 """
 
 import json
@@ -122,11 +122,15 @@ class ClaudeCodeClient:
         )
         client = ClaudeCodeClient(config)
 
-        # Single task
-        result = client.run(task="Review this code", inputs={"repo": repo})
+        # Single task (convenience method)
+        result = client.run_single(task="Review this code", inputs={"repo": repo})
 
-        # Same task 100 times in parallel
-        results = client.run(task="Review this code", inputs={"repo": repo}, n=100)
+        # Multiple tasks in parallel
+        results = client.run([
+            {"id": "review-1", "task": "Review for XSS", "inputs": {"repo": repo}, "n": 10},
+            {"id": "review-2", "task": "Review for SQLi", "inputs": {"repo": repo}, "n": 5},
+        ])
+        # Returns: {"review-1": [Result, ...], "review-2": [Result, ...]}
     """
 
     def __init__(
@@ -289,52 +293,38 @@ exit $CLAUDE_EXIT
 
     def run(
         self,
-        tasks: list[dict] | str,
-        inputs: dict[str, Path] | None = None,
+        tasks: list[dict],
         system_prompt: str | None = None,
         claude_config_dir: Path | None = None,
         api_key: str | None = None,
-        n: int | None = None,
         max_workers: int | None = None,
         progress: bool = True,
-    ) -> dict[str, list[ClaudeCodeResult]] | ClaudeCodeResult | list[ClaudeCodeResult]:
+    ) -> dict[str, list[ClaudeCodeResult]]:
         """
-        Run Claude Code task(s).
-
-        Two calling conventions:
-
-        1. Task list (new, preferred):
-            tasks = [
-                {"id": "review-1", "task": "Review code", "inputs": {...}, "n": 10},
-                {"id": "review-2", "task": "Check security", "inputs": {...}, "n": 5},
-            ]
-            results = client.run(tasks)
-            # Returns: {"review-1": [Result, ...], "review-2": [Result, ...]}
-
-        2. Single task (legacy):
-            result = client.run(task="Review this code", inputs={"repo": repo})
-            results = client.run(task="Review this code", inputs={"repo": repo}, n=100)
-
-        Task dict fields:
-            id: Unique identifier for this task (required)
-            task: The prompt/instruction for Claude Code (required)
-            inputs: Dict of {name: local_path} (optional)
-            system_prompt: System prompt / constitution (optional)
-            n: Number of times to run this task (default: 1)
+        Run Claude Code tasks.
 
         Args:
-            tasks: List of task dicts, OR a task string (legacy)
-            inputs: Inputs for legacy single-task mode
-            system_prompt: System prompt for legacy mode
-            claude_config_dir: Optional path to .claude/ directory
+            tasks: List of task dicts with fields:
+                id: Unique identifier for this task (required)
+                task: The prompt/instruction for Claude Code (required)
+                inputs: Dict of {name: local_path} (optional)
+                system_prompt: System prompt / constitution (optional, overrides global)
+                n: Number of times to run this task (default: 1)
+            system_prompt: Default system prompt for tasks that don't specify one
+            claude_config_dir: Optional path to .claude/ directory with custom commands
             api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
-            n: Repetition count for legacy mode
             max_workers: Max concurrent jobs (default: unlimited)
             progress: Show progress bar (requires tqdm)
 
         Returns:
-            Task list mode: dict mapping task id -> list of results
-            Legacy mode: ClaudeCodeResult or list[ClaudeCodeResult]
+            Dict mapping task id -> list of results
+
+        Example:
+            results = client.run([
+                {"id": "review-1", "task": "Review for XSS", "inputs": {"repo": repo}, "n": 10},
+                {"id": "review-2", "task": "Review for SQLi", "inputs": {"repo": repo}, "n": 5},
+            ])
+            # Returns: {"review-1": [Result, ...], "review-2": [Result, ...]}
         """
         # Get API key from param or environment
         if api_key is None:
@@ -342,38 +332,6 @@ exit $CLAUDE_EXIT
         if not api_key:
             raise ClaudeCodeClientError("API key required: pass api_key param or set ANTHROPIC_API_KEY env var")
 
-        # Legacy single-task mode
-        if isinstance(tasks, str):
-            task = tasks
-
-            # Build inputs dict
-            all_inputs = dict(inputs) if inputs else {}
-            if claude_config_dir and claude_config_dir.exists():
-                all_inputs[".claude"] = claude_config_dir
-
-            # Build the Claude command
-            command = self._build_claude_command(
-                task=task,
-                system_prompt=system_prompt,
-                api_key=api_key,
-            )
-
-            # Delegate to CloudRunClient (legacy mode)
-            result = self._cloud_run.run(
-                tasks=command,  # Pass as string for legacy mode
-                inputs=all_inputs if all_inputs else None,
-                timeout=self.config.timeout,
-                n=n,
-                max_workers=max_workers,
-                progress=progress,
-            )
-
-            # Convert results
-            if isinstance(result, list):
-                return [self._convert_result(r) for r in result]
-            return self._convert_result(result)
-
-        # New task list mode
         # Build CloudRunClient tasks from ClaudeCode tasks
         cloud_run_tasks = []
         for task_dict in tasks:
@@ -418,3 +376,39 @@ exit $CLAUDE_EXIT
             final_results[task_id] = [self._convert_result(r) for r in results_list]
 
         return final_results
+
+    def run_single(
+        self,
+        task: str,
+        inputs: dict[str, Path] | None = None,
+        system_prompt: str | None = None,
+        claude_config_dir: Path | None = None,
+        api_key: str | None = None,
+    ) -> ClaudeCodeResult:
+        """
+        Convenience method to run a single Claude Code task.
+
+        Args:
+            task: The prompt/instruction for Claude Code
+            inputs: Dict of {name: local_path} to make available at /workspace/input/{name}
+            system_prompt: Optional system prompt / constitution
+            claude_config_dir: Optional path to .claude/ directory with custom commands
+            api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
+
+        Returns:
+            ClaudeCodeResult
+
+        Example:
+            result = client.run_single(
+                task="Review this code for security issues",
+                inputs={"repo": Path("./my_repo")},
+            )
+        """
+        results = self.run(
+            tasks=[{"id": "_single", "task": task, "inputs": inputs}],
+            system_prompt=system_prompt,
+            claude_config_dir=claude_config_dir,
+            api_key=api_key,
+            progress=False,
+        )
+        return results["_single"][0]
