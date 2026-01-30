@@ -56,6 +56,10 @@ from .cloud_run_client import (
     CloudRunTask,
 )
 
+# Pre-built image with Claude Code, git, nodejs, npm, and non-root user
+# Saves ~2 minutes of setup time per job
+DEFAULT_CLAUDE_CODE_IMAGE = "gcr.io/fellows-safety-research/claude-code-runner:latest"
+
 
 @dataclass
 class ClaudeCodeClientConfig:
@@ -68,11 +72,13 @@ class ClaudeCodeClientConfig:
         region: GCP region (default: us-central1)
         model: Claude model to use (default: claude-opus-4-5-20251101)
         max_turns: Maximum conversation turns (default: 100)
-        timeout: Job timeout in seconds (default: 600). Should include ~2min for setup.
+        timeout: Job timeout in seconds (default: 300). Pre-built image needs no setup time.
         cpu: vCPUs - 1, 2, 4, or 8 (default: 1)
         memory: Memory limit up to 32Gi (default: 2Gi)
         skip_permissions: Use --dangerously-skip-permissions (default: True)
-        image: Container image (default: google-cloud-cli:slim). Must have gcloud CLI.
+        image: Container image (default: pre-built claude-code-runner).
+               The default image has Claude Code pre-installed, saving ~2 min setup.
+               Set to "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim" for stock image.
         api_key_secret: Name of Secret Manager secret containing ANTHROPIC_API_KEY (required).
                        The secret is injected securely via GCP Secret Manager at runtime.
                        Format: "secret-name" or "projects/proj/secrets/name"
@@ -84,11 +90,11 @@ class ClaudeCodeClientConfig:
     region: str = "us-central1"
     model: str = "claude-opus-4-5-20251101"
     max_turns: int = 100
-    timeout: int = 600
+    timeout: int = 300  # Reduced from 600 - no setup time needed with pre-built image
     cpu: str = "1"
     memory: str = "2Gi"
     skip_permissions: bool = True
-    image: str = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
+    image: str = DEFAULT_CLAUDE_CODE_IMAGE
     api_key_secret: str | None = None
 
 
@@ -180,6 +186,9 @@ def _build_claude_command(
     - Doesn't appear in the job spec visible to anyone with jobs.get permission
     - Doesn't appear in process listings
     - Doesn't risk appearing in logs
+
+    The script auto-detects whether it's running in a pre-built image (with Claude
+    already installed) or a stock image (needs installation).
     """
     claude_flags = [
         "-p",
@@ -202,14 +211,19 @@ def _build_claude_command(
 set -e
 echo "=== Claude Code Job Starting ==="
 
-# Install dependencies
-echo "Installing dependencies..."
-apt-get update -qq && apt-get install -y -qq git nodejs npm > /dev/null 2>&1
-npm install -g @anthropic-ai/claude-code@latest > /dev/null 2>&1
-echo "Dependencies installed"
+# Auto-detect if we need to install dependencies
+# Pre-built image has claude already installed, stock image does not
+if command -v claude &> /dev/null; then
+    echo "Using pre-built image (claude already installed)"
+else
+    echo "Installing dependencies (stock image)..."
+    apt-get update -qq && apt-get install -y -qq git nodejs npm > /dev/null 2>&1
+    npm install -g @anthropic-ai/claude-code@latest > /dev/null 2>&1
+    echo "Dependencies installed"
+fi
 
-# Create non-root user (Claude Code requires this)
-useradd -m -s /bin/bash claude 2>/dev/null || true
+# Create non-root user if it doesn't exist (pre-built image already has it)
+id -u claude &>/dev/null || useradd -m -s /bin/bash claude
 
 # Set up Claude config if provided
 if [ -d /workspace/input/.claude ]; then
