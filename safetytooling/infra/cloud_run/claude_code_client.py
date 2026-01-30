@@ -289,7 +289,7 @@ exit $CLAUDE_EXIT
 
     def run(
         self,
-        task: str,
+        tasks: list[dict] | str,
         inputs: dict[str, Path] | None = None,
         system_prompt: str | None = None,
         claude_config_dir: Path | None = None,
@@ -297,29 +297,44 @@ exit $CLAUDE_EXIT
         n: int | None = None,
         max_workers: int | None = None,
         progress: bool = True,
-    ) -> ClaudeCodeResult | list[ClaudeCodeResult]:
+    ) -> dict[str, list[ClaudeCodeResult]] | ClaudeCodeResult | list[ClaudeCodeResult]:
         """
         Run Claude Code task(s).
 
+        Two calling conventions:
+
+        1. Task list (new, preferred):
+            tasks = [
+                {"id": "review-1", "task": "Review code", "inputs": {...}, "n": 10},
+                {"id": "review-2", "task": "Check security", "inputs": {...}, "n": 5},
+            ]
+            results = client.run(tasks)
+            # Returns: {"review-1": [Result, ...], "review-2": [Result, ...]}
+
+        2. Single task (legacy):
+            result = client.run(task="Review this code", inputs={"repo": repo})
+            results = client.run(task="Review this code", inputs={"repo": repo}, n=100)
+
+        Task dict fields:
+            id: Unique identifier for this task (required)
+            task: The prompt/instruction for Claude Code (required)
+            inputs: Dict of {name: local_path} (optional)
+            system_prompt: System prompt / constitution (optional)
+            n: Number of times to run this task (default: 1)
+
         Args:
-            task: The prompt/instruction for Claude Code
-            inputs: Dict of {name: local_path} to make available at /workspace/input/{name}
-            system_prompt: Optional system prompt / constitution
-            claude_config_dir: Optional path to .claude/ directory with custom commands
+            tasks: List of task dicts, OR a task string (legacy)
+            inputs: Inputs for legacy single-task mode
+            system_prompt: System prompt for legacy mode
+            claude_config_dir: Optional path to .claude/ directory
             api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
-            n: Run the same task N times in parallel (returns list of results)
-            max_workers: Max concurrent jobs when running multiple (default: unlimited)
-            progress: Show progress bar when running multiple (requires tqdm)
+            n: Repetition count for legacy mode
+            max_workers: Max concurrent jobs (default: unlimited)
+            progress: Show progress bar (requires tqdm)
 
         Returns:
-            ClaudeCodeResult for single task, list[ClaudeCodeResult] for n > 1
-
-        Examples:
-            # Single task
-            result = client.run(task="Review this code", inputs={"repo": repo})
-
-            # Same task 100 times in parallel
-            results = client.run(task="Review this code", inputs={"repo": repo}, n=100)
+            Task list mode: dict mapping task id -> list of results
+            Legacy mode: ClaudeCodeResult or list[ClaudeCodeResult]
         """
         # Get API key from param or environment
         if api_key is None:
@@ -327,29 +342,79 @@ exit $CLAUDE_EXIT
         if not api_key:
             raise ClaudeCodeClientError("API key required: pass api_key param or set ANTHROPIC_API_KEY env var")
 
-        # Build inputs dict
-        all_inputs = dict(inputs) if inputs else {}
-        if claude_config_dir and claude_config_dir.exists():
-            all_inputs[".claude"] = claude_config_dir
+        # Legacy single-task mode
+        if isinstance(tasks, str):
+            task = tasks
 
-        # Build the Claude command
-        command = self._build_claude_command(
-            task=task,
-            system_prompt=system_prompt,
-            api_key=api_key,
-        )
+            # Build inputs dict
+            all_inputs = dict(inputs) if inputs else {}
+            if claude_config_dir and claude_config_dir.exists():
+                all_inputs[".claude"] = claude_config_dir
 
-        # Delegate to CloudRunClient
-        result = self._cloud_run.run(
-            command=command,
-            inputs=all_inputs if all_inputs else None,
-            timeout=self.config.timeout,
-            n=n,
+            # Build the Claude command
+            command = self._build_claude_command(
+                task=task,
+                system_prompt=system_prompt,
+                api_key=api_key,
+            )
+
+            # Delegate to CloudRunClient (legacy mode)
+            result = self._cloud_run.run(
+                tasks=command,  # Pass as string for legacy mode
+                inputs=all_inputs if all_inputs else None,
+                timeout=self.config.timeout,
+                n=n,
+                max_workers=max_workers,
+                progress=progress,
+            )
+
+            # Convert results
+            if isinstance(result, list):
+                return [self._convert_result(r) for r in result]
+            return self._convert_result(result)
+
+        # New task list mode
+        # Build CloudRunClient tasks from ClaudeCode tasks
+        cloud_run_tasks = []
+        for task_dict in tasks:
+            task_id = task_dict["id"]
+            task_prompt = task_dict["task"]
+            task_inputs = task_dict.get("inputs")
+            task_system_prompt = task_dict.get("system_prompt", system_prompt)
+            task_n = task_dict.get("n", 1)
+
+            # Build inputs
+            all_inputs = dict(task_inputs) if task_inputs else {}
+            if claude_config_dir and claude_config_dir.exists():
+                all_inputs[".claude"] = claude_config_dir
+
+            # Build command for this task
+            command = self._build_claude_command(
+                task=task_prompt,
+                system_prompt=task_system_prompt,
+                api_key=api_key,
+            )
+
+            cloud_run_tasks.append(
+                {
+                    "id": task_id,
+                    "command": command,
+                    "inputs": all_inputs if all_inputs else None,
+                    "timeout": self.config.timeout,
+                    "n": task_n,
+                }
+            )
+
+        # Run all tasks
+        cloud_run_results = self._cloud_run.run(
+            tasks=cloud_run_tasks,
             max_workers=max_workers,
             progress=progress,
         )
 
         # Convert results
-        if isinstance(result, list):
-            return [self._convert_result(r) for r in result]
-        return self._convert_result(result)
+        final_results: dict[str, list[ClaudeCodeResult]] = {}
+        for task_id, results_list in cloud_run_results.items():
+            final_results[task_id] = [self._convert_result(r) for r in results_list]
+
+        return final_results

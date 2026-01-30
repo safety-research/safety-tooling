@@ -146,63 +146,151 @@ class CloudRunClient:
 
     def run(
         self,
-        command: str,
+        tasks: list[dict] | str,
         inputs: dict[str, Path] | None = None,
         timeout: int | None = None,
         n: int | None = None,
         max_workers: int | None = None,
         progress: bool = True,
-    ) -> CloudRunResult | list[CloudRunResult]:
+    ) -> dict[str, list[CloudRunResult]] | CloudRunResult | list[CloudRunResult]:
         """
-        Run a command in Cloud Run container(s).
+        Run command(s) in Cloud Run container(s).
+
+        Two calling conventions:
+
+        1. Task list (new, preferred):
+            tasks = [
+                {"id": "task-1", "command": "...", "inputs": {...}, "n": 10},
+                {"id": "task-2", "command": "...", "inputs": {...}, "n": 5},
+            ]
+            results = client.run(tasks)
+            # Returns: {"task-1": [Result, ...], "task-2": [Result, ...]}
+
+        2. Single command (legacy):
+            result = client.run(command="echo hello", inputs={...})
+            results = client.run(command="echo hello", inputs={...}, n=10)
+
+        Task dict fields:
+            id: Unique identifier for this task (required)
+            command: Shell command to execute (required)
+            inputs: Dict mapping names to local paths (optional)
+            n: Number of times to run this task (default: 1)
+            timeout: Per-task timeout override (optional)
 
         Args:
-            command: Shell command to execute
-            inputs: Dict mapping names to local paths
-                    {"repo": Path("./repo")} -> /workspace/input/repo/
-            timeout: Job timeout in seconds (default: from config)
-            n: Run the same command n times in parallel (returns list)
+            tasks: List of task dicts, OR a command string (legacy)
+            inputs: Inputs for legacy single-command mode
+            timeout: Timeout for legacy mode (default: from config)
+            n: Repetition count for legacy mode
             max_workers: Max concurrent jobs (default: unlimited)
-            progress: Show progress bar for parallel runs (requires tqdm)
+            progress: Show progress bar (requires tqdm)
 
         Returns:
-            CloudRunResult for single run, list[CloudRunResult] for n > 1
+            Task list mode: dict mapping task id -> list of results
+            Legacy mode: CloudRunResult or list[CloudRunResult]
         """
-        timeout = timeout or self.config.timeout
+        # Legacy single-command mode
+        if isinstance(tasks, str):
+            command = tasks
+            timeout = timeout or self.config.timeout
 
-        # Single run
-        if n is None:
-            return self._run_single(command, inputs, timeout)
+            if n is None:
+                return self._run_single(command, inputs, timeout)
 
-        # Parallel runs
-        results: dict[int, CloudRunResult] = {}
+            # Parallel runs of same command
+            results: dict[int, CloudRunResult] = {}
 
-        def run_one(idx: int) -> tuple[int, CloudRunResult]:
+            def run_one_legacy(idx: int) -> tuple[int, CloudRunResult]:
+                try:
+                    result = self._run_single(command, inputs, timeout)
+                    return idx, result
+                except Exception as e:
+                    return idx, CloudRunResult(
+                        stdout="",
+                        stderr="",
+                        output_dir=Path("/dev/null"),
+                        returncode=1,
+                        duration_seconds=0,
+                        error=e,
+                    )
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(run_one_legacy, i): i for i in range(n)}
+
+                iterator = as_completed(futures)
+                if progress and tqdm is not None:
+                    iterator = tqdm(iterator, total=n, desc="Running jobs")
+
+                for future in iterator:
+                    idx, result = future.result()
+                    results[idx] = result
+
+            return [results[i] for i in range(n)]
+
+        # New task list mode
+        return self._run_tasks(tasks, max_workers=max_workers, progress=progress)
+
+    def _run_tasks(
+        self,
+        tasks: list[dict],
+        max_workers: int | None = None,
+        progress: bool = True,
+    ) -> dict[str, list[CloudRunResult]]:
+        """Run a list of tasks, each potentially multiple times."""
+        # Expand tasks into individual jobs
+        # Each job is (task_id, run_index, command, inputs, timeout)
+        jobs = []
+        for task in tasks:
+            task_id = task["id"]
+            command = task["command"]
+            task_inputs = task.get("inputs")
+            task_timeout = task.get("timeout", self.config.timeout)
+            task_n = task.get("n", 1)
+
+            for i in range(task_n):
+                jobs.append((task_id, i, command, task_inputs, task_timeout))
+
+        # Run all jobs in parallel
+        results_by_task: dict[str, dict[int, CloudRunResult]] = {task["id"]: {} for task in tasks}
+
+        def run_one_job(job: tuple) -> tuple[str, int, CloudRunResult]:
+            task_id, run_idx, command, task_inputs, task_timeout = job
             try:
-                result = self._run_single(command, inputs, timeout)
-                return idx, result
+                result = self._run_single(command, task_inputs, task_timeout)
+                return task_id, run_idx, result
             except Exception as e:
-                return idx, CloudRunResult(
-                    stdout="",
-                    stderr="",
-                    output_dir=Path("/dev/null"),
-                    returncode=1,
-                    duration_seconds=0,
-                    error=e,
+                return (
+                    task_id,
+                    run_idx,
+                    CloudRunResult(
+                        stdout="",
+                        stderr="",
+                        output_dir=Path("/dev/null"),
+                        returncode=1,
+                        duration_seconds=0,
+                        error=e,
+                    ),
                 )
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(run_one, i): i for i in range(n)}
+            futures = {executor.submit(run_one_job, job): job for job in jobs}
 
             iterator = as_completed(futures)
             if progress and tqdm is not None:
-                iterator = tqdm(iterator, total=n, desc="Running jobs")
+                iterator = tqdm(iterator, total=len(jobs), desc="Running jobs")
 
             for future in iterator:
-                idx, result = future.result()
-                results[idx] = result
+                task_id, run_idx, result = future.result()
+                results_by_task[task_id][run_idx] = result
 
-        return [results[i] for i in range(n)]
+        # Convert to ordered lists
+        final_results: dict[str, list[CloudRunResult]] = {}
+        for task in tasks:
+            task_id = task["id"]
+            task_n = task.get("n", 1)
+            final_results[task_id] = [results_by_task[task_id][i] for i in range(task_n)]
+
+        return final_results
 
     def _run_single(
         self,
