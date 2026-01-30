@@ -1,23 +1,25 @@
 """Infrastructure utilities for safety research."""
 
 from .cloud_run import (
-    ClaudeCodeJob,
-    ClaudeCodeJobConfig,
-    ClaudeCodeJobError,
-    ClaudeCodeJobResult,
-    CloudRunJob,
-    CloudRunJobConfig,
-    CloudRunJobError,
-    JobResult,
+    ClaudeCodeClient,
+    ClaudeCodeClientConfig,
+    ClaudeCodeClientError,
+    ClaudeCodeResult,
+    CloudRunClient,
+    CloudRunClientConfig,
+    CloudRunClientError,
+    CloudRunResult,
 )
 
 __all__ = [
-    "ClaudeCodeJob",
-    "ClaudeCodeJobConfig",
-    "ClaudeCodeJobError",
-    "ClaudeCodeJobResult",
-    "CloudRunJob",
-    "CloudRunJobConfig",
-    "CloudRunJobError",
-    "JobResult",
+    # High-level Claude Code client
+    "ClaudeCodeClient",
+    "ClaudeCodeClientConfig",
+    "ClaudeCodeClientError",
+    "ClaudeCodeResult",
+    # Low-level Cloud Run client
+    "CloudRunClient",
+    "CloudRunClientConfig",
+    "CloudRunClientError",
+    "CloudRunResult",
 ]

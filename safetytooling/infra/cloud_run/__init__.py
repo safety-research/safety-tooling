@@ -1,38 +1,27 @@
 """Cloud Run job execution for Claude Code and other tasks."""
 
-from .claude_code_job import (
-    # New names
+from .claude_code_client import (
     ClaudeCodeClient,
     ClaudeCodeClientConfig,
     ClaudeCodeClientError,
-    # Backwards compatibility
-    ClaudeCodeJob,
-    ClaudeCodeJobConfig,
-    ClaudeCodeJobError,
-    ClaudeCodeJobResult,
     ClaudeCodeResult,
 )
-from .cloud_run_job import (
-    CloudRunJob,
-    CloudRunJobConfig,
-    CloudRunJobError,
-    JobResult,
+from .cloud_run_client import (
+    CloudRunClient,
+    CloudRunClientConfig,
+    CloudRunClientError,
+    CloudRunResult,
 )
 
 __all__ = [
-    # New names (preferred)
+    # Low-level Cloud Run client
+    "CloudRunClient",
+    "CloudRunClientConfig",
+    "CloudRunClientError",
+    "CloudRunResult",
+    # High-level Claude Code client
     "ClaudeCodeClient",
     "ClaudeCodeClientConfig",
     "ClaudeCodeClientError",
     "ClaudeCodeResult",
-    # Backwards compatibility
-    "ClaudeCodeJob",
-    "ClaudeCodeJobConfig",
-    "ClaudeCodeJobError",
-    "ClaudeCodeJobResult",
-    # Low-level
-    "CloudRunJob",
-    "CloudRunJobConfig",
-    "CloudRunJobError",
-    "JobResult",
 ]
