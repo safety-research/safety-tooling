@@ -1,6 +1,8 @@
 # Cloud Run Module
 
-Run tasks in ephemeral GCP Cloud Run containers with GCS-based file I/O.
+Run many Claude Code instances in parallel on ephemeral GCP Cloud Run containers, with GCS-based file I/O. Send files in, get files back.
+
+**Primary use case**: Batch processing with Claude Code - review many PRs, analyze many codebases, run many investigations in parallel without managing infrastructure.
 
 ## Quick Start
 
@@ -15,12 +17,13 @@ config = ClaudeCodeJobConfig(
 )
 
 result = ClaudeCodeJob(config).run(
-    task="List the files in input/repo and describe what this project does",
+    task="Review this PR for security issues",
     inputs={"repo": Path("./my_repo")},
 )
 
 print(result.response)
 print(result.transcript)  # Full conversation history
+# result.output_dir has any files Claude wrote to /workspace/output/
 ```
 
 ### Custom Containers (low-level)
@@ -29,7 +32,7 @@ print(result.transcript)  # Full conversation history
 from safetytooling.infra.cloud_run import CloudRunJob, CloudRunJobConfig
 
 config = CloudRunJobConfig(
-    image="python:3.11-slim",
+    image="gcr.io/my-project/my-image:latest",  # Full image path
     project_id="my-project",
     gcs_bucket="my-bucket",
 )
@@ -40,6 +43,8 @@ with CloudRunJob(config) as job:
     output_dir = job.receive_outputs()
 
 print(f"Exit code: {result.returncode}")
+print(f"stdout: {result.stdout}")
+print(f"stderr: {result.stderr}")
 print(f"Outputs at: {output_dir}")
 ```
 
@@ -77,17 +82,21 @@ print(f"Outputs at: {output_dir}")
 
 ```python
 CloudRunJobConfig(
-    image: str,            # Container image (must have gcloud CLI)
+    image: str,            # Full container image path (e.g., "gcr.io/project/image:tag")
     project_id: str,       # GCP project ID (required)
     gcs_bucket: str,       # GCS bucket for file I/O (required)
     region: str = "us-central1",
-    cpu: str = "2",        # vCPUs: 1, 2, 4, or 8
-    memory: str = "4Gi",   # Up to 32Gi
+    cpu: str = "1",        # vCPUs: 1, 2, 4, or 8
+    memory: str = "2Gi",   # Up to 32Gi
     timeout: int = 3600,   # Job timeout in seconds
     env: dict = {},        # Environment variables
     name_prefix: str = "ephemeral",
 )
 ```
+
+**Note on `image`**: Must be a full image path that Cloud Run can pull. The image must have `gcloud` CLI installed for GCS file transfer. Examples:
+- `gcr.io/google.com/cloudsdktool/google-cloud-cli:slim` (has gcloud)
+- `gcr.io/my-project/my-custom-image:latest`
 
 ### CloudRunJob
 
@@ -101,6 +110,8 @@ with CloudRunJob(config) as job:
     
     # Get outputs from /workspace/output/
     output_dir = job.receive_outputs()
+
+# result.stdout and result.stderr contain command output
 ```
 
 ### ClaudeCodeJobConfig
@@ -113,11 +124,19 @@ ClaudeCodeJobConfig(
     model: str = "claude-opus-4-5-20251101",
     max_turns: int = 100,  # Max conversation turns
     timeout: int = 600,    # Job timeout in seconds
-    cpu: str = "2",        # vCPUs: 1, 2, 4, or 8
-    memory: str = "4Gi",   # Up to 32Gi
+    cpu: str = "1",        # vCPUs: 1, 2, 4, or 8 (Claude Code is I/O bound)
+    memory: str = "2Gi",   # Up to 32Gi
     skip_permissions: bool = True,  # --dangerously-skip-permissions
+    image: str = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim",
+    pre_claude_command: str | None = None,   # Run before claude (e.g., git config)
+    post_claude_command: str | None = None,  # Run after claude
 )
 ```
+
+**`pre_claude_command` / `post_claude_command`**: Shell commands to run before/after Claude Code. Useful for:
+- Git config: `'git config --global user.email "bot@example.com" && git config --global user.name "Bot"'`
+- Installing dependencies: `'pip install some-package'`
+- Post-processing outputs
 
 ### ClaudeCodeJob.run()
 
@@ -166,7 +185,7 @@ Content hashing uses MD5 of the tarball. Tarballs are deterministic (sorted entr
 
 ## Parallel Execution
 
-For running many jobs, share GCP clients to avoid connection overhead:
+For running many jobs (the main use case), share GCP clients to avoid connection overhead:
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
@@ -186,7 +205,7 @@ def run_task(task, inputs):
         storage_client=storage_client,
     ).run(task=task, inputs=inputs)
 
-# Run in parallel
+# Run in parallel - Claude Code is I/O bound, can run many concurrently
 with ThreadPoolExecutor(max_workers=50) as executor:
     futures = [executor.submit(run_task, t, i) for t, i in work_items]
     results = [f.result() for f in futures]
@@ -214,7 +233,7 @@ Cloud Run Jobs pricing (as of 2024):
 - ~$0.00002400/vCPU-second
 - ~$0.00000250/GiB-second
 
-A typical 2-minute job with 2 vCPUs and 4GB RAM costs ~$0.006.
+A typical 2-minute job with 1 vCPU and 2GB RAM costs ~$0.003.
 
 ## Troubleshooting
 
