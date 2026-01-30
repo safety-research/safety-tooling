@@ -10,7 +10,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -262,7 +262,7 @@ class TestThreadSafety:
             return original_tar(self, inputs, tar_path)
 
         def mock_upload(self, tar_path):
-            return f"cloudrun-inputs/test.tar.gz"
+            return "cloudrun-inputs/test.tar.gz"
 
         # Clear caches
         CloudRunClient._inputs_cache.clear()
@@ -305,7 +305,6 @@ class TestThreadSafety:
         upload_lock = threading.Lock()
 
         original_tar = CloudRunClient._tar_inputs
-        original_upload = CloudRunClient._upload_to_gcs_if_needed
 
         def counting_tar(self, inputs, tar_path):
             with tar_lock:
@@ -430,4 +429,4 @@ class TestInputsLocking:
             t.join()
 
         # All threads should have gotten the same lock object
-        assert len(set(id(l) for l in locks)) == 1, "All threads should get same lock"
+        assert len(set(id(lock) for lock in locks)) == 1, "All threads should get same lock"
