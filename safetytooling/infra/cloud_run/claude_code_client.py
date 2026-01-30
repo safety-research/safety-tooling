@@ -52,7 +52,6 @@ from typing import Iterator
 from .cloud_run_client import (
     CloudRunClient,
     CloudRunClientConfig,
-    CloudRunClientError,
     CloudRunResult,
     CloudRunTask,
 )
