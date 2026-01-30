@@ -45,7 +45,6 @@ GCS layout:
 import gzip
 import hashlib
 import io
-import shutil
 import tarfile
 import tempfile
 import threading
@@ -102,9 +101,10 @@ class JobResult:
     """Result from running a command in Cloud Run Job."""
 
     returncode: int
-    stdout: str
-    stderr: str
+    stdout: str  # Command's stdout (captured)
+    stderr: str  # Command's stderr (captured)
     duration_seconds: float
+    output_dir: Path | None = None  # Local dir with /workspace/output contents
 
 
 class CloudRunJobError(Exception):
@@ -152,7 +152,6 @@ class CloudRunJob:
         self._job_name: str | None = None
         self._jobs_client: JobsClient | None = jobs_client
         self._storage_client: storage.Client | None = storage_client
-        self._owns_clients: bool = False
         self._input_gcs_path: str | None = None
         self._output_gcs_path: str | None = None
 
@@ -165,10 +164,8 @@ class CloudRunJob:
     def __enter__(self) -> "CloudRunJob":
         if self._jobs_client is None:
             self._jobs_client = JobsClient()
-            self._owns_clients = True
         if self._storage_client is None:
             self._storage_client = storage.Client(project=self.config.project_id)
-            self._owns_clients = True
 
         self._job_id = f"{self.config.name_prefix}-{int(time.time())}-{uuid.uuid4().hex[:8]}"
         self._output_gcs_path = f"{GCS_OUTPUTS_PREFIX}/{self._job_id}.tar.gz"
@@ -188,10 +185,6 @@ class CloudRunJob:
     @property
     def job_id(self) -> str | None:
         return self._job_id
-
-    @property
-    def gcs_bucket(self) -> str:
-        return self.config.gcs_bucket
 
     @classmethod
     def _get_inputs_lock(cls, inputs_key: str) -> threading.Lock:
@@ -407,26 +400,27 @@ cd /workspace
 
 echo "Running command..."
 set +e
-{command}
+{command} > /tmp/cmd_stdout.txt 2> /tmp/cmd_stderr.txt
 EXIT_CODE=$?
 set -e
 
+# Show output in logs too
+cat /tmp/cmd_stdout.txt
+cat /tmp/cmd_stderr.txt >&2
+
 echo "Command exited with code: $EXIT_CODE"
+
+# Copy stdout/stderr to output dir
+cp /tmp/cmd_stdout.txt /workspace/output/stdout.txt
+cp /tmp/cmd_stderr.txt /workspace/output/stderr.txt
+echo $EXIT_CODE > /workspace/output/exitcode.txt
 
 # Tar and upload outputs
 echo "Uploading outputs..."
 cd /workspace/output
-if [ "$(ls -A . 2>/dev/null)" ]; then
-    tar czf /tmp/output.tar.gz .
-    gcloud storage cp /tmp/output.tar.gz "gs://{self.config.gcs_bucket}/{self._output_gcs_path}"
-    echo "Outputs uploaded"
-else
-    echo "No outputs to upload"
-fi
-
-# Also store exit code in output for retrieval
-echo $EXIT_CODE > /tmp/exitcode.txt
-gcloud storage cp /tmp/exitcode.txt "gs://{self.config.gcs_bucket}/{GCS_OUTPUTS_PREFIX}/{self._job_id}_exitcode.txt"
+tar czf /tmp/output.tar.gz .
+gcloud storage cp /tmp/output.tar.gz "gs://{self.config.gcs_bucket}/{self._output_gcs_path}"
+echo "Outputs uploaded"
 
 echo "Job completed"
 exit 0
@@ -468,22 +462,35 @@ exit 0
 
         duration = time.time() - start_time
 
-        # Read exit code from GCS
-        bucket = self._storage_client.bucket(self.config.gcs_bucket)
+        # Download outputs (includes stdout.txt, stderr.txt, exitcode.txt)
+        output_dir = self.receive_outputs()
+
+        # Read captured stdout/stderr/exitcode
+        stdout = ""
+        stderr = ""
         returncode = 1
-        try:
-            exitcode_blob = bucket.blob(f"{GCS_OUTPUTS_PREFIX}/{self._job_id}_exitcode.txt")
-            if exitcode_blob.exists():
-                returncode = int(exitcode_blob.download_as_text().strip())
-                exitcode_blob.delete()
-        except Exception:
-            pass
+
+        stdout_file = output_dir / "stdout.txt"
+        if stdout_file.exists():
+            stdout = stdout_file.read_text()
+
+        stderr_file = output_dir / "stderr.txt"
+        if stderr_file.exists():
+            stderr = stderr_file.read_text()
+
+        exitcode_file = output_dir / "exitcode.txt"
+        if exitcode_file.exists():
+            try:
+                returncode = int(exitcode_file.read_text().strip())
+            except ValueError:
+                pass
 
         return JobResult(
             returncode=returncode,
-            stdout="",  # stdout is in Cloud Run logs, not captured here
-            stderr="",  # stderr is in Cloud Run logs, not captured here
+            stdout=stdout,
+            stderr=stderr,
             duration_seconds=duration,
+            output_dir=output_dir,
         )
 
     def get_logs(self) -> str:

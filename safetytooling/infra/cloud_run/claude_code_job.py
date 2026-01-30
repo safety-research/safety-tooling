@@ -28,8 +28,6 @@ Usage:
 
 import json
 import os
-import shutil
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -290,11 +288,9 @@ echo "=== Claude Code Job Complete ==="
                         all_inputs[".claude"] = claude_config_dir
                     job.send_inputs(all_inputs)
 
-                # Run Claude Code
+                # Run Claude Code (outputs are downloaded automatically)
                 result = job.run(script, timeout=self.config.timeout)
-
-                # Receive outputs
-                output_dir = job.receive_outputs()
+                output_dir = result.output_dir
 
         except CloudRunJobError as e:
             raise ClaudeCodeJobError(f"Cloud Run job failed: {e}")
@@ -315,24 +311,12 @@ echo "=== Claude Code Job Complete ==="
         # Extract transcript
         transcript = self._extract_transcript(output_dir)
 
-        # Copy to persistent location (output_dir is a temp dir)
-        persistent_output_dir = Path(tempfile.mkdtemp(prefix="claude_output_"))
-        for item in output_dir.iterdir():
-            dest = persistent_output_dir / item.name
-            if item.is_dir():
-                shutil.copytree(item, dest, symlinks=True, ignore_dangling_symlinks=True)
-            else:
-                shutil.copy2(item, dest)
-
-        # Clean up temp dir
-        shutil.rmtree(output_dir, ignore_errors=True)
-
         duration = time.time() - start_time
 
         return ClaudeCodeJobResult(
             response=response,
             transcript=transcript,
-            output_dir=persistent_output_dir,
+            output_dir=output_dir,
             returncode=returncode,
             duration_seconds=duration,
         )
