@@ -311,6 +311,39 @@ Cloud Run Jobs pricing (as of 2024):
 
 A typical 2-minute job with 1 vCPU and 2GB RAM costs ~$0.003.
 
+## Testing
+
+The module has two test suites:
+
+### Unit tests (no GCP required)
+
+Test caching, thread-safety, and deterministic tarring locally:
+
+```bash
+pytest tests/test_cloud_run_caching.py -v
+```
+
+These tests verify:
+- **Deterministic tarring**: Same content produces identical hashes
+- **In-memory caching**: Prevents redundant tarring within a session
+- **GCS caching**: Prevents redundant uploads (mocked)
+- **Thread-safety**: Concurrent uploads of same inputs only tar/upload once
+- **Lock correctness**: Verifies locks actually block concurrent access
+
+### Integration tests (requires GCP)
+
+Full end-to-end tests against real Cloud Run:
+
+```bash
+export GCP_PROJECT_ID="your-project"
+export GCS_BUCKET="your-bucket"
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+pytest tests/test_cloud_run_integration.py -v --run-integration
+```
+
+**Recommended workflow**: Run unit tests during development, integration tests before merging.
+
 ## Troubleshooting
 
 **"API key required"**: Set `ANTHROPIC_API_KEY` env var or pass `api_key=` to `run()`.

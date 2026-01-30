@@ -220,20 +220,25 @@ cat > /tmp/task.txt << 'TASK_EOF'
 {task}
 TASK_EOF
 
+# Write pre-claude command to script file (quoted heredoc handles all special chars)
+cat > /tmp/pre_claude.sh << 'PRE_CLAUDE_EOF'
+{pre_command_section}
+PRE_CLAUDE_EOF
+chmod +x /tmp/pre_claude.sh
+
+# Write post-claude command to script file
+cat > /tmp/post_claude.sh << 'POST_CLAUDE_EOF'
+{post_command_section}
+POST_CLAUDE_EOF
+chmod +x /tmp/post_claude.sh
+
 # Set permissions
 chown -R claude:claude /workspace
 
 # Run Claude Code as non-root user
 echo "Starting Claude Code..."
 set +e
-su - claude -c '
-export ANTHROPIC_API_KEY="{api_key}"
-cd /workspace
-{pre_command_section}
-claude {claude_flags_str} {system_prompt_arg} "$(cat /tmp/task.txt)"
-echo $? > /tmp/claude_exitcode.txt
-{post_command_section}
-'
+su - claude -c 'export ANTHROPIC_API_KEY="{api_key}" && cd /workspace && /tmp/pre_claude.sh && claude {claude_flags_str} {system_prompt_arg} "$(cat /tmp/task.txt)"; echo $? > /tmp/claude_exitcode.txt; /tmp/post_claude.sh'
 CLAUDE_EXIT=$?
 set -e
 
