@@ -334,7 +334,8 @@ class OpenRouterChatModel(InferenceAPIModel):
             except (TypeError, BadRequestError) as e:
                 raise e
             except Exception as e:
-                error_info = f"Exception Type: {type(e).__name__}, Error Details: {str(e)}, Traceback: {format_exc()}"
+                # Extract clean error message - just the exception type and message
+                error_info = f"{type(e).__name__}: {str(e)}"
                 LOGGER.warn(f"Encountered API error: {error_info}.\nRetrying now. (Attempt {i})")
                 error_list.append(error_info)
                 api_duration = time.time() - api_start
@@ -346,7 +347,8 @@ class OpenRouterChatModel(InferenceAPIModel):
         LOGGER.debug(f"Completed call to {model_id} in {duration}s")
 
         if response_data is None or response_data.choices is None or len(response_data.choices) == 0:
-            raise RuntimeError("No response data received")
+            error_summary = "\n".join(error_list[-3:]) if error_list else "No error details available"
+            raise RuntimeError(f"No response data received after {num_tries} attempts. Recent errors: {error_summary}")
 
         # Extract text completion from generated content
         completion = self._extract_text_completion(generated_content)
