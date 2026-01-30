@@ -2,23 +2,26 @@
 CloudRunClient - Run commands in ephemeral GCP Cloud Run containers.
 
 Usage:
-    from safetytooling.infra.cloud_run import CloudRunClient, CloudRunClientConfig
+    from safetytooling.infra.cloud_run import CloudRunClient, CloudRunClientConfig, CloudRunTask
 
     client = CloudRunClient(CloudRunClientConfig(
         project_id="my-project",
         gcs_bucket="my-bucket",
     ))
 
-    # Single task
-    result = client.run_single(command="echo hello", inputs={"data": Path("./data")})
-    print(result.stdout)
+    # Create tasks
+    tasks = [
+        CloudRunTask(id="task-1", command="echo hello", n=10),
+        CloudRunTask(id="task-2", command="echo world", n=5),
+    ]
 
-    # Multiple tasks in parallel
-    results = client.run([
-        {"id": "task-1", "command": "echo hello", "n": 10},
-        {"id": "task-2", "command": "echo world", "n": 5},
-    ])
-    # Returns: {"task-1": [Result, ...], "task-2": [Result, ...]}
+    # Run all and get results
+    results = client.run(tasks)
+    # Returns: {task1: [Result, ...], task2: [Result, ...]}
+
+    # Or stream results as they complete
+    for task, run_idx, result in client.run_stream(tasks):
+        print(f"{task.id}[{run_idx}]: {result.success}")
 
 Data Flow:
     1. Local tars inputs -> content hash -> upload to GCS (if not cached)
@@ -44,7 +47,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Iterator
 
 from google.cloud import run_v2, storage
 from google.cloud.run_v2 import JobsClient
@@ -92,6 +95,33 @@ class CloudRunClientConfig:
     env: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class CloudRunTask:
+    """A task to run in Cloud Run.
+
+    Frozen (immutable) so it can be used as a dict key.
+
+    Args:
+        id: Unique identifier for this task
+        command: Shell command to execute
+        inputs: Tuple of (name, path) pairs for files to upload (tuple for hashability)
+        n: Number of times to run this task (default: 1)
+        timeout: Job timeout in seconds (default: None, uses client config)
+    """
+
+    id: str
+    command: str
+    inputs: tuple[tuple[str, str | Path], ...] | None = None
+    n: int = 1
+    timeout: int | None = None
+
+    def inputs_as_dict(self) -> dict[str, Path] | None:
+        """Convert inputs tuple to dict for internal use."""
+        if self.inputs is None:
+            return None
+        return {name: Path(path) for name, path in self.inputs}
+
+
 @dataclass
 class CloudRunResult:
     """Result from running a command in Cloud Run."""
@@ -124,15 +154,18 @@ class CloudRunClient:
             gcs_bucket="my-bucket",
         ))
 
-        # Single task (convenience method)
-        result = client.run_single(command="python script.py", inputs={"repo": repo_path})
+        tasks = [
+            CloudRunTask(id="task-1", command="python script.py", n=10),
+            CloudRunTask(id="task-2", command="python other.py", n=5),
+        ]
 
-        # Multiple tasks in parallel
-        results = client.run([
-            {"id": "task-1", "command": "python script.py", "inputs": {"repo": repo_path}, "n": 10},
-            {"id": "task-2", "command": "python other.py", "inputs": {"repo": repo_path}, "n": 5},
-        ])
-        # Returns: {"task-1": [Result, ...], "task-2": [Result, ...]}
+        # Get all results at once
+        results = client.run(tasks)
+        # Returns: {task1: [Result, ...], task2: [Result, ...]}
+
+        # Or stream as they complete
+        for task, run_idx, result in client.run_stream(tasks):
+            print(f"{task.id}[{run_idx}]: {result.success}")
     """
 
     # Class-level caches for efficiency across parallel runs
@@ -154,53 +187,81 @@ class CloudRunClient:
 
     def run(
         self,
-        tasks: list[dict],
+        tasks: list[CloudRunTask],
         max_workers: int | None = None,
         progress: bool = True,
-    ) -> dict[str, list[CloudRunResult]]:
+    ) -> dict[CloudRunTask, list[CloudRunResult]]:
         """
         Run tasks in Cloud Run containers.
 
         Args:
-            tasks: List of task dicts with fields:
-                id: Unique identifier for this task (required)
-                command: Shell command to execute (required)
-                inputs: Dict mapping names to local paths (optional)
-                n: Number of times to run this task (default: 1)
-                timeout: Per-task timeout override (optional)
+            tasks: List of CloudRunTask objects
             max_workers: Max concurrent jobs (default: unlimited)
             progress: Show progress bar (requires tqdm)
 
         Returns:
-            Dict mapping task id -> list of results
+            Dict mapping task -> list of results (one per run if n > 1)
 
         Example:
-            results = client.run([
-                {"id": "task-1", "command": "echo hello", "inputs": {"data": Path("./data")}, "n": 10},
-                {"id": "task-2", "command": "echo world", "n": 5},
-            ])
-            # Returns: {"task-1": [Result, ...], "task-2": [Result, ...]}
+            tasks = [
+                CloudRunTask(id="task-1", command="echo hello", n=10),
+                CloudRunTask(id="task-2", command="echo world", n=5),
+            ]
+            results = client.run(tasks)
+            for task, result_list in results.items():
+                print(f"{task.id}: {len(result_list)} results")
         """
+        # Collect all results from streaming
+        results_by_task: dict[CloudRunTask, dict[int, CloudRunResult]] = {task: {} for task in tasks}
+
+        for task, run_idx, result in self.run_stream(tasks, max_workers=max_workers, progress=progress):
+            results_by_task[task][run_idx] = result
+
+        # Convert to ordered lists
+        final_results: dict[CloudRunTask, list[CloudRunResult]] = {}
+        for task in tasks:
+            final_results[task] = [results_by_task[task][i] for i in range(task.n)]
+
+        return final_results
+
+    def run_stream(
+        self,
+        tasks: list[CloudRunTask],
+        max_workers: int | None = None,
+        progress: bool = True,
+    ) -> Iterator[tuple[CloudRunTask, int, CloudRunResult]]:
+        """
+        Run tasks and yield results as they complete.
+
+        Args:
+            tasks: List of CloudRunTask objects
+            max_workers: Max concurrent jobs (default: unlimited)
+            progress: Show progress bar (requires tqdm)
+
+        Yields:
+            Tuples of (task, run_index, result) as each job completes
+
+        Example:
+            for task, run_idx, result in client.run_stream(tasks):
+                print(f"{task.id}[{run_idx}]: {result.success}")
+                save_to_db(task, run_idx, result)
+        """
+        # Build task lookup by id
+        task_by_id = {task.id: task for task in tasks}
+
         # Expand tasks into individual jobs
-        # Each job is (task_id, run_index, command, inputs, timeout)
+        # Each job is (task_id, run_index)
         jobs = []
         for task in tasks:
-            task_id = task["id"]
-            command = task["command"]
-            task_inputs = task.get("inputs")
-            task_timeout = task.get("timeout", self.config.timeout)
-            task_n = task.get("n", 1)
+            for i in range(task.n):
+                jobs.append((task.id, i))
 
-            for i in range(task_n):
-                jobs.append((task_id, i, command, task_inputs, task_timeout))
-
-        # Run all jobs in parallel
-        results_by_task: dict[str, dict[int, CloudRunResult]] = {task["id"]: {} for task in tasks}
-
-        def run_one_job(job: tuple) -> tuple[str, int, CloudRunResult]:
-            task_id, run_idx, command, task_inputs, task_timeout = job
+        def run_one_job(job: tuple[str, int]) -> tuple[str, int, CloudRunResult]:
+            task_id, run_idx = job
+            task = task_by_id[task_id]
+            timeout = task.timeout or self.config.timeout
             try:
-                result = self._run_single(command, task_inputs, task_timeout)
+                result = self._run_single(task.command, task.inputs_as_dict(), timeout)
                 return task_id, run_idx, result
             except Exception as e:
                 return (
@@ -225,16 +286,8 @@ class CloudRunClient:
 
             for future in iterator:
                 task_id, run_idx, result = future.result()
-                results_by_task[task_id][run_idx] = result
-
-        # Convert to ordered lists
-        final_results: dict[str, list[CloudRunResult]] = {}
-        for task in tasks:
-            task_id = task["id"]
-            task_n = task.get("n", 1)
-            final_results[task_id] = [results_by_task[task_id][i] for i in range(task_n)]
-
-        return final_results
+                task = task_by_id[task_id]
+                yield task, run_idx, result
 
     def run_single(
         self,
@@ -252,17 +305,20 @@ class CloudRunClient:
 
         Returns:
             CloudRunResult
-
-        Example:
-            result = client.run_single(
-                command="python script.py",
-                inputs={"repo": Path("./my_repo")},
-            )
         """
-        results = self.run(
-            [{"id": "_single", "command": command, "inputs": inputs, "timeout": timeout or self.config.timeout}]
+        # Convert inputs dict to tuple for CloudRunTask
+        inputs_tuple = None
+        if inputs:
+            inputs_tuple = tuple((name, str(path)) for name, path in inputs.items())
+
+        task = CloudRunTask(
+            id="_single",
+            command=command,
+            inputs=inputs_tuple,
+            timeout=timeout or self.config.timeout,
         )
-        return results["_single"][0]
+        results = self.run([task])
+        return results[task][0]
 
     def _run_single(
         self,

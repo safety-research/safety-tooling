@@ -8,37 +8,53 @@ This is a thin wrapper over CloudRunClient that adds:
 - Transcript extraction from .claude/ directory
 
 Usage:
-    from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
+    from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig, ClaudeCodeTask
 
-    # Reads GCLOUD_PROJECT_ID and GCLOUD_GCS_BUCKET from environment
+    # Create client (reads GCLOUD_PROJECT_ID and GCLOUD_GCS_BUCKET from environment)
     client = ClaudeCodeClient()
 
     # Or pass explicitly
     client = ClaudeCodeClient(project_id="my-project", gcs_bucket="my-bucket")
 
-    # Single task (convenience method)
-    result = client.run_single(
-        task="Review the code for security issues",
-        inputs={"repo": Path("./my_repo")},
-    )
+    # Create tasks
+    tasks = [
+        ClaudeCodeTask(
+            id="review-1",
+            task="Review the code for XSS vulnerabilities",
+            inputs=(("repo", "./my_repo"),),
+            n=10,
+        ),
+        ClaudeCodeTask(
+            id="review-2",
+            task="Review for SQL injection",
+            inputs=(("repo", "./my_repo"),),
+            system_prompt="You are a security expert.",
+            n=5,
+        ),
+    ]
 
-    # Multiple tasks in parallel
-    results = client.run([
-        {"id": "review-1", "task": "Review for XSS", "inputs": {"repo": repo}, "n": 10},
-        {"id": "review-2", "task": "Review for SQLi", "inputs": {"repo": repo}, "n": 5},
-    ])
-    # Returns: {"review-1": [Result, ...], "review-2": [Result, ...]}
+    # Run all and get results
+    results = client.run(tasks)
+    # Returns: {task1: [Result, ...], task2: [Result, ...]}
+
+    # Or stream results as they complete
+    for task, run_idx, result in client.run_stream(tasks):
+        print(f"{task.id}[{run_idx}]: {result.success}")
+        save_to_db(task, run_idx, result)
 """
 
 import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 from .cloud_run_client import (
     CloudRunClient,
     CloudRunClientConfig,
+    CloudRunClientError,
     CloudRunResult,
+    CloudRunTask,
 )
 
 
@@ -53,14 +69,11 @@ class ClaudeCodeClientConfig:
         region: GCP region (default: us-central1)
         model: Claude model to use (default: claude-opus-4-5-20251101)
         max_turns: Maximum conversation turns (default: 100)
-        timeout: Job timeout in seconds (default: 600). Should include ~2min for setup
-                 (installing nodejs, npm, claude-code CLI, creating user).
+        timeout: Job timeout in seconds (default: 600). Should include ~2min for setup.
         cpu: vCPUs - 1, 2, 4, or 8 (default: 1)
         memory: Memory limit up to 32Gi (default: 2Gi)
         skip_permissions: Use --dangerously-skip-permissions (default: True)
         image: Container image (default: google-cloud-cli:slim). Must have gcloud CLI.
-        pre_claude_command: Shell command to run before Claude Code (e.g., git config)
-        post_claude_command: Shell command to run after Claude Code
     """
 
     project_id: str
@@ -74,8 +87,61 @@ class ClaudeCodeClientConfig:
     memory: str = "2Gi"
     skip_permissions: bool = True
     image: str = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
+
+
+@dataclass(frozen=True)
+class ClaudeCodeTask:
+    """A Claude Code task to run in Cloud Run.
+
+    Frozen (immutable) so it can be used as a dict key.
+
+    Args:
+        id: Unique identifier for this task
+        task: The prompt/instruction for Claude Code
+        inputs: Tuple of (name, path) pairs for files to upload (tuple for hashability)
+        system_prompt: Optional system prompt / constitution
+        pre_claude_command: Shell command to run before Claude Code (e.g., git config, repo setup)
+        post_claude_command: Shell command to run after Claude Code
+        n: Number of times to run this task (default: 1)
+    """
+
+    id: str
+    task: str
+    inputs: tuple[tuple[str, str | Path], ...] | None = None
+    system_prompt: str | None = None
     pre_claude_command: str | None = None
     post_claude_command: str | None = None
+    n: int = 1
+
+    def to_cloud_run_task(
+        self,
+        api_key: str,
+        config: ClaudeCodeClientConfig,
+    ) -> CloudRunTask:
+        """Convert to a CloudRunTask by building the full shell script.
+
+        Args:
+            api_key: Anthropic API key
+            config: Client configuration with model, max_turns, etc.
+
+        Returns:
+            CloudRunTask ready to execute
+        """
+        command = _build_claude_command(
+            task=self.task,
+            system_prompt=self.system_prompt,
+            api_key=api_key,
+            pre_claude_command=self.pre_claude_command,
+            post_claude_command=self.post_claude_command,
+            config=config,
+        )
+        return CloudRunTask(
+            id=self.id,
+            command=command,
+            inputs=self.inputs,
+            n=self.n,
+            timeout=config.timeout,
+        )
 
 
 @dataclass
@@ -100,108 +166,33 @@ class ClaudeCodeClientError(Exception):
     pass
 
 
-class ClaudeCodeClient:
-    """
-    Client for running Claude Code in ephemeral Cloud Run containers.
+def _build_claude_command(
+    task: str,
+    system_prompt: str | None,
+    api_key: str,
+    pre_claude_command: str | None,
+    post_claude_command: str | None,
+    config: ClaudeCodeClientConfig,
+) -> str:
+    """Build the shell script that runs Claude Code inside the container."""
+    claude_flags = [
+        "-p",
+        f"--model {config.model}",
+        f"--max-turns {config.max_turns}",
+    ]
+    if config.skip_permissions:
+        claude_flags.append("--dangerously-skip-permissions")
 
-    Thin wrapper over CloudRunClient that adds Claude Code specific setup.
+    claude_flags_str = " ".join(claude_flags)
 
-    Example:
-        # From environment (GCLOUD_PROJECT_ID, GCLOUD_GCS_BUCKET)
-        client = ClaudeCodeClient()
+    system_prompt_arg = ""
+    if system_prompt:
+        system_prompt_arg = '--system-prompt "$(cat /tmp/system_prompt.txt)"'
 
-        # Explicit
-        client = ClaudeCodeClient(project_id="my-project", gcs_bucket="my-bucket")
+    pre_command_section = pre_claude_command or ""
+    post_command_section = post_claude_command or ""
 
-        # With a config object
-        config = ClaudeCodeClientConfig(
-            project_id="my-project",
-            gcs_bucket="my-bucket",
-            name_prefix="claude-monitor",
-            timeout=300,
-        )
-        client = ClaudeCodeClient(config)
-
-        # Single task (convenience method)
-        result = client.run_single(task="Review this code", inputs={"repo": repo})
-
-        # Multiple tasks in parallel
-        results = client.run([
-            {"id": "review-1", "task": "Review for XSS", "inputs": {"repo": repo}, "n": 10},
-            {"id": "review-2", "task": "Review for SQLi", "inputs": {"repo": repo}, "n": 5},
-        ])
-        # Returns: {"review-1": [Result, ...], "review-2": [Result, ...]}
-    """
-
-    def __init__(
-        self,
-        config_or_project_id: ClaudeCodeClientConfig | str | None = None,
-        gcs_bucket: str | None = None,
-        **kwargs,
-    ):
-        # Accept either a config object or individual args
-        if isinstance(config_or_project_id, ClaudeCodeClientConfig):
-            self.config = config_or_project_id
-        else:
-            # Build config from args
-            project_id = config_or_project_id or os.environ.get("GCLOUD_PROJECT_ID")
-            gcs_bucket = gcs_bucket or os.environ.get("GCLOUD_GCS_BUCKET")
-
-            if not project_id:
-                raise ClaudeCodeClientError("project_id required: pass as argument or set GCLOUD_PROJECT_ID env var")
-            if not gcs_bucket:
-                raise ClaudeCodeClientError("gcs_bucket required: pass as argument or set GCLOUD_GCS_BUCKET env var")
-
-            self.config = ClaudeCodeClientConfig(
-                project_id=project_id,
-                gcs_bucket=gcs_bucket,
-                **kwargs,
-            )
-
-        # Create the underlying CloudRunClient
-        cloud_run_config = CloudRunClientConfig(
-            project_id=self.config.project_id,
-            gcs_bucket=self.config.gcs_bucket,
-            name_prefix=self.config.name_prefix,
-            region=self.config.region,
-            image=self.config.image,
-            cpu=self.config.cpu,
-            memory=self.config.memory,
-            timeout=self.config.timeout,
-            env={},
-        )
-        self._cloud_run = CloudRunClient(cloud_run_config)
-
-    def _build_claude_command(
-        self,
-        task: str,
-        system_prompt: str | None,
-        api_key: str,
-    ) -> str:
-        """Build the shell script that runs Claude Code inside the container."""
-        claude_flags = [
-            "-p",
-            f"--model {self.config.model}",
-            f"--max-turns {self.config.max_turns}",
-        ]
-        if self.config.skip_permissions:
-            claude_flags.append("--dangerously-skip-permissions")
-
-        claude_flags_str = " ".join(claude_flags)
-
-        system_prompt_arg = ""
-        if system_prompt:
-            system_prompt_arg = '--system-prompt "$(cat /tmp/system_prompt.txt)"'
-
-        pre_command_section = ""
-        if self.config.pre_claude_command:
-            pre_command_section = self.config.pre_claude_command
-
-        post_command_section = ""
-        if self.config.post_claude_command:
-            post_command_section = self.config.post_claude_command
-
-        script = f"""
+    script = f"""
 set -e
 echo "=== Claude Code Job Starting ==="
 
@@ -261,70 +252,172 @@ cp -r /home/claude/.claude /workspace/output/claude_home 2>/dev/null || true
 echo "=== Claude Code Job Complete ==="
 exit $CLAUDE_EXIT
 """
-        return script
+    return script
 
-    def _extract_transcript(self, output_dir: Path) -> list[dict] | None:
-        """Extract conversation transcript from .claude/ directory."""
-        claude_home = output_dir / "claude_home"
-        if not claude_home.exists():
-            return None
 
-        for jsonl_file in claude_home.rglob("*.jsonl"):
-            try:
-                transcript = [json.loads(line) for line in jsonl_file.read_text().strip().split("\n") if line.strip()]
-                return transcript
-            except Exception:
-                pass
-
+def _extract_transcript(output_dir: Path) -> list[dict] | None:
+    """Extract conversation transcript from .claude/ directory."""
+    claude_home = output_dir / "claude_home"
+    if not claude_home.exists():
         return None
 
-    def _convert_result(self, cloud_run_result: CloudRunResult) -> ClaudeCodeResult:
-        """Convert CloudRunResult to ClaudeCodeResult."""
-        transcript = self._extract_transcript(cloud_run_result.output_dir)
+    for jsonl_file in claude_home.rglob("*.jsonl"):
+        try:
+            transcript = [json.loads(line) for line in jsonl_file.read_text().strip().split("\n") if line.strip()]
+            return transcript
+        except Exception:
+            pass
 
-        return ClaudeCodeResult(
-            response=cloud_run_result.stdout,
-            transcript=transcript,
-            output_dir=cloud_run_result.output_dir,
-            returncode=cloud_run_result.returncode,
-            duration_seconds=cloud_run_result.duration_seconds,
-            error=cloud_run_result.error,
+    return None
+
+
+def _convert_result(cloud_run_result: CloudRunResult) -> ClaudeCodeResult:
+    """Convert CloudRunResult to ClaudeCodeResult."""
+    transcript = _extract_transcript(cloud_run_result.output_dir)
+
+    return ClaudeCodeResult(
+        response=cloud_run_result.stdout,
+        transcript=transcript,
+        output_dir=cloud_run_result.output_dir,
+        returncode=cloud_run_result.returncode,
+        duration_seconds=cloud_run_result.duration_seconds,
+        error=cloud_run_result.error,
+    )
+
+
+class ClaudeCodeClient:
+    """
+    Client for running Claude Code in ephemeral Cloud Run containers.
+
+    Thin wrapper over CloudRunClient that handles Claude Code specific setup.
+
+    Example:
+        # From environment (GCLOUD_PROJECT_ID, GCLOUD_GCS_BUCKET)
+        client = ClaudeCodeClient()
+
+        # Explicit
+        client = ClaudeCodeClient(project_id="my-project", gcs_bucket="my-bucket")
+
+        # Create tasks
+        tasks = [
+            ClaudeCodeTask(id="review-1", task="Review for XSS", n=10),
+            ClaudeCodeTask(id="review-2", task="Review for SQLi", n=5),
+        ]
+
+        # Run all and get results
+        results = client.run(tasks)
+        # Returns: {task1: [Result, ...], task2: [Result, ...]}
+
+        # Or stream as they complete
+        for task, run_idx, result in client.run_stream(tasks):
+            print(f"{task.id}[{run_idx}]: {result.success}")
+    """
+
+    def __init__(
+        self,
+        config_or_project_id: ClaudeCodeClientConfig | str | None = None,
+        gcs_bucket: str | None = None,
+        **kwargs,
+    ):
+        # Accept either a config object or individual args
+        if isinstance(config_or_project_id, ClaudeCodeClientConfig):
+            self.config = config_or_project_id
+        else:
+            # Build config from args
+            project_id = config_or_project_id or os.environ.get("GCLOUD_PROJECT_ID")
+            gcs_bucket = gcs_bucket or os.environ.get("GCLOUD_GCS_BUCKET")
+
+            if not project_id:
+                raise ClaudeCodeClientError("project_id required: pass as argument or set GCLOUD_PROJECT_ID env var")
+            if not gcs_bucket:
+                raise ClaudeCodeClientError("gcs_bucket required: pass as argument or set GCLOUD_GCS_BUCKET env var")
+
+            self.config = ClaudeCodeClientConfig(
+                project_id=project_id,
+                gcs_bucket=gcs_bucket,
+                **kwargs,
+            )
+
+        # Create the underlying CloudRunClient
+        cloud_run_config = CloudRunClientConfig(
+            project_id=self.config.project_id,
+            gcs_bucket=self.config.gcs_bucket,
+            name_prefix=self.config.name_prefix,
+            region=self.config.region,
+            image=self.config.image,
+            cpu=self.config.cpu,
+            memory=self.config.memory,
+            timeout=self.config.timeout,
+            env={},
         )
+        self._cloud_run = CloudRunClient(cloud_run_config)
 
     def run(
         self,
-        tasks: list[dict],
-        system_prompt: str | None = None,
-        claude_config_dir: Path | None = None,
+        tasks: list[ClaudeCodeTask],
         api_key: str | None = None,
         max_workers: int | None = None,
         progress: bool = True,
-    ) -> dict[str, list[ClaudeCodeResult]]:
+    ) -> dict[ClaudeCodeTask, list[ClaudeCodeResult]]:
         """
         Run Claude Code tasks.
 
         Args:
-            tasks: List of task dicts with fields:
-                id: Unique identifier for this task (required)
-                task: The prompt/instruction for Claude Code (required)
-                inputs: Dict of {name: local_path} (optional)
-                system_prompt: System prompt / constitution (optional, overrides global)
-                n: Number of times to run this task (default: 1)
-            system_prompt: Default system prompt for tasks that don't specify one
-            claude_config_dir: Optional path to .claude/ directory with custom commands
+            tasks: List of ClaudeCodeTask objects
             api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
             max_workers: Max concurrent jobs (default: unlimited)
             progress: Show progress bar (requires tqdm)
 
         Returns:
-            Dict mapping task id -> list of results
+            Dict mapping task -> list of results
 
         Example:
-            results = client.run([
-                {"id": "review-1", "task": "Review for XSS", "inputs": {"repo": repo}, "n": 10},
-                {"id": "review-2", "task": "Review for SQLi", "inputs": {"repo": repo}, "n": 5},
-            ])
-            # Returns: {"review-1": [Result, ...], "review-2": [Result, ...]}
+            tasks = [
+                ClaudeCodeTask(id="review-1", task="Review for XSS", n=10),
+                ClaudeCodeTask(id="review-2", task="Review for SQLi", n=5),
+            ]
+            results = client.run(tasks)
+            for task, result_list in results.items():
+                print(f"{task.id}: {len(result_list)} results")
+        """
+        # Collect all results from streaming
+        results_by_task: dict[ClaudeCodeTask, dict[int, ClaudeCodeResult]] = {task: {} for task in tasks}
+
+        for task, run_idx, result in self.run_stream(
+            tasks, api_key=api_key, max_workers=max_workers, progress=progress
+        ):
+            results_by_task[task][run_idx] = result
+
+        # Convert to ordered lists
+        final_results: dict[ClaudeCodeTask, list[ClaudeCodeResult]] = {}
+        for task in tasks:
+            final_results[task] = [results_by_task[task][i] for i in range(task.n)]
+
+        return final_results
+
+    def run_stream(
+        self,
+        tasks: list[ClaudeCodeTask],
+        api_key: str | None = None,
+        max_workers: int | None = None,
+        progress: bool = True,
+    ) -> Iterator[tuple[ClaudeCodeTask, int, ClaudeCodeResult]]:
+        """
+        Run Claude Code tasks and yield results as they complete.
+
+        Args:
+            tasks: List of ClaudeCodeTask objects
+            api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
+            max_workers: Max concurrent jobs (default: unlimited)
+            progress: Show progress bar (requires tqdm)
+
+        Yields:
+            Tuples of (task, run_index, result) as each job completes
+
+        Example:
+            for task, run_idx, result in client.run_stream(tasks):
+                print(f"{task.id}[{run_idx}]: {result.success}")
+                save_to_db(task, run_idx, result)
         """
         # Get API key from param or environment
         if api_key is None:
@@ -332,57 +425,26 @@ exit $CLAUDE_EXIT
         if not api_key:
             raise ClaudeCodeClientError("API key required: pass api_key param or set ANTHROPIC_API_KEY env var")
 
-        # Build CloudRunClient tasks from ClaudeCode tasks
-        cloud_run_tasks = []
-        for task_dict in tasks:
-            task_id = task_dict["id"]
-            task_prompt = task_dict["task"]
-            task_inputs = task_dict.get("inputs")
-            task_system_prompt = task_dict.get("system_prompt", system_prompt)
-            task_n = task_dict.get("n", 1)
+        # Build lookup from CloudRunTask id back to ClaudeCodeTask
+        claude_task_by_id = {task.id: task for task in tasks}
 
-            # Build inputs
-            all_inputs = dict(task_inputs) if task_inputs else {}
-            if claude_config_dir and claude_config_dir.exists():
-                all_inputs[".claude"] = claude_config_dir
+        # Convert ClaudeCodeTasks to CloudRunTasks
+        cloud_run_tasks = [task.to_cloud_run_task(api_key, self.config) for task in tasks]
 
-            # Build command for this task
-            command = self._build_claude_command(
-                task=task_prompt,
-                system_prompt=task_system_prompt,
-                api_key=api_key,
-            )
-
-            cloud_run_tasks.append(
-                {
-                    "id": task_id,
-                    "command": command,
-                    "inputs": all_inputs if all_inputs else None,
-                    "timeout": self.config.timeout,
-                    "n": task_n,
-                }
-            )
-
-        # Run all tasks
-        cloud_run_results = self._cloud_run.run(
-            tasks=cloud_run_tasks,
-            max_workers=max_workers,
-            progress=progress,
-        )
-
-        # Convert results
-        final_results: dict[str, list[ClaudeCodeResult]] = {}
-        for task_id, results_list in cloud_run_results.items():
-            final_results[task_id] = [self._convert_result(r) for r in results_list]
-
-        return final_results
+        # Stream results from CloudRunClient
+        for cloud_task, run_idx, cloud_result in self._cloud_run.run_stream(
+            cloud_run_tasks, max_workers=max_workers, progress=progress
+        ):
+            claude_task = claude_task_by_id[cloud_task.id]
+            yield claude_task, run_idx, _convert_result(cloud_result)
 
     def run_single(
         self,
         task: str,
         inputs: dict[str, Path] | None = None,
         system_prompt: str | None = None,
-        claude_config_dir: Path | None = None,
+        pre_claude_command: str | None = None,
+        post_claude_command: str | None = None,
         api_key: str | None = None,
     ) -> ClaudeCodeResult:
         """
@@ -392,23 +454,25 @@ exit $CLAUDE_EXIT
             task: The prompt/instruction for Claude Code
             inputs: Dict of {name: local_path} to make available at /workspace/input/{name}
             system_prompt: Optional system prompt / constitution
-            claude_config_dir: Optional path to .claude/ directory with custom commands
+            pre_claude_command: Shell command to run before Claude Code
+            post_claude_command: Shell command to run after Claude Code
             api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
 
         Returns:
             ClaudeCodeResult
-
-        Example:
-            result = client.run_single(
-                task="Review this code for security issues",
-                inputs={"repo": Path("./my_repo")},
-            )
         """
-        results = self.run(
-            tasks=[{"id": "_single", "task": task, "inputs": inputs}],
+        # Convert inputs dict to tuple for ClaudeCodeTask
+        inputs_tuple = None
+        if inputs:
+            inputs_tuple = tuple((name, str(path)) for name, path in inputs.items())
+
+        claude_task = ClaudeCodeTask(
+            id="_single",
+            task=task,
+            inputs=inputs_tuple,
             system_prompt=system_prompt,
-            claude_config_dir=claude_config_dir,
-            api_key=api_key,
-            progress=False,
+            pre_claude_command=pre_claude_command,
+            post_claude_command=post_claude_command,
         )
-        return results["_single"][0]
+        results = self.run([claude_task], api_key=api_key, progress=False)
+        return results[claude_task][0]

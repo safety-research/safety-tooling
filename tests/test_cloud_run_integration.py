@@ -105,7 +105,7 @@ class TestCloudRunClient:
 
     def test_multiple_tasks(self, integration_enabled, gcp_config):
         """Test running multiple tasks in parallel."""
-        from safetytooling.infra.cloud_run import CloudRunClient, CloudRunClientConfig
+        from safetytooling.infra.cloud_run import CloudRunClient, CloudRunClientConfig, CloudRunTask
 
         config = CloudRunClientConfig(
             project_id=gcp_config["project_id"],
@@ -115,23 +115,56 @@ class TestCloudRunClient:
             timeout=120,
         )
 
+        tasks = [
+            CloudRunTask(id="task-1", command="echo 'task one'", n=2),
+            CloudRunTask(id="task-2", command="echo 'task two'", n=3),
+        ]
+
         client = CloudRunClient(config)
-        results = client.run(
-            [
-                {"id": "task-1", "command": "echo 'task one'", "n": 2},
-                {"id": "task-2", "command": "echo 'task two'", "n": 3},
-            ]
+        results = client.run(tasks)
+
+        # Results keyed by task object
+        task1, task2 = tasks
+        assert task1 in results
+        assert task2 in results
+        assert len(results[task1]) == 2
+        assert len(results[task2]) == 3
+
+        for r in results[task1]:
+            assert "task one" in r.stdout
+        for r in results[task2]:
+            assert "task two" in r.stdout
+
+    def test_streaming_results(self, integration_enabled, gcp_config):
+        """Test streaming results as they complete."""
+        from safetytooling.infra.cloud_run import CloudRunClient, CloudRunClientConfig, CloudRunTask
+
+        config = CloudRunClientConfig(
+            project_id=gcp_config["project_id"],
+            gcs_bucket=gcp_config["gcs_bucket"],
+            cpu="1",
+            memory="512Mi",
+            timeout=120,
         )
 
-        assert "task-1" in results
-        assert "task-2" in results
-        assert len(results["task-1"]) == 2
-        assert len(results["task-2"]) == 3
+        tasks = [
+            CloudRunTask(id="task-1", command="echo 'task one'", n=2),
+            CloudRunTask(id="task-2", command="echo 'task two'", n=2),
+        ]
 
-        for r in results["task-1"]:
-            assert "task one" in r.stdout
-        for r in results["task-2"]:
-            assert "task two" in r.stdout
+        client = CloudRunClient(config)
+
+        # Collect streamed results
+        streamed = []
+        for task, run_idx, result in client.run_stream(tasks, progress=False):
+            streamed.append((task.id, run_idx, result.success))
+
+        # Should have 4 total results (2 + 2)
+        assert len(streamed) == 4
+
+        # Check we got results for both tasks
+        task_ids = {item[0] for item in streamed}
+        assert task_ids == {"task-1", "task-2"}
 
 
 class TestClaudeCodeClient:
@@ -216,7 +249,7 @@ class TestClaudeCodeClient:
 
     def test_multiple_tasks(self, integration_enabled, gcp_config, anthropic_api_key):
         """Test running multiple different Claude Code tasks in parallel."""
-        from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
+        from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig, ClaudeCodeTask
 
         config = ClaudeCodeClientConfig(
             project_id=gcp_config["project_id"],
@@ -224,21 +257,51 @@ class TestClaudeCodeClient:
             timeout=300,
         )
 
+        tasks = [
+            ClaudeCodeTask(id="math", task="What is 2 + 2? Reply with just the number.", n=2),
+            ClaudeCodeTask(id="greeting", task="Say 'hello world' and nothing else.", n=2),
+        ]
+
         client = ClaudeCodeClient(config)
-        results = client.run(
-            tasks=[
-                {"id": "math", "task": "What is 2 + 2? Reply with just the number.", "n": 2},
-                {"id": "greeting", "task": "Say 'hello world' and nothing else.", "n": 2},
-            ],
-            api_key=anthropic_api_key,
+        results = client.run(tasks, api_key=anthropic_api_key)
+
+        # Results keyed by task object
+        math_task, greeting_task = tasks
+        assert math_task in results
+        assert greeting_task in results
+        assert len(results[math_task]) == 2
+        assert len(results[greeting_task]) == 2
+
+        for r in results[math_task]:
+            assert "4" in r.response
+        for r in results[greeting_task]:
+            assert "hello" in r.response.lower()
+
+    def test_streaming_results(self, integration_enabled, gcp_config, anthropic_api_key):
+        """Test streaming Claude Code results as they complete."""
+        from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig, ClaudeCodeTask
+
+        config = ClaudeCodeClientConfig(
+            project_id=gcp_config["project_id"],
+            gcs_bucket=gcp_config["gcs_bucket"],
+            timeout=300,
         )
 
-        assert "math" in results
-        assert "greeting" in results
-        assert len(results["math"]) == 2
-        assert len(results["greeting"]) == 2
+        tasks = [
+            ClaudeCodeTask(id="task-1", task="Say 'one'", n=2),
+            ClaudeCodeTask(id="task-2", task="Say 'two'", n=2),
+        ]
 
-        for r in results["math"]:
-            assert "4" in r.response
-        for r in results["greeting"]:
-            assert "hello" in r.response.lower()
+        client = ClaudeCodeClient(config)
+
+        # Collect streamed results
+        streamed = []
+        for task, run_idx, result in client.run_stream(tasks, api_key=anthropic_api_key, progress=False):
+            streamed.append((task.id, run_idx, result.success))
+
+        # Should have 4 total results (2 + 2)
+        assert len(streamed) == 4
+
+        # Check we got results for both tasks
+        task_ids = {item[0] for item in streamed}
+        assert task_ids == {"task-1", "task-2"}

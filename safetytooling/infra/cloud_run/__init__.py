@@ -5,12 +5,14 @@ from .claude_code_client import (
     ClaudeCodeClientConfig,
     ClaudeCodeClientError,
     ClaudeCodeResult,
+    ClaudeCodeTask,
 )
 from .cloud_run_client import (
     CloudRunClient,
     CloudRunClientConfig,
     CloudRunClientError,
     CloudRunResult,
+    CloudRunTask,
 )
 
 __all__ = [
@@ -19,9 +21,11 @@ __all__ = [
     "CloudRunClientConfig",
     "CloudRunClientError",
     "CloudRunResult",
+    "CloudRunTask",
     # High-level Claude Code client
     "ClaudeCodeClient",
     "ClaudeCodeClientConfig",
     "ClaudeCodeClientError",
     "ClaudeCodeResult",
+    "ClaudeCodeTask",
 ]
