@@ -55,7 +55,9 @@ from google.cloud.run_v2.types import (
     CreateJobRequest,
     DeleteJobRequest,
     EnvVar,
+    EnvVarSource,
     RunJobRequest,
+    SecretKeySelector,
 )
 
 try:
@@ -81,7 +83,10 @@ class CloudRunClientConfig:
         cpu: vCPUs - 1, 2, 4, or 8 (default: 1)
         memory: Memory limit up to 32Gi (default: 2Gi)
         timeout: Default job timeout in seconds (default: 600)
-        env: Environment variables dict
+        env: Environment variables dict (plain text values)
+        secrets: Dict mapping env var names to Secret Manager secret names.
+                 Secrets are injected securely via GCP Secret Manager, not embedded in scripts.
+                 Format: {"ENV_VAR_NAME": "secret-name"} or {"ENV_VAR_NAME": "projects/proj/secrets/name"}
     """
 
     project_id: str
@@ -93,6 +98,7 @@ class CloudRunClientConfig:
     memory: str = "2Gi"
     timeout: int = 600
     env: dict[str, str] = field(default_factory=dict)
+    secrets: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -437,7 +443,27 @@ gcloud storage cp /tmp/output.tar.gz "gs://{self.config.gcs_bucket}/{output_gcs_
 exit 0
 """
 
+        # Build env vars - plain text values
         env_vars = [EnvVar(name=k, value=v) for k, v in self.config.env.items()]
+
+        # Add secrets as env vars via Secret Manager (secure injection)
+        for env_name, secret_name in self.config.secrets.items():
+            # Handle both short names and full paths
+            if not secret_name.startswith("projects/"):
+                secret_path = f"projects/{self.config.project_id}/secrets/{secret_name}"
+            else:
+                secret_path = secret_name
+
+            secret_env = EnvVar(
+                name=env_name,
+                value_source=EnvVarSource(
+                    secret_key_ref=SecretKeySelector(
+                        secret=secret_path,
+                        version="latest",
+                    )
+                ),
+            )
+            env_vars.append(secret_env)
 
         job = run_v2.Job()
         container = run_v2.Container()

@@ -9,7 +9,11 @@ Run many Claude Code instances in parallel on ephemeral GCP Cloud Run containers
 ```python
 from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeTask
 
-client = ClaudeCodeClient(project_id="my-project", gcs_bucket="my-bucket")
+client = ClaudeCodeClient(
+    project_id="my-project",
+    gcs_bucket="my-bucket",
+    api_key_secret="anthropic-api-key-USERNAME",  # Your Secret Manager secret name
+)
 
 # Single task
 result = client.run_single(
@@ -77,10 +81,43 @@ results = client.run(tasks)
 
 ## Prerequisites
 
-1. **GCP Project** with Cloud Run and Cloud Storage APIs enabled
+1. **GCP Project** with Cloud Run, Cloud Storage, and Secret Manager APIs enabled
 2. **GCS Bucket** for file transfer
 3. **Authentication**: `gcloud auth application-default login` or service account
-4. **Anthropic API Key** (for ClaudeCodeClient): Set `ANTHROPIC_API_KEY` env var or pass to `run()`
+4. **Anthropic API Key** (for ClaudeCodeClient): Stored in GCP Secret Manager (see below)
+
+## API Key Setup (Required for ClaudeCodeClient)
+
+The Anthropic API key is stored securely in GCP Secret Manager and injected at runtime. This avoids exposing the key in scripts, logs, or job specs.
+
+**One-time setup:**
+
+```bash
+# 1. Enable Secret Manager API
+gcloud services enable secretmanager.googleapis.com --project=YOUR_PROJECT
+
+# 2. Create your secret (use your username for per-user secrets)
+echo -n "sk-ant-api03-YOUR_KEY" | gcloud secrets create anthropic-api-key-USERNAME \
+    --data-file=- \
+    --project=YOUR_PROJECT
+
+# 3. Grant Cloud Run access to read it
+PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT --format='value(projectNumber)')
+gcloud secrets add-iam-policy-binding anthropic-api-key-USERNAME \
+    --project=YOUR_PROJECT \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+```
+
+**To rotate the key later:**
+
+```bash
+echo -n "NEW_KEY" | gcloud secrets versions add anthropic-api-key-USERNAME \
+    --data-file=- \
+    --project=YOUR_PROJECT
+```
+
+The client uses `version="latest"` so new keys are picked up automatically on the next job.
 
 ## How It Works
 
@@ -135,6 +172,7 @@ Note: `inputs` uses tuples (not dicts) so the task is hashable and can be used a
 ClaudeCodeClientConfig(
     project_id: str,       # GCP project ID (required)
     gcs_bucket: str,       # GCS bucket for file I/O (required)
+    api_key_secret: str,   # Secret Manager secret name (required)
     region: str = "us-central1",
     model: str = "claude-opus-4-5-20251101",
     max_turns: int = 100,  # Max conversation turns
@@ -151,17 +189,18 @@ ClaudeCodeClientConfig(
 ```python
 results = client.run(
     tasks: list[ClaudeCodeTask],  # List of tasks
-    api_key: str = None,          # Default: ANTHROPIC_API_KEY env var
     max_workers: int = None,      # Max parallel jobs (default: unlimited)
     progress: bool = True,        # Show progress bar (requires tqdm)
 )
 # Returns: dict[ClaudeCodeTask, list[ClaudeCodeResult]]
 ```
 
+Note: API key is injected via Secret Manager (configured in `api_key_secret`).
+
 ### ClaudeCodeClient.run_stream()
 
 ```python
-for task, run_idx, result in client.run_stream(tasks, api_key=api_key):
+for task, run_idx, result in client.run_stream(tasks):
     # Process each result as it completes
     print(f"{task.id}[{run_idx}]: {result.success}")
 # Yields: tuple[ClaudeCodeTask, int, ClaudeCodeResult]
@@ -176,7 +215,6 @@ result = client.run_single(
     system_prompt: str = None,        # Custom system prompt / constitution
     pre_claude_command: str = None,   # Shell command before Claude
     post_claude_command: str = None,  # Shell command after Claude
-    api_key: str = None,              # Default: ANTHROPIC_API_KEY env var
 )
 # Returns: ClaudeCodeResult
 ```
@@ -344,7 +382,27 @@ pytest tests/test_cloud_run_integration.py -v --run-integration
 
 ## Troubleshooting
 
-**"API key required"**: Set `ANTHROPIC_API_KEY` env var or pass `api_key=` to `run()`.
+**"api_key_secret is required"**: Set `api_key_secret` in your config pointing to a Secret Manager secret.
+
+**"Secret not found"**: Ensure the secret exists and has at least one version:
+```bash
+gcloud secrets versions list YOUR_SECRET_NAME --project=YOUR_PROJECT
+```
+
+**"Permission denied" on secret**: Grant the Cloud Run service account access:
+```bash
+PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT --format='value(projectNumber)')
+gcloud secrets add-iam-policy-binding YOUR_SECRET_NAME \
+    --project=YOUR_PROJECT \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+```
+
+**"Invalid API key"**: The secret value may be incorrect. Add a new version:
+```bash
+echo -n "sk-ant-api03-CORRECT_KEY" | gcloud secrets versions add YOUR_SECRET_NAME \
+    --data-file=- --project=YOUR_PROJECT
+```
 
 **Job timeout**: Increase `timeout` in config. Default is 600s.
 

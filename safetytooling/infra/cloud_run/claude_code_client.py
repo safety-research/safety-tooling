@@ -73,6 +73,9 @@ class ClaudeCodeClientConfig:
         memory: Memory limit up to 32Gi (default: 2Gi)
         skip_permissions: Use --dangerously-skip-permissions (default: True)
         image: Container image (default: google-cloud-cli:slim). Must have gcloud CLI.
+        api_key_secret: Name of Secret Manager secret containing ANTHROPIC_API_KEY (required).
+                       The secret is injected securely via GCP Secret Manager at runtime.
+                       Format: "secret-name" or "projects/proj/secrets/name"
     """
 
     project_id: str
@@ -86,6 +89,7 @@ class ClaudeCodeClientConfig:
     memory: str = "2Gi"
     skip_permissions: bool = True
     image: str = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
+    api_key_secret: str | None = None
 
 
 @dataclass(frozen=True)
@@ -114,13 +118,11 @@ class ClaudeCodeTask:
 
     def to_cloud_run_task(
         self,
-        api_key: str,
         config: ClaudeCodeClientConfig,
     ) -> CloudRunTask:
         """Convert to a CloudRunTask by building the full shell script.
 
         Args:
-            api_key: Anthropic API key
             config: Client configuration with model, max_turns, etc.
 
         Returns:
@@ -129,7 +131,6 @@ class ClaudeCodeTask:
         command = _build_claude_command(
             task=self.task,
             system_prompt=self.system_prompt,
-            api_key=api_key,
             pre_claude_command=self.pre_claude_command,
             post_claude_command=self.post_claude_command,
             config=config,
@@ -168,12 +169,18 @@ class ClaudeCodeClientError(Exception):
 def _build_claude_command(
     task: str,
     system_prompt: str | None,
-    api_key: str,
     pre_claude_command: str | None,
     post_claude_command: str | None,
     config: ClaudeCodeClientConfig,
 ) -> str:
-    """Build the shell script that runs Claude Code inside the container."""
+    """Build the shell script that runs Claude Code inside the container.
+
+    Note: ANTHROPIC_API_KEY is passed via Cloud Run environment variables,
+    not embedded in this script. This is more secure as it:
+    - Doesn't appear in the job spec visible to anyone with jobs.get permission
+    - Doesn't appear in process listings
+    - Doesn't risk appearing in logs
+    """
     claude_flags = [
         "-p",
         f"--model {config.model}",
@@ -236,9 +243,10 @@ chmod +x /tmp/post_claude.sh
 chown -R claude:claude /workspace
 
 # Run Claude Code as non-root user
+# Use 'su claude' (not 'su - claude') to preserve environment including ANTHROPIC_API_KEY
 echo "Starting Claude Code..."
 set +e
-su - claude -c 'export ANTHROPIC_API_KEY="{api_key}" && cd /workspace && /tmp/pre_claude.sh && claude {claude_flags_str} {system_prompt_arg} "$(cat /tmp/task.txt)"; echo $? > /tmp/claude_exitcode.txt; /tmp/post_claude.sh'
+su claude -c 'cd /workspace && /tmp/pre_claude.sh && claude {claude_flags_str} {system_prompt_arg} "$(cat /tmp/task.txt)"; echo $? > /tmp/claude_exitcode.txt; /tmp/post_claude.sh'
 CLAUDE_EXIT=$?
 set -e
 
@@ -342,6 +350,11 @@ class ClaudeCodeClient:
                 **kwargs,
             )
 
+        # Build secrets dict for Cloud Run
+        secrets = {}
+        if self.config.api_key_secret:
+            secrets["ANTHROPIC_API_KEY"] = self.config.api_key_secret
+
         # Create the underlying CloudRunClient
         cloud_run_config = CloudRunClientConfig(
             project_id=self.config.project_id,
@@ -353,13 +366,13 @@ class ClaudeCodeClient:
             memory=self.config.memory,
             timeout=self.config.timeout,
             env={},
+            secrets=secrets,
         )
         self._cloud_run = CloudRunClient(cloud_run_config)
 
     def run(
         self,
         tasks: list[ClaudeCodeTask],
-        api_key: str | None = None,
         max_workers: int | None = None,
         progress: bool = True,
     ) -> dict[ClaudeCodeTask, list[ClaudeCodeResult]]:
@@ -368,12 +381,15 @@ class ClaudeCodeClient:
 
         Args:
             tasks: List of ClaudeCodeTask objects
-            api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
             max_workers: Max concurrent jobs (default: unlimited)
             progress: Show progress bar (requires tqdm)
 
         Returns:
             Dict mapping task -> list of results
+
+        Note:
+            ANTHROPIC_API_KEY is injected via GCP Secret Manager (configured via api_key_secret).
+            This is more secure than passing the key directly.
 
         Example:
             tasks = [
@@ -387,9 +403,7 @@ class ClaudeCodeClient:
         # Collect all results from streaming
         results_by_task: dict[ClaudeCodeTask, dict[int, ClaudeCodeResult]] = {task: {} for task in tasks}
 
-        for task, run_idx, result in self.run_stream(
-            tasks, api_key=api_key, max_workers=max_workers, progress=progress
-        ):
+        for task, run_idx, result in self.run_stream(tasks, max_workers=max_workers, progress=progress):
             results_by_task[task][run_idx] = result
 
         # Convert to ordered lists
@@ -402,7 +416,6 @@ class ClaudeCodeClient:
     def run_stream(
         self,
         tasks: list[ClaudeCodeTask],
-        api_key: str | None = None,
         max_workers: int | None = None,
         progress: bool = True,
     ) -> Iterator[tuple[ClaudeCodeTask, int, ClaudeCodeResult]]:
@@ -411,29 +424,32 @@ class ClaudeCodeClient:
 
         Args:
             tasks: List of ClaudeCodeTask objects
-            api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
             max_workers: Max concurrent jobs (default: unlimited)
             progress: Show progress bar (requires tqdm)
 
         Yields:
             Tuples of (task, run_index, result) as each job completes
 
+        Note:
+            ANTHROPIC_API_KEY is injected via GCP Secret Manager (configured via api_key_secret).
+            This is more secure than passing the key directly.
+
         Example:
             for task, run_idx, result in client.run_stream(tasks):
                 print(f"{task.id}[{run_idx}]: {result.success}")
                 save_to_db(task, run_idx, result)
         """
-        # Get API key from param or environment
-        if api_key is None:
-            api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ClaudeCodeClientError("API key required: pass api_key param or set ANTHROPIC_API_KEY env var")
+        if not self.config.api_key_secret:
+            raise ClaudeCodeClientError(
+                "api_key_secret is required in config. "
+                "Store your ANTHROPIC_API_KEY in GCP Secret Manager and reference it via api_key_secret."
+            )
 
         # Build lookup from CloudRunTask id back to ClaudeCodeTask
         claude_task_by_id = {task.id: task for task in tasks}
 
         # Convert ClaudeCodeTasks to CloudRunTasks
-        cloud_run_tasks = [task.to_cloud_run_task(api_key, self.config) for task in tasks]
+        cloud_run_tasks = [task.to_cloud_run_task(self.config) for task in tasks]
 
         # Stream results from CloudRunClient
         for cloud_task, run_idx, cloud_result in self._cloud_run.run_stream(
@@ -449,7 +465,6 @@ class ClaudeCodeClient:
         system_prompt: str | None = None,
         pre_claude_command: str | None = None,
         post_claude_command: str | None = None,
-        api_key: str | None = None,
     ) -> ClaudeCodeResult:
         """
         Convenience method to run a single Claude Code task.
@@ -460,10 +475,12 @@ class ClaudeCodeClient:
             system_prompt: Optional system prompt / constitution
             pre_claude_command: Shell command to run before Claude Code
             post_claude_command: Shell command to run after Claude Code
-            api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
 
         Returns:
             ClaudeCodeResult
+
+        Note:
+            ANTHROPIC_API_KEY is injected via GCP Secret Manager (configured via api_key_secret).
         """
         # Convert inputs dict to tuple for ClaudeCodeTask
         inputs_tuple = None
@@ -478,5 +495,5 @@ class ClaudeCodeClient:
             pre_claude_command=pre_claude_command,
             post_claude_command=post_claude_command,
         )
-        results = self.run([claude_task], api_key=api_key, progress=False)
+        results = self.run([claude_task], progress=False)
         return results[claude_task][0]

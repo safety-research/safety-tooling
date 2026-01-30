@@ -2,15 +2,16 @@
 
 These tests require:
 - GCP credentials (gcloud auth application-default login)
-- ANTHROPIC_API_KEY environment variable
-- A GCP project with Cloud Run and GCS enabled
+- A GCP project with Cloud Run, GCS, and Secret Manager enabled
+- An Anthropic API key stored in Secret Manager
 
 Run with: pytest tests/test_cloud_run_integration.py -v --run-integration
 
 Environment variables needed:
 - GCP_PROJECT_ID: Your GCP project ID
 - GCS_BUCKET: GCS bucket for file transfer
-- ANTHROPIC_API_KEY: Anthropic API key for Claude Code tests
+- API_KEY_SECRET: Name of the Secret Manager secret containing the Anthropic API key
+                  (e.g., "anthropic-api-key-username")
 """
 
 import os
@@ -34,18 +35,18 @@ def gcp_config():
     gcs_bucket = os.environ.get("GCS_BUCKET")
 
     if not project_id or not gcs_bucket:
-        pytest.skip("GCP_PROJECT_ID and GCS_BUCKET environment variables required. Set them to run integration tests.")
+        pytest.skip("GCP_PROJECT_ID and GCS_BUCKET environment variables required.")
 
     return {"project_id": project_id, "gcs_bucket": gcs_bucket}
 
 
 @pytest.fixture
-def anthropic_api_key():
-    """Get Anthropic API key or skip."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        pytest.skip("ANTHROPIC_API_KEY environment variable required.")
-    return api_key
+def api_key_secret():
+    """Get API key secret name or skip."""
+    secret_name = os.environ.get("API_KEY_SECRET")
+    if not secret_name:
+        pytest.skip("API_KEY_SECRET environment variable required (name of Secret Manager secret).")
+    return secret_name
 
 
 class TestCloudRunClient:
@@ -66,7 +67,7 @@ class TestCloudRunClient:
         client = CloudRunClient(config)
         result = client.run_single(command="echo 'hello from cloud run' && echo 'error test' >&2")
 
-        assert result.returncode == 0
+        assert result.returncode == 0, f"Command failed: {result.error}"
         assert "hello from cloud run" in result.stdout
         assert "error test" in result.stderr
 
@@ -96,7 +97,7 @@ class TestCloudRunClient:
                 inputs={"data": input_dir},
             )
 
-            assert result.returncode == 0
+            assert result.returncode == 0, f"Command failed: {result.error}"
             assert result.output_dir is not None
 
             result_file = result.output_dir / "result.txt"
@@ -131,8 +132,10 @@ class TestCloudRunClient:
         assert len(results[task2]) == 3
 
         for r in results[task1]:
+            assert r.returncode == 0, f"Task failed: {r.error}"
             assert "task one" in r.stdout
         for r in results[task2]:
+            assert r.returncode == 0, f"Task failed: {r.error}"
             assert "task two" in r.stdout
 
     def test_streaming_results(self, integration_enabled, gcp_config):
@@ -168,25 +171,29 @@ class TestCloudRunClient:
 
 
 class TestClaudeCodeClient:
-    """Integration tests for ClaudeCodeClient - full stack including Claude."""
+    """Integration tests for ClaudeCodeClient - full stack including Claude.
 
-    def test_simple_task(self, integration_enabled, gcp_config, anthropic_api_key):
+    These tests require an Anthropic API key stored in GCP Secret Manager.
+    Set API_KEY_SECRET to the name of your secret (e.g., "anthropic-api-key-username").
+    """
+
+    def test_simple_task(self, integration_enabled, gcp_config, api_key_secret):
         """Test Claude Code executing a simple task."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
 
         config = ClaudeCodeClientConfig(
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
+            api_key_secret=api_key_secret,
             timeout=300,
         )
 
         client = ClaudeCodeClient(config)
         result = client.run_single(
             task="Write 'integration test passed' to /workspace/output/result.txt and then say 'done'",
-            api_key=anthropic_api_key,
         )
 
-        assert result.returncode == 0
+        assert result.returncode == 0, f"Task failed: {result.error}"
         assert "done" in result.response.lower()
         assert result.transcript is not None
         assert len(result.transcript) > 0
@@ -197,13 +204,14 @@ class TestClaudeCodeClient:
             if result_file.exists():
                 assert "integration test passed" in result_file.read_text().lower()
 
-    def test_with_input_files(self, integration_enabled, gcp_config, anthropic_api_key):
+    def test_with_input_files(self, integration_enabled, gcp_config, api_key_secret):
         """Test Claude Code reading input files and producing output."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
 
         config = ClaudeCodeClientConfig(
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
+            api_key_secret=api_key_secret,
             timeout=300,
         )
 
@@ -219,19 +227,19 @@ class TestClaudeCodeClient:
                     "Read the file at /workspace/input/repo/data.txt. What is the secret number? Say just the number."
                 ),
                 inputs={"repo": input_dir},
-                api_key=anthropic_api_key,
             )
 
-        assert result.returncode == 0
+        assert result.returncode == 0, f"Task failed: {result.error}"
         assert "42" in result.response
 
-    def test_with_system_prompt(self, integration_enabled, gcp_config, anthropic_api_key):
+    def test_with_system_prompt(self, integration_enabled, gcp_config, api_key_secret):
         """Test Claude Code with a custom system prompt / constitution."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
 
         config = ClaudeCodeClientConfig(
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
+            api_key_secret=api_key_secret,
             timeout=300,
         )
 
@@ -241,19 +249,19 @@ class TestClaudeCodeClient:
         result = client.run_single(
             task="Say hello.",
             system_prompt=system_prompt,
-            api_key=anthropic_api_key,
         )
 
-        assert result.returncode == 0
+        assert result.returncode == 0, f"Task failed: {result.error}"
         assert "CUSTOM_MARKER_12345" in result.response
 
-    def test_multiple_tasks(self, integration_enabled, gcp_config, anthropic_api_key):
+    def test_multiple_tasks(self, integration_enabled, gcp_config, api_key_secret):
         """Test running multiple different Claude Code tasks in parallel."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig, ClaudeCodeTask
 
         config = ClaudeCodeClientConfig(
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
+            api_key_secret=api_key_secret,
             timeout=300,
         )
 
@@ -263,7 +271,7 @@ class TestClaudeCodeClient:
         ]
 
         client = ClaudeCodeClient(config)
-        results = client.run(tasks, api_key=anthropic_api_key)
+        results = client.run(tasks)
 
         # Results keyed by task object
         math_task, greeting_task = tasks
@@ -277,13 +285,14 @@ class TestClaudeCodeClient:
         for r in results[greeting_task]:
             assert "hello" in r.response.lower()
 
-    def test_streaming_results(self, integration_enabled, gcp_config, anthropic_api_key):
+    def test_streaming_results(self, integration_enabled, gcp_config, api_key_secret):
         """Test streaming Claude Code results as they complete."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig, ClaudeCodeTask
 
         config = ClaudeCodeClientConfig(
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
+            api_key_secret=api_key_secret,
             timeout=300,
         )
 
@@ -296,7 +305,7 @@ class TestClaudeCodeClient:
 
         # Collect streamed results
         streamed = []
-        for task, run_idx, result in client.run_stream(tasks, api_key=anthropic_api_key, progress=False):
+        for task, run_idx, result in client.run_stream(tasks, progress=False):
             streamed.append((task.id, run_idx, result.success))
 
         # Should have 4 total results (2 + 2)
