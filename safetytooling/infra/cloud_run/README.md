@@ -22,13 +22,13 @@ print(result.response)
 tasks = [
     ClaudeCodeTask(
         id="xss-review",
-        task="Review for XSS vulnerabilities",
+        task="Review for XSS vulnerabilities. Return <VULNERABLE> or <NOT_VULNERABLE>.",
         inputs=(("repo", "./my_repo"),),
         n=10,
     ),
     ClaudeCodeTask(
         id="sqli-review", 
-        task="Review for SQL injection",
+        task="Review for SQL injection. Return <VULNERABLE> or <NOT_VULNERABLE>.",
         inputs=(("repo", "./my_repo"),),
         n=10,
     ),
@@ -37,7 +37,7 @@ results = client.run(tasks)  # Runs 20 jobs, uploads repo only once
 
 # Check results
 for task in tasks:
-    flagged = sum(1 for r in results[task] if "VULNERABLE" in r.response)
+    flagged = sum(1 for r in results[task] if "<VULNERABLE>" in r.response)
     print(f"{task.id}: {flagged}/{len(results[task])} flagged")
 
 # Stream results as they complete
@@ -96,16 +96,17 @@ results = client.run(tasks)
        │         │  └─────────────┘
        │         │
        │         └── Thread lock: concurrent requests for same
-       │             inputs block until first upload completes
+       │             inputs block, then use cached hash
        └──────────────────┘
          Download outputs
 ```
 
-1. **Tar and hash** local inputs (deterministic tarball for caching)
-2. **Check cache** - if hash exists in GCS, skip upload entirely
-3. **Thread blocking** - concurrent requests for same inputs wait for first to complete
-4. **Create Cloud Run Job** that downloads inputs, runs command, uploads outputs
-5. **Download outputs** and return result
+1. **Tar and hash** local inputs (deterministic tarball)
+2. **Check in-memory cache** - same path in this process? Use cached GCS path
+3. **Check GCS cache** - same content hash? Skip upload
+4. **Thread blocking** - concurrent requests for same inputs wait for first to finish, then use its cached result
+5. **Create Cloud Run Job** that downloads inputs, runs command, uploads outputs
+6. **Download outputs** and return result
 
 This means running `n=100` with the same inputs only tars and uploads once.
 
