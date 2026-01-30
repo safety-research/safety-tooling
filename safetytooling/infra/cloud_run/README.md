@@ -18,31 +18,31 @@ result = client.run_single(
 )
 print(result.response)
 
-# Multiple tasks in parallel - same repo, different prompts
+# Multiple tasks in parallel
 tasks = [
     ClaudeCodeTask(
-        id="xss-review",
-        task="Review for XSS vulnerabilities. Return <VULNERABLE> or <NOT_VULNERABLE>.",
+        id="haiku",
+        task="Write a haiku about this code",
         inputs=(("repo", "./my_repo"),),
-        n=10,
+        n=5,
     ),
     ClaudeCodeTask(
-        id="sqli-review", 
-        task="Review for SQL injection. Return <VULNERABLE> or <NOT_VULNERABLE>.",
+        id="limerick", 
+        task="Write a limerick about this code",
         inputs=(("repo", "./my_repo"),),
-        n=10,
+        n=5,
     ),
 ]
-results = client.run(tasks)  # Runs 20 jobs, uploads repo only once
+results = client.run(tasks)  # Runs 10 jobs, uploads repo only once
 
-# Check results
 for task in tasks:
-    flagged = sum(1 for r in results[task] if "<VULNERABLE>" in r.response)
-    print(f"{task.id}: {flagged}/{len(results[task])} flagged")
+    print(f"\n{task.id}:")
+    for r in results[task]:
+        print(r.response)
 
 # Stream results as they complete
 for task, run_idx, result in client.run_stream(tasks):
-    print(f"{task.id}[{run_idx}]: done")
+    print(f"{task.id}[{run_idx}]: {result.response[:50]}...")
 ```
 
 ## Custom Containers (low-level)
@@ -96,7 +96,8 @@ results = client.run(tasks)
        │         │  └─────────────┘
        │         │
        │         └── Thread lock: concurrent requests for same
-       │             inputs block, then use cached hash
+       │             inputs block until first upload completes,
+       │             then use cached hash
        └──────────────────┘
          Download outputs
 ```
