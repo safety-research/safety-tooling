@@ -60,8 +60,8 @@ class ClaudeCodeJobConfig:
         memory: Memory limit up to 32Gi (default: 2Gi)
         skip_permissions: Use --dangerously-skip-permissions (default: True)
         image: Container image (default: google-cloud-cli:slim). Must have gcloud CLI.
-        pre_command: Shell command to run before Claude Code (e.g., git config)
-        post_command: Shell command to run after Claude Code
+        pre_claude_command: Shell command to run before Claude Code (e.g., git config)
+        post_claude_command: Shell command to run after Claude Code
     """
 
     project_id: str
@@ -74,8 +74,8 @@ class ClaudeCodeJobConfig:
     memory: str = "2Gi"
     skip_permissions: bool = True
     image: str = DEFAULT_IMAGE
-    pre_command: str | None = None
-    post_command: str | None = None
+    pre_claude_command: str | None = None
+    post_claude_command: str | None = None
 
 
 @dataclass
@@ -178,12 +178,12 @@ class ClaudeCodeJob:
             system_prompt_arg = '--system-prompt "$(cat /tmp/system_prompt.txt)"'
 
         pre_command_section = ""
-        if self.config.pre_command:
-            pre_command_section = f"{self.config.pre_command}"
+        if self.config.pre_claude_command:
+            pre_command_section = self.config.pre_claude_command
 
         post_command_section = ""
-        if self.config.post_command:
-            post_command_section = f"{self.config.post_command}"
+        if self.config.post_claude_command:
+            post_command_section = self.config.post_claude_command
 
         script = f"""
 set -e
