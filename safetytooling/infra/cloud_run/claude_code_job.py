@@ -8,32 +8,47 @@ in isolated containers. It builds on CloudRunJob, adding:
 - Transcript extraction from .claude/ directory
 
 Usage:
-    from safetytooling.infra.cloud_run import ClaudeCodeJob, ClaudeCodeJobConfig
+    from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
 
-    config = ClaudeCodeJobConfig(
+    client = ClaudeCodeClient(ClaudeCodeClientConfig(
         project_id="my-project",
         gcs_bucket="my-bucket",
+    ))
+
+    # Single task
+    result = client.run(
+        task="Review the code for security issues",
+        inputs={"repo": Path("./my_repo")},
     )
 
-    result = ClaudeCodeJob(config).run(
-        task="Review the code in input/repo for security issues",
-        inputs={"repo": Path("/tmp/my_repo")},
-        system_prompt="You are a security reviewer...",
+    # Same task N times (for measuring variance)
+    results = client.run(
+        task="Review the code for security issues",
+        inputs={"repo": Path("./my_repo")},
+        n=100,
     )
 
-    print(result.response)
-    print(result.transcript)
-    # result.output_dir contains files from /workspace/output/
+    # Multiple different tasks
+    results = client.run(tasks=[
+        {"task": "Review for XSS", "inputs": {"repo": repo}},
+        {"task": "Review for SQLi", "inputs": {"repo": repo}},
+    ])
 """
 
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
 from google.cloud import storage
 from google.cloud.run_v2 import JobsClient
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
 
 from .cloud_run_job import (
     CloudRunJob,
@@ -46,8 +61,8 @@ DEFAULT_IMAGE = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
 
 
 @dataclass
-class ClaudeCodeJobConfig:
-    """Configuration for Claude Code job execution.
+class ClaudeCodeClientConfig:
+    """Configuration for Claude Code client.
 
     Args:
         project_id: GCP project ID (required)
@@ -79,7 +94,7 @@ class ClaudeCodeJobConfig:
 
 
 @dataclass
-class ClaudeCodeJobResult:
+class ClaudeCodeResult:
     """Result from running Claude Code."""
 
     response: str  # Claude's stdout
@@ -87,59 +102,54 @@ class ClaudeCodeJobResult:
     output_dir: Path  # Local dir with contents of /workspace/output
     returncode: int
     duration_seconds: float
+    error: Exception | None = None  # Set if this task failed
+
+    @property
+    def success(self) -> bool:
+        return self.error is None
 
 
-class ClaudeCodeJobError(Exception):
-    """Raised when Claude Code job operations fail."""
+class ClaudeCodeClientError(Exception):
+    """Raised when Claude Code client operations fail."""
 
     pass
 
 
-class ClaudeCodeJob:
+class ClaudeCodeClient:
     """
-    Run Claude Code in an ephemeral Cloud Run container.
-
-    Uses CloudRunJob for the underlying infrastructure, adding Claude Code
-    specific setup and transcript extraction.
+    Client for running Claude Code in ephemeral Cloud Run containers.
 
     Example:
-        # Single job
-        config = ClaudeCodeJobConfig(project_id="my-project", gcs_bucket="my-bucket")
-        result = ClaudeCodeJob(config).run(
-            task="Analyze the code in input/repo",
-            inputs={"repo": Path("./my_repo")},
-        )
+        client = ClaudeCodeClient(ClaudeCodeClientConfig(
+            project_id="my-project",
+            gcs_bucket="my-bucket",
+        ))
 
-        # Parallel jobs (share clients to avoid connection overhead)
-        jobs_client = JobsClient()
-        storage_client = storage.Client()
+        # Single task
+        result = client.run(task="Review this code", inputs={"repo": repo})
 
-        with ThreadPoolExecutor() as executor:
-            futures = [
-                executor.submit(
-                    ClaudeCodeJob(config, jobs_client=jobs_client, storage_client=storage_client).run,
-                    task=task,
-                    inputs=inputs,
-                )
-                for task, inputs in work_items
-            ]
+        # Same task 100 times
+        results = client.run(task="Review this code", inputs={"repo": repo}, n=100)
+
+        # Multiple different tasks
+        results = client.run(tasks=[
+            {"task": "Review for XSS", "inputs": {"repo": repo}},
+            {"task": "Review for SQLi", "inputs": {"repo": repo}},
+        ])
     """
 
-    def __init__(
-        self,
-        config: ClaudeCodeJobConfig,
-        jobs_client: JobsClient | None = None,
-        storage_client: storage.Client | None = None,
-    ):
+    def __init__(self, config: ClaudeCodeClientConfig):
         self.config = config
-        self._jobs_client = jobs_client
-        self._storage_client = storage_client
 
         # Validate required config
         if not self.config.project_id:
-            raise ClaudeCodeJobError("project_id is required in ClaudeCodeJobConfig")
+            raise ClaudeCodeClientError("project_id is required")
         if not self.config.gcs_bucket:
-            raise ClaudeCodeJobError("gcs_bucket is required in ClaudeCodeJobConfig")
+            raise ClaudeCodeClientError("gcs_bucket is required")
+
+        # Create shared GCP clients
+        self._jobs_client = JobsClient()
+        self._storage_client = storage.Client(project=self.config.project_id)
 
     def _extract_transcript(self, output_dir: Path) -> list[dict] | None:
         """Extract conversation transcript from .claude/ directory."""
@@ -239,34 +249,22 @@ echo "=== Claude Code Job Complete ==="
 """
         return script
 
-    def run(
+    def _run_single(
         self,
         task: str,
         inputs: dict[str, Path] | None = None,
         system_prompt: str | None = None,
         claude_config_dir: Path | None = None,
         api_key: str | None = None,
-    ) -> ClaudeCodeJobResult:
-        """
-        Run Claude Code on a task with given inputs.
-
-        Args:
-            task: The prompt/instruction for Claude Code
-            inputs: Dict of {name: local_path} to make available at /workspace/input/{name}
-            system_prompt: Optional system prompt / constitution
-            claude_config_dir: Optional path to .claude/ directory with custom commands
-            api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
-
-        Returns:
-            ClaudeCodeJobResult with response, transcript, and output files
-        """
+    ) -> ClaudeCodeResult:
+        """Run a single Claude Code task."""
         start_time = time.time()
 
         # Get API key from param or environment
         if api_key is None:
             api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ClaudeCodeJobError("API key required: pass api_key param or set ANTHROPIC_API_KEY env var")
+            raise ClaudeCodeClientError("API key required: pass api_key param or set ANTHROPIC_API_KEY env var")
 
         # Build the command script
         script = self._build_container_script(
@@ -307,7 +305,7 @@ echo "=== Claude Code Job Complete ==="
                 output_dir = result.output_dir
 
         except CloudRunJobError as e:
-            raise ClaudeCodeJobError(f"Cloud Run job failed: {e}")
+            raise ClaudeCodeClientError(f"Cloud Run job failed: {e}")
 
         # Read response
         response_file = output_dir / "response.txt"
@@ -327,10 +325,130 @@ echo "=== Claude Code Job Complete ==="
 
         duration = time.time() - start_time
 
-        return ClaudeCodeJobResult(
+        return ClaudeCodeResult(
             response=response,
             transcript=transcript,
             output_dir=output_dir,
             returncode=returncode,
             duration_seconds=duration,
         )
+
+    def run(
+        self,
+        task: str | None = None,
+        inputs: dict[str, Path] | None = None,
+        system_prompt: str | None = None,
+        claude_config_dir: Path | None = None,
+        api_key: str | None = None,
+        n: int | None = None,
+        tasks: list[dict] | None = None,
+        max_workers: int | None = None,
+        progress: bool = True,
+    ) -> ClaudeCodeResult | list[ClaudeCodeResult]:
+        """
+        Run Claude Code task(s).
+
+        Args:
+            task: The prompt/instruction for Claude Code (for single or repeated runs)
+            inputs: Dict of {name: local_path} to make available at /workspace/input/{name}
+            system_prompt: Optional system prompt / constitution
+            claude_config_dir: Optional path to .claude/ directory with custom commands
+            api_key: Anthropic API key (default: from ANTHROPIC_API_KEY env var)
+            n: Run the same task N times (returns list of results)
+            tasks: List of task dicts for different tasks (returns list of results)
+                   Each dict can have: task, inputs, system_prompt
+            max_workers: Max concurrent jobs when running multiple (default: unlimited)
+            progress: Show progress bar when running multiple (requires tqdm)
+
+        Returns:
+            ClaudeCodeResult for single task, list[ClaudeCodeResult] for multiple
+
+        Examples:
+            # Single task
+            result = client.run(task="Review this code", inputs={"repo": repo})
+
+            # Same task 100 times
+            results = client.run(task="Review this code", inputs={"repo": repo}, n=100)
+
+            # Multiple different tasks
+            results = client.run(tasks=[
+                {"task": "Review for XSS", "inputs": {"repo": repo}},
+                {"task": "Review for SQLi", "inputs": {"repo": repo}},
+            ])
+        """
+        # Validate args
+        if tasks is not None and task is not None:
+            raise ClaudeCodeClientError("Cannot specify both 'task' and 'tasks'")
+        if tasks is None and task is None:
+            raise ClaudeCodeClientError("Must specify either 'task' or 'tasks'")
+        if n is not None and tasks is not None:
+            raise ClaudeCodeClientError("Cannot specify both 'n' and 'tasks'")
+
+        # Single task, no repetition
+        if task is not None and n is None:
+            return self._run_single(
+                task=task,
+                inputs=inputs,
+                system_prompt=system_prompt,
+                claude_config_dir=claude_config_dir,
+                api_key=api_key,
+            )
+
+        # Build task list
+        if tasks is not None:
+            task_list = tasks
+        else:
+            # Same task N times
+            task_list = [{"task": task, "inputs": inputs, "system_prompt": system_prompt} for _ in range(n)]
+
+        # Get API key once
+        if api_key is None:
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ClaudeCodeClientError("API key required: pass api_key param or set ANTHROPIC_API_KEY env var")
+
+        # Run in parallel
+        results: dict[int, ClaudeCodeResult] = {}
+
+        def run_one(idx: int, task_dict: dict) -> tuple[int, ClaudeCodeResult]:
+            try:
+                result = self._run_single(
+                    task=task_dict["task"],
+                    inputs=task_dict.get("inputs"),
+                    system_prompt=task_dict.get("system_prompt"),
+                    claude_config_dir=task_dict.get("claude_config_dir"),
+                    api_key=api_key,
+                )
+                return idx, result
+            except Exception as e:
+                # Return a result with error set
+                return idx, ClaudeCodeResult(
+                    response="",
+                    transcript=None,
+                    output_dir=Path("/dev/null"),
+                    returncode=1,
+                    duration_seconds=0,
+                    error=e,
+                )
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(run_one, i, t): i for i, t in enumerate(task_list)}
+
+            # Use tqdm if available and requested
+            iterator = as_completed(futures)
+            if progress and tqdm is not None:
+                iterator = tqdm(iterator, total=len(futures), desc="Running Claude Code")
+
+            for future in iterator:
+                idx, result = future.result()
+                results[idx] = result
+
+        # Return in original order
+        return [results[i] for i in range(len(task_list))]
+
+
+# Backwards compatibility aliases
+ClaudeCodeJobConfig = ClaudeCodeClientConfig
+ClaudeCodeJobResult = ClaudeCodeResult
+ClaudeCodeJobError = ClaudeCodeClientError
+ClaudeCodeJob = ClaudeCodeClient

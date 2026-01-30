@@ -6,27 +6,39 @@ Run many Claude Code instances in parallel on ephemeral GCP Cloud Run containers
 
 ## Quick Start
 
-### Claude Code (high-level)
-
 ```python
-from safetytooling.infra.cloud_run import ClaudeCodeJob, ClaudeCodeJobConfig
+from pathlib import Path
+from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
 
-config = ClaudeCodeJobConfig(
+client = ClaudeCodeClient(ClaudeCodeClientConfig(
     project_id="my-gcp-project",
     gcs_bucket="my-bucket",
-)
+))
 
-result = ClaudeCodeJob(config).run(
+# Single task
+result = client.run(
     task="Review this PR for security issues",
     inputs={"repo": Path("./my_repo")},
 )
-
 print(result.response)
-print(result.transcript)  # Full conversation history
-# result.output_dir has any files Claude wrote to /workspace/output/
+
+# Same task 100 times (measure variance)
+results = client.run(
+    task="Review this code for vulnerabilities",
+    inputs={"repo": Path("./my_repo")},
+    n=100,
+)
+flagged = sum(1 for r in results if r.success and "vulnerability" in r.response.lower())
+print(f"Flagged in {flagged}/{len(results)} runs")
+
+# Multiple different tasks
+results = client.run(tasks=[
+    {"task": "Review for XSS", "inputs": {"repo": repo}},
+    {"task": "Review for SQLi", "inputs": {"repo": repo}},
+])
 ```
 
-### Custom Containers (low-level)
+## Custom Containers (low-level)
 
 ```python
 from safetytooling.infra.cloud_run import CloudRunJob, CloudRunJobConfig
@@ -53,7 +65,7 @@ print(f"Outputs at: {output_dir}")
 1. **GCP Project** with Cloud Run and Cloud Storage APIs enabled
 2. **GCS Bucket** for file transfer
 3. **Authentication**: `gcloud auth application-default login` or service account
-4. **Anthropic API Key** (for ClaudeCodeJob): Set `ANTHROPIC_API_KEY` env var or pass to `run()`
+4. **Anthropic API Key** (for ClaudeCodeClient): Set `ANTHROPIC_API_KEY` env var or pass to `run()`
 
 ## How It Works
 
@@ -78,46 +90,10 @@ print(f"Outputs at: {output_dir}")
 
 ## API Reference
 
-### CloudRunJobConfig
+### ClaudeCodeClientConfig
 
 ```python
-CloudRunJobConfig(
-    image: str,            # Full container image path (e.g., "gcr.io/project/image:tag")
-    project_id: str,       # GCP project ID (required)
-    gcs_bucket: str,       # GCS bucket for file I/O (required)
-    region: str = "us-central1",
-    cpu: str = "1",        # vCPUs: 1, 2, 4, or 8
-    memory: str = "2Gi",   # Up to 32Gi
-    timeout: int = 3600,   # Job timeout in seconds
-    env: dict = {},        # Environment variables
-    name_prefix: str = "ephemeral",
-)
-```
-
-**Note on `image`**: Must be a full image path that Cloud Run can pull. The image must have `gcloud` CLI installed for GCS file transfer. Examples:
-- `gcr.io/google.com/cloudsdktool/google-cloud-cli:slim` (has gcloud)
-- `gcr.io/my-project/my-custom-image:latest`
-
-### CloudRunJob
-
-```python
-with CloudRunJob(config) as job:
-    # Send inputs to /workspace/input/
-    job.send_inputs({"name": Path("local/path")})
-    
-    # Run command
-    result = job.run("your-command", timeout=300)
-    
-    # Get outputs from /workspace/output/
-    output_dir = job.receive_outputs()
-
-# result.stdout and result.stderr contain command output
-```
-
-### ClaudeCodeJobConfig
-
-```python
-ClaudeCodeJobConfig(
+ClaudeCodeClientConfig(
     project_id: str,       # GCP project ID (required)
     gcs_bucket: str,       # GCS bucket for file I/O (required)
     region: str = "us-central1",
@@ -138,19 +114,23 @@ ClaudeCodeJobConfig(
 - Installing dependencies: `'pip install some-package'`
 - Post-processing outputs
 
-### ClaudeCodeJob.run()
+### ClaudeCodeClient.run()
 
 ```python
-result = ClaudeCodeJob(config).run(
+result = client.run(
     task: str,                        # The prompt for Claude Code
     inputs: dict[str, Path] = None,   # Files at /workspace/input/
     system_prompt: str = None,        # Custom system prompt / constitution
     claude_config_dir: Path = None,   # Custom .claude/ directory
     api_key: str = None,              # Default: ANTHROPIC_API_KEY env var
+    n: int = None,                    # Run same task N times (returns list)
+    tasks: list[dict] = None,         # Run different tasks (returns list)
+    max_workers: int = None,          # Max parallel jobs (default: unlimited)
+    progress: bool = True,            # Show progress bar (requires tqdm)
 )
 ```
 
-### ClaudeCodeJobResult
+### ClaudeCodeResult
 
 ```python
 result.response          # str: Claude's stdout
@@ -158,6 +138,42 @@ result.transcript        # list[dict]: Parsed conversation from .claude/
 result.output_dir        # Path: Local dir with /workspace/output contents
 result.returncode        # int: Exit code
 result.duration_seconds  # float: Total execution time
+result.success           # bool: True if no error occurred
+result.error             # Exception | None: Error if task failed
+```
+
+### CloudRunJobConfig
+
+```python
+CloudRunJobConfig(
+    image: str,            # Full container image path (e.g., "gcr.io/project/image:tag")
+    project_id: str,       # GCP project ID (required)
+    gcs_bucket: str,       # GCS bucket for file I/O (required)
+    region: str = "us-central1",
+    cpu: str = "1",        # vCPUs: 1, 2, 4, or 8
+    memory: str = "2Gi",   # Up to 32Gi
+    timeout: int = 3600,   # Job timeout in seconds
+    env: dict = {},        # Environment variables
+    name_prefix: str = "ephemeral",
+)
+```
+
+**Note on `image`**: Must be a full image path that Cloud Run can pull. The image must have `gcloud` CLI installed for GCS file transfer.
+
+### CloudRunJob
+
+```python
+with CloudRunJob(config) as job:
+    # Send inputs to /workspace/input/
+    job.send_inputs({"name": Path("local/path")})
+    
+    # Run command
+    result = job.run("your-command", timeout=300)
+    
+    # Get outputs from /workspace/output/ (idempotent, can call multiple times)
+    output_dir = job.receive_outputs()
+
+# result.stdout and result.stderr contain command output
 ```
 
 ## Workspace Layout
@@ -172,8 +188,6 @@ Inside the container:
 └── output/              <- Write results here (retrieved by receive_outputs)
 ```
 
-Reference inputs in your commands as `/workspace/input/repo`, etc.
-
 ## Caching
 
 Two levels of caching minimize redundant work:
@@ -182,34 +196,6 @@ Two levels of caching minimize redundant work:
 2. **GCS cache**: Same content hash across processes/machines skips re-uploading
 
 Content hashing uses MD5 of the tarball. Tarballs are deterministic (sorted entries, zeroed timestamps) so identical files = identical hash = cache hit.
-
-## Parallel Execution
-
-For running many jobs (the main use case), share GCP clients to avoid connection overhead:
-
-```python
-from concurrent.futures import ThreadPoolExecutor
-from google.cloud import storage
-from google.cloud.run_v2 import JobsClient
-
-# Create shared clients once
-jobs_client = JobsClient()
-storage_client = storage.Client()
-
-config = ClaudeCodeJobConfig(project_id="...", gcs_bucket="...")
-
-def run_task(task, inputs):
-    return ClaudeCodeJob(
-        config,
-        jobs_client=jobs_client,
-        storage_client=storage_client,
-    ).run(task=task, inputs=inputs)
-
-# Run in parallel - Claude Code is I/O bound, can run many concurrently
-with ThreadPoolExecutor(max_workers=50) as executor:
-    futures = [executor.submit(run_task, t, i) for t, i in work_items]
-    results = [f.result() for f in futures]
-```
 
 ## GCS Cleanup
 
@@ -233,13 +219,13 @@ Cloud Run Jobs pricing (as of 2024):
 - ~$0.00002400/vCPU-second
 - ~$0.00000250/GiB-second
 
-A typical 2-minute job with 1 vCPU and 2GB RAM costs ~$0.003. API costs dominate.
+A typical 2-minute job with 1 vCPU and 2GB RAM costs ~$0.003.
 
 ## Troubleshooting
 
 **"API key required"**: Set `ANTHROPIC_API_KEY` env var or pass `api_key=` to `run()`.
 
-**Job timeout**: Increase `timeout` in config. Default is 600s for ClaudeCodeJob, 3600s for CloudRunJob.
+**Job timeout**: Increase `timeout` in config. Default is 600s for ClaudeCodeClient, 3600s for CloudRunJob.
 
 **"quota exceeded"**: Run `gcloud auth application-default set-quota-project PROJECT_ID`.
 
