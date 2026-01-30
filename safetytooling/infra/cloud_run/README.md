@@ -1,58 +1,39 @@
 # Cloud Run Module
 
-Run many Claude Code instances in parallel on ephemeral GCP Cloud Run containers, with GCS-based file I/O. Send files in, get files back.
+Run many Claude Code instances in parallel on ephemeral GCP Cloud Run containers. Send files in, get artifacts back.
 
 **Primary use case**: Batch processing with Claude Code - review many PRs, analyze many codebases, run many investigations in parallel without managing infrastructure.
 
 ## Quick Start
 
 ```python
-from pathlib import Path
-from safetytooling.infra.cloud_run import (
-    ClaudeCodeClient,
-    ClaudeCodeClientConfig,
-    ClaudeCodeTask,
-)
+from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeTask
 
-client = ClaudeCodeClient(ClaudeCodeClientConfig(
-    project_id="my-gcp-project",
-    gcs_bucket="my-bucket",
-))
+client = ClaudeCodeClient(project_id="my-project", gcs_bucket="my-bucket")
 
-# Single task (convenience method)
+# Single task
 result = client.run_single(
-    task="Review this PR for security issues",
-    inputs={"repo": Path("./my_repo")},
+    task="Review this code for security issues",
+    inputs={"repo": "./my_repo"},
 )
 print(result.response)
 
-# Multiple tasks in parallel
-tasks = [
-    ClaudeCodeTask(
-        id="xss-review",
-        task="Review for XSS vulnerabilities",
-        inputs=(("repo", "./my_repo"),),
-        n=10,
-    ),
-    ClaudeCodeTask(
-        id="sqli-review",
-        task="Review for SQL injection",
-        inputs=(("repo", "./my_repo"),),
-        n=10,
-    ),
-]
-results = client.run(tasks)
-# Returns: {task1: [Result, ...], task2: [Result, ...]}
+# Run the same task 100 times in parallel
+task = ClaudeCodeTask(
+    id="security-review",
+    task="Review this code for security issues",
+    inputs=(("repo", "./my_repo"),),
+    n=100,  # Run 100 times
+)
+results = client.run([task])
 
 # Aggregate results
-for task, task_results in results.items():
-    flagged = sum(1 for r in task_results if r.success and "vulnerability" in r.response.lower())
-    print(f"{task.id}: flagged in {flagged}/{len(task_results)} runs")
+caught = sum(1 for r in results[task] if "vulnerability" in r.response.lower())
+print(f"Caught in {caught}/100 runs")
 
-# Stream results as they complete (for real-time progress)
-for task, run_idx, result in client.run_stream(tasks):
-    print(f"{task.id}[{run_idx}]: {result.success}")
-    save_to_db(task, run_idx, result)  # Persist incrementally
+# Stream results as they complete
+for task, run_idx, result in client.run_stream([task]):
+    print(f"Run {run_idx}: {'CAUGHT' if 'vulnerability' in result.response.lower() else 'MISSED'}")
 ```
 
 ## Custom Containers (low-level)
@@ -100,18 +81,24 @@ results = client.run(tasks)
 │             │     │             │     │                             │
 │ inputs={    │     │ inputs/     │     │  /workspace/input/repo/     │
 │   "repo": / │     │ {hash}.tgz  │     │  /workspace/output/         │
-│ }           │     │             │     │                             │
-└─────────────┘     │ outputs/    │◀────│  (your command runs here)   │
-       ▲            │ {job}.tgz   │     └─────────────────────────────┘
-       │            └─────────────┘
+│ }           │  ▲  │  (cached)   │     │                             │
+└─────────────┘  │  │ outputs/    │◀────│  (Claude Code runs here)    │
+       ▲         │  │ {job}.tgz   │     └─────────────────────────────┘
+       │         │  └─────────────┘
+       │         │
+       │         └── Thread lock: concurrent requests for same
+       │             inputs block until first upload completes
        └──────────────────┘
          Download outputs
 ```
 
 1. **Tar and hash** local inputs (deterministic tarball for caching)
-2. **Upload to GCS** (skipped if hash already exists - content-addressed)
-3. **Create Cloud Run Job** that downloads inputs, runs command, uploads outputs
-4. **Download outputs** and return result
+2. **Check cache** - if hash exists in GCS, skip upload entirely
+3. **Thread blocking** - concurrent requests for same inputs wait for first to complete
+4. **Create Cloud Run Job** that downloads inputs, runs command, uploads outputs
+5. **Download outputs** and return result
+
+This means running `n=100` with the same inputs only tars and uploads once.
 
 ## API Reference
 
