@@ -38,7 +38,6 @@ from pathlib import Path
 from .cloud_run_client import (
     CloudRunClient,
     CloudRunClientConfig,
-    CloudRunClientError,
     CloudRunResult,
 )
 

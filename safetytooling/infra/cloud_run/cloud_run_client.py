@@ -42,7 +42,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
-from google.cloud import logging as cloud_logging
 from google.cloud import run_v2, storage
 from google.cloud.run_v2 import JobsClient
 from google.cloud.run_v2.types import (
