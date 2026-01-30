@@ -56,8 +56,8 @@ class ClaudeCodeJobConfig:
         model: Claude model to use (default: claude-opus-4-5-20251101)
         max_turns: Maximum conversation turns (default: 100)
         timeout: Job timeout in seconds (default: 600)
-        cpu: vCPUs - 1, 2, 4, or 8 (default: 2)
-        memory: Memory limit up to 32Gi (default: 4Gi)
+        cpu: vCPUs - 1, 2, 4, or 8 (default: 1)
+        memory: Memory limit up to 32Gi (default: 2Gi)
         skip_permissions: Use --dangerously-skip-permissions (default: True)
         image: Container image (default: google-cloud-cli:slim). Must have gcloud CLI.
     """
@@ -68,8 +68,8 @@ class ClaudeCodeJobConfig:
     model: str = "claude-opus-4-5-20251101"
     max_turns: int = 100
     timeout: int = 600
-    cpu: str = "2"
-    memory: str = "4Gi"
+    cpu: str = "1"
+    memory: str = "2Gi"
     skip_permissions: bool = True
     image: str = DEFAULT_IMAGE
 
