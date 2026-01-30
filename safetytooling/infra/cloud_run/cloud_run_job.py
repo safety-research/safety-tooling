@@ -154,6 +154,7 @@ class CloudRunJob:
         self._storage_client: storage.Client | None = storage_client
         self._input_gcs_path: str | None = None
         self._output_gcs_path: str | None = None
+        self._cached_output_dir: Path | None = None  # For idempotent receive_outputs()
 
         # Validate required config
         if not self.config.project_id:
@@ -304,12 +305,20 @@ class CloudRunJob:
         """
         Download outputs from /workspace/output/ in the container.
 
+        This method is idempotent - calling it multiple times returns the same
+        cached result (like Python's Future.result()).
+
         Args:
             local_dir: Where to extract outputs. Default: new temp directory.
+                       Ignored if outputs were already downloaded.
 
         Returns:
             Path to directory containing the outputs.
         """
+        # Return cached result if already downloaded (idempotent)
+        if self._cached_output_dir is not None:
+            return self._cached_output_dir
+
         if not self._output_gcs_path:
             raise CloudRunJobError("No outputs to receive (job not run yet?)")
 
@@ -321,6 +330,7 @@ class CloudRunJob:
             if local_dir is None:
                 local_dir = Path(tempfile.mkdtemp(prefix="cloudrun_output_"))
             local_dir.mkdir(parents=True, exist_ok=True)
+            self._cached_output_dir = local_dir
             return local_dir
 
         with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as f:
@@ -341,6 +351,7 @@ class CloudRunJob:
             # Clean up the output blob
             blob.delete()
 
+            self._cached_output_dir = local_dir
             return local_dir
         finally:
             tar_path.unlink(missing_ok=True)
@@ -400,7 +411,7 @@ cd /workspace
 
 echo "Running command..."
 set +e
-{command} > /tmp/cmd_stdout.txt 2> /tmp/cmd_stderr.txt
+( {command} ) > /tmp/cmd_stdout.txt 2> /tmp/cmd_stderr.txt
 EXIT_CODE=$?
 set -e
 

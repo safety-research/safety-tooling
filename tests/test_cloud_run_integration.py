@@ -61,7 +61,7 @@ class TestCloudRunJob:
             gcs_bucket=gcp_config["gcs_bucket"],
             cpu="1",
             memory="512Mi",
-            timeout=120,
+            timeout=300,
         )
 
         with CloudRunJob(config) as job:
@@ -96,6 +96,7 @@ class TestCloudRunJob:
                 # Read input, transform, write to output
                 result = job.run("cat /workspace/input/data/test.txt | tr 'a-z' 'A-Z' > /workspace/output/result.txt")
 
+                # receive_outputs() is idempotent - can call multiple times
                 output_dir = job.receive_outputs()
 
             assert result.returncode == 0

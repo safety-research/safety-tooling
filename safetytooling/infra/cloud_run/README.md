@@ -233,7 +233,7 @@ Cloud Run Jobs pricing (as of 2024):
 - ~$0.00002400/vCPU-second
 - ~$0.00000250/GiB-second
 
-A typical 2-minute job with 1 vCPU and 2GB RAM costs ~$0.003.
+A typical 2-minute job with 1 vCPU and 2GB RAM costs ~$0.003. API costs dominate.
 
 ## Troubleshooting
 
