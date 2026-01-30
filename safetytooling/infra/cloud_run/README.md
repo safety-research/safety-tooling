@@ -18,22 +18,31 @@ result = client.run_single(
 )
 print(result.response)
 
-# Run the same task 100 times in parallel
-task = ClaudeCodeTask(
-    id="security-review",
-    task="Review this code for security issues",
-    inputs=(("repo", "./my_repo"),),
-    n=100,  # Run 100 times
-)
-results = client.run([task])
+# Multiple tasks in parallel - same repo, different prompts
+tasks = [
+    ClaudeCodeTask(
+        id="xss-review",
+        task="Review for XSS vulnerabilities",
+        inputs=(("repo", "./my_repo"),),
+        n=10,
+    ),
+    ClaudeCodeTask(
+        id="sqli-review", 
+        task="Review for SQL injection",
+        inputs=(("repo", "./my_repo"),),
+        n=10,
+    ),
+]
+results = client.run(tasks)  # Runs 20 jobs, uploads repo only once
 
-# Aggregate results
-caught = sum(1 for r in results[task] if "vulnerability" in r.response.lower())
-print(f"Caught in {caught}/100 runs")
+# Check results
+for task in tasks:
+    flagged = sum(1 for r in results[task] if "VULNERABLE" in r.response)
+    print(f"{task.id}: {flagged}/{len(results[task])} flagged")
 
 # Stream results as they complete
-for task, run_idx, result in client.run_stream([task]):
-    print(f"Run {run_idx}: {'CAUGHT' if 'vulnerability' in result.response.lower() else 'MISSED'}")
+for task, run_idx, result in client.run_stream(tasks):
+    print(f"{task.id}[{run_idx}]: done")
 ```
 
 ## Custom Containers (low-level)
