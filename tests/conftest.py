@@ -1,7 +1,5 @@
 """Pytest configuration and fixtures."""
 
-import pytest
-
 
 def pytest_addoption(parser):
     """Add custom command line options."""
