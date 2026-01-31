@@ -176,11 +176,11 @@ ClaudeCodeClientConfig(
     region: str = "us-central1",
     model: str = "claude-opus-4-5-20251101",
     max_turns: int = 100,  # Max conversation turns
-    timeout: int = 600,    # Job timeout in seconds
+    timeout: int = 300,    # Job timeout in seconds (reduced - pre-built image has no setup)
     cpu: str = "1",        # vCPUs: 1, 2, 4, or 8
     memory: str = "2Gi",   # Up to 32Gi
     skip_permissions: bool = True,  # --dangerously-skip-permissions
-    image: str = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim",
+    image: str = DEFAULT_CLAUDE_CODE_IMAGE,  # Pre-built image with Claude Code
 )
 ```
 
@@ -373,7 +373,7 @@ Full end-to-end tests against real Cloud Run:
 ```bash
 export GCP_PROJECT_ID="your-project"
 export GCS_BUCKET="your-bucket"
-export ANTHROPIC_API_KEY="sk-ant-..."
+export API_KEY_SECRET="anthropic-api-key-USERNAME"  # Secret Manager secret name
 
 pytest tests/test_cloud_run_integration.py -v --run-integration
 ```
