@@ -1,6 +1,7 @@
 """Cloud Run job execution for Claude Code and other tasks."""
 
 from .claude_code_client import (
+    DEFAULT_ALLOWED_TOOLS,
     DEFAULT_CLAUDE_CODE_IMAGE,
     ClaudeCodeClient,
     ClaudeCodeClientConfig,
@@ -24,6 +25,7 @@ __all__ = [
     "CloudRunResult",
     "CloudRunTask",
     # High-level Claude Code client
+    "DEFAULT_ALLOWED_TOOLS",
     "DEFAULT_CLAUDE_CODE_IMAGE",
     "ClaudeCodeClient",
     "ClaudeCodeClientConfig",

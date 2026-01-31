@@ -61,6 +61,33 @@ from .cloud_run_client import (
 DEFAULT_CLAUDE_CODE_IMAGE = "gcr.io/fellows-safety-research/claude-code-runner:latest"
 
 
+# Default tools for code review: exploration, editing, and web search
+# These allow exploring and modifying code, but no arbitrary shell execution
+DEFAULT_ALLOWED_TOOLS: tuple[str, ...] = (
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "WebFetch",
+    "WebSearch",
+    "Bash(cd *)",
+    "Bash(ls *)",
+    "Bash(find *)",
+    "Bash(cat *)",
+    "Bash(head *)",
+    "Bash(tail *)",
+    "Bash(wc *)",
+    "Bash(file *)",
+    "Bash(git log *)",
+    "Bash(git show *)",
+    "Bash(git diff *)",
+    "Bash(git status *)",
+    "Bash(git branch *)",
+    "Bash(git commit *)",  # For committing review findings
+)
+
+
 @dataclass
 class ClaudeCodeClientConfig:
     """Configuration for Claude Code client.
@@ -75,7 +102,14 @@ class ClaudeCodeClientConfig:
         timeout: Job timeout in seconds (default: 300). Pre-built image needs no setup time.
         cpu: vCPUs - 1, 2, 4, or 8 (default: 1)
         memory: Memory limit up to 32Gi (default: 2Gi)
-        skip_permissions: Use --dangerously-skip-permissions (default: True)
+        skip_permissions: Use --dangerously-skip-permissions (default: False).
+                         If True, ignores allowed_tools and skips all permission prompts.
+        allowed_tools: Tools to allow without prompting (default: DEFAULT_ALLOWED_TOOLS).
+                      Only used when skip_permissions=False.
+                      Patterns like "Bash(git *)" allow specific commands.
+                      Since Cloud Run is non-interactive, Claude will fail if it tries to use
+                      a tool that isn't in this list (no way to prompt for permission).
+                      See https://code.claude.com/docs/en/settings#permission-rule-syntax
         image: Container image (default: pre-built claude-code-runner).
                The default image has Claude Code pre-installed, saving ~2 min setup.
                Set to "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim" for stock image.
@@ -97,7 +131,8 @@ class ClaudeCodeClientConfig:
     timeout: int = 300  # Reduced from 600 - no setup time needed with pre-built image
     cpu: str = "1"
     memory: str = "2Gi"
-    skip_permissions: bool = True
+    skip_permissions: bool = False
+    allowed_tools: tuple[str, ...] | None = DEFAULT_ALLOWED_TOOLS
     image: str = DEFAULT_CLAUDE_CODE_IMAGE
     api_key_secret: str | None = None
     service_account: str | None = None
@@ -216,6 +251,11 @@ def _build_claude_command(
     ]
     if config.skip_permissions:
         claude_flags.append("--dangerously-skip-permissions")
+    elif config.allowed_tools:
+        # Add each allowed tool pattern as a separate --allowedTools argument
+        for tool in config.allowed_tools:
+            # Quote the tool pattern to handle spaces and special chars
+            claude_flags.append(f'--allowedTools "{tool}"')
 
     claude_flags_str = " ".join(claude_flags)
 
@@ -243,6 +283,17 @@ fi
 
 # Create non-root user if it doesn't exist (pre-built image already has it)
 id -u claude &>/dev/null || useradd -m -s /bin/bash claude
+
+# Wrap git to force --no-verify on commits (skip hooks for security)
+cat > /usr/local/bin/git << 'GITWRAPPER'
+#!/bin/bash
+if [[ "$1" == "commit" ]]; then
+    exec /usr/bin/git commit --no-verify "${{@:2}}"
+else
+    exec /usr/bin/git "$@"
+fi
+GITWRAPPER
+chmod +x /usr/local/bin/git
 
 # Set up Claude config if provided
 if [ -d /workspace/input/.claude ]; then

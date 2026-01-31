@@ -49,6 +49,67 @@ for task, run_idx, result in client.run_stream(tasks):
     print(f"{task.id}[{run_idx}]: {result.response[:50]}...")
 ```
 
+## Permission Modes
+
+By default, Claude Code prompts for permission before using tools. The client supports three modes:
+
+### 1. Default: Curated allowed tools (recommended for code review)
+
+```python
+from safetytooling.infra.cloud_run import ClaudeCodeClient, DEFAULT_ALLOWED_TOOLS
+
+# Uses DEFAULT_ALLOWED_TOOLS - read-only exploration + web search
+client = ClaudeCodeClient(
+    project_id="my-project",
+    gcs_bucket="my-bucket",
+    api_key_secret="anthropic-api-key-USERNAME",
+    service_account="claude-runner@my-project.iam.gserviceaccount.com",
+)
+```
+
+`DEFAULT_ALLOWED_TOOLS` includes:
+- `Read`, `Write`, `Edit` - File operations
+- `Glob`, `Grep` - File search
+- `WebFetch`, `WebSearch` - Documentation lookup
+- `Bash(git log *)`, `Bash(git diff *)`, `Bash(git commit *)`, etc. - Git operations
+- `Bash(ls *)`, `Bash(cat *)`, `Bash(find *)`, etc. - Basic file inspection
+
+These tools allow Claude to explore and modify code, but not execute arbitrary shell commands.
+
+**Note:** `git commit` is wrapped to always use `--no-verify` (skip hooks) for security.
+
+### 2. Custom allowed tools
+
+```python
+# Allow specific tools only
+client = ClaudeCodeClient(
+    project_id="my-project",
+    gcs_bucket="my-bucket",
+    api_key_secret="anthropic-api-key-USERNAME",
+    service_account="claude-runner@my-project.iam.gserviceaccount.com",
+    allowed_tools=(
+        "Read",
+        "Glob",
+        "Bash(python --version)",  # Only this specific command
+    ),
+)
+```
+
+### 3. Skip all permissions (YOLO mode)
+
+```python
+# Bypass all permission prompts - use with caution!
+client = ClaudeCodeClient(
+    project_id="my-project",
+    gcs_bucket="my-bucket",
+    api_key_secret="anthropic-api-key-USERNAME",
+    service_account="claude-runner@my-project.iam.gserviceaccount.com",
+    skip_permissions=True,  # Ignores allowed_tools, allows everything
+)
+```
+
+**Warning**: `skip_permissions=True` allows Claude to run arbitrary shell commands, write files, make network requests, etc. Only use this when you trust the task completely.
+
 ## Custom Containers (low-level)
 
 ```python
@@ -253,7 +314,8 @@ ClaudeCodeClientConfig(
     timeout: int = 300,    # Job timeout in seconds (reduced - pre-built image has no setup)
     cpu: str = "1",        # vCPUs: 1, 2, 4, or 8
     memory: str = "2Gi",   # Up to 32Gi
-    skip_permissions: bool = True,  # --dangerously-skip-permissions
+    skip_permissions: bool = False,  # Set True to use --dangerously-skip-permissions
+    allowed_tools: tuple = DEFAULT_ALLOWED_TOOLS,  # Tools that don't require permission
     image: str = DEFAULT_CLAUDE_CODE_IMAGE,  # Pre-built image with Claude Code
 )
 ```
