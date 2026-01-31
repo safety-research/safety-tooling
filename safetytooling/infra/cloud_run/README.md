@@ -144,7 +144,8 @@ gcloud iam service-accounts create claude-runner \
 SA_EMAIL="claude-runner@${PROJECT}.iam.gserviceaccount.com"
 
 # 2. Grant ONLY access to your specific bucket (not all buckets)
-gsutil iam ch "serviceAccount:${SA_EMAIL}:objectAdmin" "gs://${BUCKET}"
+# objectUser = create, get, delete, list objects (no admin capabilities)
+gsutil iam ch "serviceAccount:${SA_EMAIL}:objectUser" "gs://${BUCKET}"
 
 # 3. Grant access to read your API key secret
 gcloud secrets add-iam-policy-binding $SECRET \
