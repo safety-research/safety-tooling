@@ -174,11 +174,14 @@ client = ClaudeCodeClient(
 - Container can only access `my-bucket`, not other buckets in the project
 - Container can only read the specific API key secret
 - Container cannot access BigQuery, Pub/Sub, other Cloud Run jobs, etc.
+- **Without this, Claude could take over your entire GCP project** - don't skip this step!
 
 **What this doesn't limit:**
-- Outbound network access (use VPC egress rules for that)
-- CPU/memory usage (use Cloud Run quotas)
-- Anthropic API usage (monitor via Anthropic dashboard)
+- Outbound network access (Claude could exfiltrate data to external URLs)
+- Anthropic API usage (Claude could use your API key for other purposes)
+
+For the "yolo Claude" use case, the main risks are data exfiltration and API key abuse.
+Containers are ephemeral (destroyed after job), so there's no persistence risk.
 
 ## How It Works
 
