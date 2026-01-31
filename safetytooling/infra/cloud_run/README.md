@@ -233,6 +233,7 @@ ClaudeCodeClientConfig(
     project_id: str,       # GCP project ID (required)
     gcs_bucket: str,       # GCS bucket for file I/O (required)
     api_key_secret: str,   # Secret Manager secret name (required)
+    service_account: str,  # Restricted service account (required, see Security Hardening)
     region: str = "us-central1",
     model: str = "claude-opus-4-5-20251101",
     max_turns: int = 100,  # Max conversation turns
@@ -241,7 +242,6 @@ ClaudeCodeClientConfig(
     memory: str = "2Gi",   # Up to 32Gi
     skip_permissions: bool = True,  # --dangerously-skip-permissions
     image: str = DEFAULT_CLAUDE_CODE_IMAGE,  # Pre-built image with Claude Code
-    service_account: str = None,  # Restricted service account (recommended, see Security Hardening)
 )
 ```
 
@@ -437,6 +437,7 @@ Full end-to-end tests against real Cloud Run:
 export GCP_PROJECT_ID="your-project"
 export GCS_BUCKET="your-bucket"
 export API_KEY_SECRET="anthropic-api-key-USERNAME"  # Secret Manager secret name
+export SERVICE_ACCOUNT="claude-runner@your-project.iam.gserviceaccount.com"  # Restricted SA
 
 pytest tests/test_cloud_run_integration.py -v --run-integration
 ```

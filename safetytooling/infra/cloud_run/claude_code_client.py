@@ -465,6 +465,13 @@ class ClaudeCodeClient:
                 "Store your ANTHROPIC_API_KEY in GCP Secret Manager and reference it via api_key_secret."
             )
 
+        if not self.config.service_account:
+            raise ClaudeCodeClientError(
+                "service_account is required in config for security. "
+                "Create a restricted service account and specify it via service_account. "
+                "See README 'Security Hardening' section for setup instructions."
+            )
+
         # Build lookup from CloudRunTask id back to ClaudeCodeTask
         claude_task_by_id = {task.id: task for task in tasks}
 

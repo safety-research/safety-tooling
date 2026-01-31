@@ -4,6 +4,7 @@ These tests require:
 - GCP credentials (gcloud auth application-default login)
 - A GCP project with Cloud Run, GCS, and Secret Manager enabled
 - An Anthropic API key stored in Secret Manager
+- A restricted service account for running Claude Code jobs
 
 Run with: pytest tests/test_cloud_run_integration.py -v --run-integration
 
@@ -12,6 +13,8 @@ Environment variables needed:
 - GCS_BUCKET: GCS bucket for file transfer
 - API_KEY_SECRET: Name of the Secret Manager secret containing the Anthropic API key
                   (e.g., "anthropic-api-key-username")
+- SERVICE_ACCOUNT: Service account email for running jobs
+                   (e.g., "claude-runner@my-project.iam.gserviceaccount.com")
 """
 
 import os
@@ -47,6 +50,17 @@ def api_key_secret():
     if not secret_name:
         pytest.skip("API_KEY_SECRET environment variable required (name of Secret Manager secret).")
     return secret_name
+
+
+@pytest.fixture
+def service_account():
+    """Get service account email or skip."""
+    sa_email = os.environ.get("SERVICE_ACCOUNT")
+    if not sa_email:
+        pytest.skip(
+            "SERVICE_ACCOUNT environment variable required (e.g., claude-runner@project.iam.gserviceaccount.com)."
+        )
+    return sa_email
 
 
 class TestCloudRunClient:
@@ -177,7 +191,7 @@ class TestClaudeCodeClient:
     Set API_KEY_SECRET to the name of your secret (e.g., "anthropic-api-key-username").
     """
 
-    def test_simple_task(self, integration_enabled, gcp_config, api_key_secret):
+    def test_simple_task(self, integration_enabled, gcp_config, api_key_secret, service_account):
         """Test Claude Code executing a simple task."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
 
@@ -185,6 +199,7 @@ class TestClaudeCodeClient:
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
             api_key_secret=api_key_secret,
+            service_account=service_account,
             timeout=300,
         )
 
@@ -204,7 +219,7 @@ class TestClaudeCodeClient:
             if result_file.exists():
                 assert "integration test passed" in result_file.read_text().lower()
 
-    def test_with_input_files(self, integration_enabled, gcp_config, api_key_secret):
+    def test_with_input_files(self, integration_enabled, gcp_config, api_key_secret, service_account):
         """Test Claude Code reading input files and producing output."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
 
@@ -212,6 +227,7 @@ class TestClaudeCodeClient:
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
             api_key_secret=api_key_secret,
+            service_account=service_account,
             timeout=300,
         )
 
@@ -232,7 +248,7 @@ class TestClaudeCodeClient:
         assert result.returncode == 0, f"Task failed: {result.error}"
         assert "42" in result.response
 
-    def test_with_system_prompt(self, integration_enabled, gcp_config, api_key_secret):
+    def test_with_system_prompt(self, integration_enabled, gcp_config, api_key_secret, service_account):
         """Test Claude Code with a custom system prompt / constitution."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig
 
@@ -240,6 +256,7 @@ class TestClaudeCodeClient:
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
             api_key_secret=api_key_secret,
+            service_account=service_account,
             timeout=300,
         )
 
@@ -254,7 +271,7 @@ class TestClaudeCodeClient:
         assert result.returncode == 0, f"Task failed: {result.error}"
         assert "CUSTOM_MARKER_12345" in result.response
 
-    def test_multiple_tasks(self, integration_enabled, gcp_config, api_key_secret):
+    def test_multiple_tasks(self, integration_enabled, gcp_config, api_key_secret, service_account):
         """Test running multiple different Claude Code tasks in parallel."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig, ClaudeCodeTask
 
@@ -262,6 +279,7 @@ class TestClaudeCodeClient:
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
             api_key_secret=api_key_secret,
+            service_account=service_account,
             timeout=300,
         )
 
@@ -285,7 +303,7 @@ class TestClaudeCodeClient:
         for r in results[greeting_task]:
             assert "hello" in r.response.lower()
 
-    def test_streaming_results(self, integration_enabled, gcp_config, api_key_secret):
+    def test_streaming_results(self, integration_enabled, gcp_config, api_key_secret, service_account):
         """Test streaming Claude Code results as they complete."""
         from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeClientConfig, ClaudeCodeTask
 
@@ -293,6 +311,7 @@ class TestClaudeCodeClient:
             project_id=gcp_config["project_id"],
             gcs_bucket=gcp_config["gcs_bucket"],
             api_key_secret=api_key_secret,
+            service_account=service_account,
             timeout=300,
         )
 
