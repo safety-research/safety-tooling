@@ -119,6 +119,66 @@ echo -n "NEW_KEY" | gcloud secrets versions add anthropic-api-key-USERNAME \
 
 The client uses `version="latest"` so new keys are picked up automatically on the next job.
 
+## Security Hardening (Recommended)
+
+By default, Cloud Run jobs use the project's default compute service account, which often has broad permissions (e.g., `roles/editor`). This means a misbehaving Claude could:
+
+- Access **all** GCS buckets in the project
+- Read/write other GCP services
+- Make outbound network requests anywhere
+
+**Recommendation**: Create a dedicated service account with minimal permissions.
+
+**One-time setup:**
+
+```bash
+PROJECT=your-project
+BUCKET=your-bucket
+SECRET=anthropic-api-key-USERNAME
+
+# 1. Create restricted service account
+gcloud iam service-accounts create claude-runner \
+    --display-name="Claude Code Runner (restricted)" \
+    --project=$PROJECT
+
+SA_EMAIL="claude-runner@${PROJECT}.iam.gserviceaccount.com"
+
+# 2. Grant ONLY access to your specific bucket (not all buckets)
+gsutil iam ch "serviceAccount:${SA_EMAIL}:objectAdmin" "gs://${BUCKET}"
+
+# 3. Grant access to read your API key secret
+gcloud secrets add-iam-policy-binding $SECRET \
+    --project=$PROJECT \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/secretmanager.secretAccessor"
+
+# 4. Grant permission to write Cloud Run job logs
+gcloud projects add-iam-policy-binding $PROJECT \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/logging.logWriter"
+```
+
+**Use it in your code:**
+
+```python
+client = ClaudeCodeClient(
+    project_id="my-project",
+    gcs_bucket="my-bucket",
+    api_key_secret="anthropic-api-key-USERNAME",
+    service_account="claude-runner@my-project.iam.gserviceaccount.com",  # Restricted!
+)
+```
+
+**What this limits:**
+- Container can only access `my-bucket`, not other buckets in the project
+- Container can only read the specific API key secret
+- Container cannot access BigQuery, Pub/Sub, other Cloud Run jobs, etc.
+
+**What this doesn't limit:**
+- Outbound network access (use VPC egress rules for that)
+- CPU/memory usage (use Cloud Run quotas)
+- Anthropic API usage (monitor via Anthropic dashboard)
+
 ## How It Works
 
 ```
@@ -181,6 +241,7 @@ ClaudeCodeClientConfig(
     memory: str = "2Gi",   # Up to 32Gi
     skip_permissions: bool = True,  # --dangerously-skip-permissions
     image: str = DEFAULT_CLAUDE_CODE_IMAGE,  # Pre-built image with Claude Code
+    service_account: str = None,  # Restricted service account (recommended, see Security Hardening)
 )
 ```
 
@@ -256,6 +317,8 @@ CloudRunClientConfig(
     memory: str = "2Gi",   # Up to 32Gi
     timeout: int = 600,    # Job timeout in seconds
     env: dict = {},        # Environment variables
+    secrets: dict = {},    # Secret Manager secrets as env vars
+    service_account: str = None,  # Restricted service account (see Security Hardening)
 )
 ```
 

@@ -87,6 +87,9 @@ class CloudRunClientConfig:
         secrets: Dict mapping env var names to Secret Manager secret names.
                  Secrets are injected securely via GCP Secret Manager, not embedded in scripts.
                  Format: {"ENV_VAR_NAME": "secret-name"} or {"ENV_VAR_NAME": "projects/proj/secrets/name"}
+        service_account: Service account email for the job (default: uses project default).
+                        Use a restricted service account to limit what the container can access.
+                        Format: "name@project.iam.gserviceaccount.com"
     """
 
     project_id: str
@@ -99,6 +102,7 @@ class CloudRunClientConfig:
     timeout: int = 600
     env: dict[str, str] = field(default_factory=dict)
     secrets: dict[str, str] = field(default_factory=dict)
+    service_account: str | None = None
 
 
 @dataclass(frozen=True)
@@ -479,6 +483,10 @@ exit 0
         job.template.template.containers.append(container)
         job.template.template.max_retries = 0
         job.template.template.timeout = f"{timeout}s"
+
+        # Use custom service account if specified (for security isolation)
+        if self.config.service_account:
+            job.template.template.service_account = self.config.service_account
 
         parent = f"projects/{self.config.project_id}/locations/{self.config.region}"
         request = CreateJobRequest(parent=parent, job=job, job_id=job_id)

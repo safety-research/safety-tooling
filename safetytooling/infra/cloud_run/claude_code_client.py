@@ -82,6 +82,10 @@ class ClaudeCodeClientConfig:
         api_key_secret: Name of Secret Manager secret containing ANTHROPIC_API_KEY (required).
                        The secret is injected securely via GCP Secret Manager at runtime.
                        Format: "secret-name" or "projects/proj/secrets/name"
+        service_account: Service account email for the job (default: uses project default).
+                        SECURITY: Use a restricted service account to limit container access.
+                        See README for setup instructions.
+                        Format: "name@project.iam.gserviceaccount.com"
     """
 
     project_id: str
@@ -96,6 +100,7 @@ class ClaudeCodeClientConfig:
     skip_permissions: bool = True
     image: str = DEFAULT_CLAUDE_CODE_IMAGE
     api_key_secret: str | None = None
+    service_account: str | None = None
 
 
 @dataclass(frozen=True)
@@ -381,6 +386,7 @@ class ClaudeCodeClient:
             timeout=self.config.timeout,
             env={},
             secrets=secrets,
+            service_account=self.config.service_account,
         )
         self._cloud_run = CloudRunClient(cloud_run_config)
 
