@@ -103,6 +103,13 @@ class ClaudeCodeClientConfig:
     service_account: str | None = None
 
 
+# Instructions prepended to task when output_instructions=True
+OUTPUT_INSTRUCTIONS = """Write any output files to /workspace/output/ so they can be retrieved after the job completes.
+Input files are available at /workspace/input/.
+
+"""
+
+
 @dataclass(frozen=True)
 class ClaudeCodeTask:
     """A Claude Code task to run in Cloud Run.
@@ -117,6 +124,7 @@ class ClaudeCodeTask:
         pre_claude_command: Shell command to run before Claude Code (e.g., git config, repo setup)
         post_claude_command: Shell command to run after Claude Code
         n: Number of times to run this task (default: 1)
+        output_instructions: Prepend instructions telling Claude where to write output files (default: True)
     """
 
     id: str
@@ -126,6 +134,7 @@ class ClaudeCodeTask:
     pre_claude_command: str | None = None
     post_claude_command: str | None = None
     n: int = 1
+    output_instructions: bool = True
 
     def to_cloud_run_task(
         self,
@@ -139,8 +148,13 @@ class ClaudeCodeTask:
         Returns:
             CloudRunTask ready to execute
         """
+        # Optionally prepend output instructions
+        task = self.task
+        if self.output_instructions:
+            task = OUTPUT_INSTRUCTIONS + task
+
         command = _build_claude_command(
-            task=self.task,
+            task=task,
             system_prompt=self.system_prompt,
             pre_claude_command=self.pre_claude_command,
             post_claude_command=self.post_claude_command,
@@ -492,6 +506,7 @@ class ClaudeCodeClient:
         system_prompt: str | None = None,
         pre_claude_command: str | None = None,
         post_claude_command: str | None = None,
+        output_instructions: bool = True,
     ) -> ClaudeCodeResult:
         """
         Convenience method to run a single Claude Code task.
@@ -502,6 +517,7 @@ class ClaudeCodeClient:
             system_prompt: Optional system prompt / constitution
             pre_claude_command: Shell command to run before Claude Code
             post_claude_command: Shell command to run after Claude Code
+            output_instructions: Prepend instructions telling Claude where to write output files (default: True)
 
         Returns:
             ClaudeCodeResult
@@ -521,6 +537,7 @@ class ClaudeCodeClient:
             system_prompt=system_prompt,
             pre_claude_command=pre_claude_command,
             post_claude_command=post_claude_command,
+            output_instructions=output_instructions,
         )
         results = self.run([claude_task], progress=False)
         return results[claude_task][0]

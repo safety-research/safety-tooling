@@ -225,10 +225,19 @@ ClaudeCodeTask(
     pre_claude_command: str | None,   # Shell command before Claude
     post_claude_command: str | None,  # Shell command after Claude
     n: int = 1,                 # Number of times to run this task
+    output_instructions: bool = True,  # Prepend instructions about /workspace paths
 )
 ```
 
 Note: `inputs` uses tuples (not dicts) so the task is hashable and can be used as a dict key.
+
+When `output_instructions=True` (default), the task is prepended with:
+```
+Write any output files to /workspace/output/ so they can be retrieved after the job completes.
+Input files are available at /workspace/input/.
+```
+
+Set `output_instructions=False` if you're providing your own instructions or don't need file outputs.
 
 ### ClaudeCodeClientConfig
 
@@ -280,6 +289,7 @@ result = client.run_single(
     system_prompt: str = None,        # Custom system prompt / constitution
     pre_claude_command: str = None,   # Shell command before Claude
     post_claude_command: str = None,  # Shell command after Claude
+    output_instructions: bool = True, # Prepend instructions about /workspace paths
 )
 # Returns: ClaudeCodeResult
 ```
@@ -379,6 +389,25 @@ Inside the container:
 │   ├── repo/            <- from inputs=(("repo", Path(...)),)
 │   └── data.json        <- from inputs=(("data.json", Path(...)),)
 └── output/              <- Write results here (retrieved after job completes)
+```
+
+**Important**: Claude doesn't automatically know about these paths. By default, `output_instructions=True` prepends instructions telling Claude to write outputs to `/workspace/output/`. If you set `output_instructions=False`, you need to tell Claude where to write files in your task prompt:
+
+```python
+# With output_instructions=True (default) - Claude is told about paths automatically
+task = ClaudeCodeTask(
+    id="analyze",
+    task="Analyze the code and write a report",  # Will be prepended with path instructions
+    inputs=(("repo", "./my_repo"),),
+)
+
+# With output_instructions=False - you must specify paths yourself
+task = ClaudeCodeTask(
+    id="analyze",
+    task="Analyze /workspace/input/repo and write report to /workspace/output/report.md",
+    inputs=(("repo", "./my_repo"),),
+    output_instructions=False,
+)
 ```
 
 ## Caching
