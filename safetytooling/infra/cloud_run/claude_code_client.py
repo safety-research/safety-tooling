@@ -90,6 +90,8 @@ class ClaudeCodeClientConfig:
         secrets: Additional secrets from Secret Manager, mapped as env vars.
                  Format: {"ENV_VAR_NAME": "secret-name"}
                  These are merged with api_key_secret (which sets ANTHROPIC_API_KEY).
+        claude_command: Custom command template for running claude. Use {flags}, {system_prompt_arg},
+                       and {task} as placeholders. Default: 'claude {flags} {system_prompt_arg} "{task}"'
     """
 
     project_id: str
@@ -107,6 +109,7 @@ class ClaudeCodeClientConfig:
     service_account: str | None = None
     env: dict[str, str] = field(default_factory=dict)
     secrets: dict[str, str] = field(default_factory=dict)
+    claude_command: str | None = None  # Custom command template
 
 
 # Instructions prepended to task when output_instructions=True
@@ -229,6 +232,17 @@ def _build_claude_command(
     if system_prompt:
         system_prompt_arg = '--system-prompt "$(cat /tmp/system_prompt.txt)"'
 
+    # Build the claude command (either custom or default)
+    # Supports placeholders: {flags}, {system_prompt_arg}, {task}
+    if config.claude_command:
+        claude_run_cmd = config.claude_command.format(
+            flags=claude_flags_str,
+            system_prompt_arg=system_prompt_arg,
+            task="$(cat /tmp/task.txt)",
+        )
+    else:
+        claude_run_cmd = f'claude {claude_flags_str} {system_prompt_arg} "$(cat /tmp/task.txt)"'
+
     pre_command_section = pre_claude_command or ""
     post_command_section = post_claude_command or ""
 
@@ -285,7 +299,7 @@ chown -R claude:claude /workspace
 # Use 'su claude' (not 'su - claude') to preserve environment including ANTHROPIC_API_KEY
 echo "Starting Claude Code..."
 set +e
-su claude -c 'cd /workspace && /tmp/pre_claude.sh && claude {claude_flags_str} {system_prompt_arg} "$(cat /tmp/task.txt)"; echo $? > /tmp/claude_exitcode.txt; /tmp/post_claude.sh'
+su claude -c 'cd /workspace && /tmp/pre_claude.sh && {claude_run_cmd}; echo $? > /tmp/claude_exitcode.txt; /tmp/post_claude.sh'
 CLAUDE_EXIT=$?
 set -e
 
