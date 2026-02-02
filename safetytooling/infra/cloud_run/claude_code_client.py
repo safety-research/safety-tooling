@@ -45,7 +45,7 @@ Usage:
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
@@ -86,6 +86,10 @@ class ClaudeCodeClientConfig:
                         SECURITY: Use a restricted service account to limit container access.
                         See README for setup instructions.
                         Format: "name@project.iam.gserviceaccount.com"
+        env: Additional environment variables (plain text values).
+        secrets: Additional secrets from Secret Manager, mapped as env vars.
+                 Format: {"ENV_VAR_NAME": "secret-name"}
+                 These are merged with api_key_secret (which sets ANTHROPIC_API_KEY).
     """
 
     project_id: str
@@ -101,6 +105,8 @@ class ClaudeCodeClientConfig:
     image: str = DEFAULT_CLAUDE_CODE_IMAGE
     api_key_secret: str | None = None
     service_account: str | None = None
+    env: dict[str, str] = field(default_factory=dict)
+    secrets: dict[str, str] = field(default_factory=dict)
 
 
 # Instructions prepended to task when output_instructions=True
@@ -383,8 +389,8 @@ class ClaudeCodeClient:
                 **kwargs,
             )
 
-        # Build secrets dict for Cloud Run
-        secrets = {}
+        # Build secrets dict for Cloud Run (merge api_key_secret with additional secrets)
+        secrets = dict(self.config.secrets)  # Copy additional secrets
         if self.config.api_key_secret:
             secrets["ANTHROPIC_API_KEY"] = self.config.api_key_secret
 
@@ -398,7 +404,7 @@ class ClaudeCodeClient:
             cpu=self.config.cpu,
             memory=self.config.memory,
             timeout=self.config.timeout,
-            env={},
+            env=dict(self.config.env),
             secrets=secrets,
             service_account=self.config.service_account,
         )
