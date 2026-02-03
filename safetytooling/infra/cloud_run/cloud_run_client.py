@@ -53,7 +53,6 @@ from google.cloud import run_v2, storage
 from google.cloud.run_v2 import JobsClient
 from google.cloud.run_v2.types import (
     CreateJobRequest,
-    DeleteJobRequest,
     EnvVar,
     EnvVarSource,
     RunJobRequest,
@@ -179,9 +178,11 @@ class CloudRunClient:
     """
 
     # Class-level caches for efficiency across parallel runs
-    _inputs_cache: ClassVar[dict[str, str]] = {}
+    _inputs_cache: ClassVar[dict[str, str]] = {}  # inputs_key -> gcs_path
     _inputs_locks: ClassVar[dict[str, threading.Lock]] = {}
     _locks_lock: ClassVar[threading.Lock] = threading.Lock()
+    _job_cache: ClassVar[dict[str, str]] = {}  # config_hash -> job_name
+    _job_locks: ClassVar[dict[str, threading.Lock]] = {}  # config_hash -> lock
 
     def __init__(self, config: CloudRunClientConfig):
         self.config = config
@@ -338,52 +339,48 @@ class CloudRunClient:
     ) -> CloudRunResult:
         """Run a single command in a Cloud Run container."""
         start_time = time.time()
-        job_id = f"{self.config.name_prefix}-{int(time.time())}-{uuid.uuid4().hex[:8]}"
-        job_name = None
-        output_gcs_path = f"{GCS_OUTPUTS_PREFIX}/{job_id}.tar.gz"
+        # Generate unique output path for this execution
+        execution_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
+        output_gcs_path = f"{GCS_OUTPUTS_PREFIX}/{execution_id}.tar.gz"
 
-        try:
-            # Upload inputs if provided
-            input_gcs_path = None
-            if inputs:
-                input_gcs_path = self._upload_inputs(inputs)
+        # Upload inputs if provided
+        input_gcs_path = None
+        if inputs:
+            input_gcs_path = self._upload_inputs(inputs)
 
-            # Build and run job
-            job_name = self._create_and_run_job(
-                job_id=job_id,
-                command=command,
-                input_gcs_path=input_gcs_path,
-                output_gcs_path=output_gcs_path,
-                timeout=timeout,
-            )
+        # Get or create reusable job, then run execution
+        # (job_id parameter is unused in new implementation)
+        self._create_and_run_job(
+            job_id="",  # Unused
+            command=command,
+            input_gcs_path=input_gcs_path,
+            output_gcs_path=output_gcs_path,
+            timeout=timeout,
+        )
 
-            # Download outputs
-            output_dir = self._download_outputs(output_gcs_path)
+        # Download outputs
+        output_dir = self._download_outputs(output_gcs_path)
 
-            # Read captured stdout/stderr/exitcode
-            stdout = (output_dir / "stdout.txt").read_text() if (output_dir / "stdout.txt").exists() else ""
-            stderr = (output_dir / "stderr.txt").read_text() if (output_dir / "stderr.txt").exists() else ""
-            returncode = 1
-            if (output_dir / "exitcode.txt").exists():
-                try:
-                    returncode = int((output_dir / "exitcode.txt").read_text().strip())
-                except ValueError:
-                    pass
+        # Read captured stdout/stderr/exitcode
+        stdout = (output_dir / "stdout.txt").read_text() if (output_dir / "stdout.txt").exists() else ""
+        stderr = (output_dir / "stderr.txt").read_text() if (output_dir / "stderr.txt").exists() else ""
+        returncode = 1
+        if (output_dir / "exitcode.txt").exists():
+            try:
+                returncode = int((output_dir / "exitcode.txt").read_text().strip())
+            except ValueError:
+                pass
 
-            duration = time.time() - start_time
+        duration = time.time() - start_time
 
-            return CloudRunResult(
-                stdout=stdout,
-                stderr=stderr,
-                output_dir=output_dir,
-                returncode=returncode,
-                duration_seconds=duration,
-            )
-
-        finally:
-            # Clean up job (but not cached inputs)
-            if job_name:
-                self._delete_job(job_name)
+        return CloudRunResult(
+            stdout=stdout,
+            stderr=stderr,
+            output_dir=output_dir,
+            returncode=returncode,
+            duration_seconds=duration,
+        )
+        # Note: No cleanup needed - jobs are reused, executions auto-cleanup
 
     def _upload_inputs(self, inputs: dict[str, Path]) -> str:
         """Upload inputs to GCS with content-addressed caching."""
@@ -404,35 +401,43 @@ class CloudRunClient:
             finally:
                 tar_path.unlink(missing_ok=True)
 
-    def _create_and_run_job(
-        self,
-        job_id: str,
-        command: str,
-        input_gcs_path: str | None,
-        output_gcs_path: str,
-        timeout: int,
-    ) -> str:
-        """Create and execute a Cloud Run job. Returns job name."""
-        # Build input download section
-        input_section = ""
-        if input_gcs_path:
-            input_section = f"""
-echo "Downloading inputs..."
-gcloud storage cp "gs://{self.config.gcs_bucket}/{input_gcs_path}" /tmp/input.tar.gz
-cd /workspace/input
-tar xzf /tmp/input.tar.gz
-"""
+    def _get_or_create_job(self, timeout: int) -> str:
+        """Get or create a reusable Cloud Run job for this config.
 
-        script = f"""
+        Jobs are cached by config hash. The job uses a generic script that reads
+        INPUT_GCS_PATH, OUTPUT_GCS_PATH, and COMMAND from environment variables,
+        which are passed via execution overrides.
+
+        Returns:
+            Full job name (projects/.../jobs/...)
+        """
+        config_hash = self._compute_config_hash()
+
+        with self._get_job_lock(config_hash):
+            if config_hash in self._job_cache:
+                return self._job_cache[config_hash]
+
+            job_id = f"{self.config.name_prefix}-{config_hash[:16]}"
+
+            # Generic script that reads from env vars
+            # INPUT_GCS_PATH, OUTPUT_GCS_PATH, COMMAND are set per-execution via overrides
+            script = f"""
 set -e
 mkdir -p /workspace/input /workspace/output
 cd /workspace
 
-{input_section}
+# Download inputs if INPUT_GCS_PATH is set
+if [ -n "$INPUT_GCS_PATH" ]; then
+    echo "Downloading inputs from $INPUT_GCS_PATH..."
+    gcloud storage cp "gs://{self.config.gcs_bucket}/$INPUT_GCS_PATH" /tmp/input.tar.gz
+    cd /workspace/input
+    tar xzf /tmp/input.tar.gz
+    cd /workspace
+fi
 
 echo "Running command..."
 set +e
-( {command} ) > /tmp/cmd_stdout.txt 2> /tmp/cmd_stderr.txt
+( eval "$COMMAND" ) > /tmp/cmd_stdout.txt 2> /tmp/cmd_stderr.txt
 EXIT_CODE=$?
 set -e
 
@@ -440,68 +445,140 @@ cp /tmp/cmd_stdout.txt /workspace/output/stdout.txt
 cp /tmp/cmd_stderr.txt /workspace/output/stderr.txt
 echo $EXIT_CODE > /workspace/output/exitcode.txt
 
-echo "Uploading outputs..."
+echo "Uploading outputs to $OUTPUT_GCS_PATH..."
 cd /workspace/output
 tar czf /tmp/output.tar.gz .
-gcloud storage cp /tmp/output.tar.gz "gs://{self.config.gcs_bucket}/{output_gcs_path}"
+gcloud storage cp /tmp/output.tar.gz "gs://{self.config.gcs_bucket}/$OUTPUT_GCS_PATH"
 exit 0
 """
 
-        # Build env vars - plain text values
-        env_vars = [EnvVar(name=k, value=v) for k, v in self.config.env.items()]
+            # Build env vars - plain text values from config
+            env_vars = [EnvVar(name=k, value=v) for k, v in self.config.env.items()]
 
-        # Add secrets as env vars via Secret Manager (secure injection)
-        for env_name, secret_name in self.config.secrets.items():
-            # Handle both short names and full paths
-            if not secret_name.startswith("projects/"):
-                secret_path = f"projects/{self.config.project_id}/secrets/{secret_name}"
-            else:
-                secret_path = secret_name
+            # Add secrets as env vars via Secret Manager (secure injection)
+            for env_name, secret_name in self.config.secrets.items():
+                if not secret_name.startswith("projects/"):
+                    secret_path = f"projects/{self.config.project_id}/secrets/{secret_name}"
+                else:
+                    secret_path = secret_name
 
-            secret_env = EnvVar(
-                name=env_name,
-                value_source=EnvVarSource(
-                    secret_key_ref=SecretKeySelector(
-                        secret=secret_path,
-                        version="latest",
-                    )
-                ),
-            )
-            env_vars.append(secret_env)
+                secret_env = EnvVar(
+                    name=env_name,
+                    value_source=EnvVarSource(
+                        secret_key_ref=SecretKeySelector(
+                            secret=secret_path,
+                            version="latest",
+                        )
+                    ),
+                )
+                env_vars.append(secret_env)
 
-        job = run_v2.Job()
-        container = run_v2.Container()
-        container.image = self.config.image
-        container.command = ["/bin/bash", "-c"]
-        container.args = [script]
-        container.env = env_vars
-        container.resources.limits = {
-            "cpu": self.config.cpu,
-            "memory": self.config.memory,
-        }
+            # Add placeholder env vars (overridden at execution time)
+            env_vars.append(EnvVar(name="INPUT_GCS_PATH", value=""))
+            env_vars.append(EnvVar(name="OUTPUT_GCS_PATH", value=""))
+            env_vars.append(EnvVar(name="COMMAND", value="true"))  # Default no-op
 
-        job.template.template.containers.append(container)
-        job.template.template.max_retries = 0
-        job.template.template.timeout = f"{timeout}s"
+            job = run_v2.Job()
+            container = run_v2.Container()
+            container.image = self.config.image
+            container.command = ["/bin/bash", "-c"]
+            container.args = [script]
+            container.env = env_vars
+            container.resources.limits = {
+                "cpu": self.config.cpu,
+                "memory": self.config.memory,
+            }
 
-        # Use custom service account if specified (for security isolation)
-        if self.config.service_account:
-            job.template.template.service_account = self.config.service_account
+            job.template.template.containers.append(container)
+            job.template.template.max_retries = 0
+            job.template.template.timeout = f"{timeout}s"
 
-        parent = f"projects/{self.config.project_id}/locations/{self.config.region}"
-        request = CreateJobRequest(parent=parent, job=job, job_id=job_id)
+            if self.config.service_account:
+                job.template.template.service_account = self.config.service_account
 
-        operation = self._jobs_client.create_job(request=request)
-        created_job = operation.result()
-        job_name = created_job.name
+            parent = f"projects/{self.config.project_id}/locations/{self.config.region}"
+            request = CreateJobRequest(parent=parent, job=job, job_id=job_id)
 
-        run_request = RunJobRequest(name=job_name)
+            try:
+                operation = self._jobs_client.create_job(request=request)
+                created_job = operation.result()
+                job_name = created_job.name
+            except Exception as e:
+                # Job might already exist (from previous process/session)
+                if "already exists" in str(e).lower():
+                    job_name = f"{parent}/jobs/{job_id}"
+                else:
+                    raise CloudRunClientError(f"Failed to create job: {e}")
+
+            self._job_cache[config_hash] = job_name
+            return job_name
+
+    def _run_job_execution(
+        self,
+        job_name: str,
+        command: str,
+        input_gcs_path: str | None,
+        output_gcs_path: str,
+        timeout: int,
+    ) -> None:
+        """Run an execution of an existing job with specific inputs/outputs/command.
+
+        Uses RunJobRequest.Overrides to pass per-execution environment variables.
+        """
+        # Build env var overrides for this execution
+        env_overrides = [
+            run_v2.EnvVar(name="OUTPUT_GCS_PATH", value=output_gcs_path),
+            run_v2.EnvVar(name="COMMAND", value=command),
+        ]
+        if input_gcs_path:
+            env_overrides.append(run_v2.EnvVar(name="INPUT_GCS_PATH", value=input_gcs_path))
+
+        # Create container override with env vars
+        container_override = run_v2.RunJobRequest.Overrides.ContainerOverride(
+            env=env_overrides,
+        )
+
+        # Create task override with timeout
+        task_override = run_v2.RunJobRequest.Overrides(
+            container_overrides=[container_override],
+            timeout=f"{timeout}s",
+        )
+
+        run_request = RunJobRequest(
+            name=job_name,
+            overrides=task_override,
+        )
+
         run_operation = self._jobs_client.run_job(request=run_request)
 
         try:
             run_operation.result(timeout=timeout + 120)
         except Exception as e:
             raise CloudRunClientError(f"Job execution failed: {e}")
+
+    def _create_and_run_job(
+        self,
+        job_id: str,  # Kept for backward compatibility but unused
+        command: str,
+        input_gcs_path: str | None,
+        output_gcs_path: str,
+        timeout: int,
+    ) -> str:
+        """Create (or reuse) and execute a Cloud Run job. Returns job name.
+
+        This method now reuses job definitions across executions. Each execution
+        passes its specific command, inputs, and outputs via environment variable
+        overrides. This avoids hitting the 1000 job quota.
+        """
+        job_name = self._get_or_create_job(timeout)
+
+        self._run_job_execution(
+            job_name=job_name,
+            command=command,
+            input_gcs_path=input_gcs_path,
+            output_gcs_path=output_gcs_path,
+            timeout=timeout,
+        )
 
         return job_name
 
@@ -527,23 +604,6 @@ exit 0
         finally:
             tar_path.unlink(missing_ok=True)
 
-    def _delete_job(self, job_name: str) -> None:
-        """Delete a Cloud Run job with retries."""
-        import logging
-
-        for attempt in range(3):
-            try:
-                request = DeleteJobRequest(name=job_name)
-                operation = self._jobs_client.delete_job(request=request)
-                # Don't wait for completion - fire and forget
-                # The operation will complete async, avoiding timeout issues
-                return
-            except Exception as e:
-                if attempt == 2:
-                    logging.warning(f"Failed to delete job {job_name} after 3 attempts: {e}")
-                else:
-                    time.sleep(1)  # Brief pause before retry
-
     @classmethod
     def _get_inputs_lock(cls, inputs_key: str) -> threading.Lock:
         """Get or create a lock for a specific inputs key."""
@@ -551,6 +611,38 @@ exit 0
             if inputs_key not in cls._inputs_locks:
                 cls._inputs_locks[inputs_key] = threading.Lock()
             return cls._inputs_locks[inputs_key]
+
+    @classmethod
+    def _get_job_lock(cls, config_hash: str) -> threading.Lock:
+        """Get or create a lock for a specific config hash."""
+        with cls._locks_lock:
+            if config_hash not in cls._job_locks:
+                cls._job_locks[config_hash] = threading.Lock()
+            return cls._job_locks[config_hash]
+
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the job configuration (everything that goes into job definition).
+
+        This includes: image, cpu, memory, env vars, secrets, service_account, region, project.
+        Does NOT include: command, inputs, outputs, timeout (those vary per execution).
+        """
+        config_parts = [
+            self.config.project_id,
+            self.config.region,
+            self.config.image,
+            self.config.cpu,
+            self.config.memory,
+            self.config.service_account or "",
+            self.config.gcs_bucket,
+        ]
+        # Add sorted env vars
+        for k, v in sorted(self.config.env.items()):
+            config_parts.append(f"env:{k}={v}")
+        # Add sorted secrets
+        for k, v in sorted(self.config.secrets.items()):
+            config_parts.append(f"secret:{k}={v}")
+
+        return hashlib.md5("|".join(config_parts).encode()).hexdigest()
 
     @classmethod
     def _compute_inputs_key(cls, inputs: dict[str, Path]) -> str:
