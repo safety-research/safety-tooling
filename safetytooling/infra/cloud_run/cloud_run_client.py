@@ -551,41 +551,29 @@ exit 0
         return hashlib.md5("|".join(path_strs).encode()).hexdigest()
 
     def _tar_inputs(self, inputs: dict[str, Path], tar_path: Path) -> None:
-        """Create a deterministic gzipped tarball from inputs."""
+        """Create a gzipped tarball from inputs, preserving file permissions.
 
-        def _add_path_to_tar(tar: tarfile.TarFile, local_path: Path, arcname: str) -> None:
-            if local_path.is_file():
-                ti = tarfile.TarInfo(name=arcname)
-                ti.size = local_path.stat().st_size
-                ti.mtime = 0
-                ti.uid = ti.gid = 0
-                ti.uname = ti.gname = ""
-                ti.mode = 0o644
-                with open(local_path, "rb") as f:
-                    tar.addfile(ti, f)
-            elif local_path.is_dir():
-                ti = tarfile.TarInfo(name=arcname + "/")
-                ti.type = tarfile.DIRTYPE
-                ti.mtime = 0
-                ti.uid = ti.gid = 0
-                ti.uname = ti.gname = ""
-                ti.mode = 0o755
-                tar.addfile(ti)
-                for child in sorted(local_path.iterdir()):
-                    _add_path_to_tar(tar, child, f"{arcname}/{child.name}")
+        Normalizes mtime for deterministic hashes (enables GCS deduplication)
+        while preserving file permissions.
+        """
 
+        def normalize_mtime(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo:
+            tarinfo.mtime = 0
+            return tarinfo
+
+        # Create uncompressed tar first, then gzip with mtime=0
         tar_buffer = io.BytesIO()
         with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
             for name, local_path in sorted(inputs.items()):
                 local_path = Path(local_path).expanduser().resolve()
                 if not local_path.exists():
                     raise CloudRunClientError(f"Input not found: {local_path}")
-                _add_path_to_tar(tar, local_path, name)
+                tar.add(local_path, arcname=name, filter=normalize_mtime)
 
-        tar_data = tar_buffer.getvalue()
+        # Gzip with mtime=0 and no filename for deterministic output
         gz_buffer = io.BytesIO()
         with gzip.GzipFile(fileobj=gz_buffer, mode="wb", mtime=0) as gz:
-            gz.write(tar_data)
+            gz.write(tar_buffer.getvalue())
         tar_path.write_bytes(gz_buffer.getvalue())
 
     def _upload_to_gcs_if_needed(self, tar_path: Path) -> str:
