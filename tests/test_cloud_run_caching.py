@@ -57,6 +57,56 @@ def mock_gcs_client():
     return MockClient(), uploads, existing_blobs
 
 
+class TestTarPermissionPreservation:
+    """Test that tarring preserves file permissions."""
+
+    def test_full_mode_preserved(self, temp_repo):
+        """File permission mode should be fully preserved after tar round-trip."""
+        import os
+        import tarfile
+
+        from safetytooling.infra.cloud_run.cloud_run_client import (
+            CloudRunClient,
+            CloudRunClientConfig,
+        )
+
+        test_cases = [
+            ("script.sh", 0o755),
+            ("private_script.sh", 0o700),
+            ("group_exec.sh", 0o750),
+            ("data.txt", 0o644),
+            ("readonly.txt", 0o444),
+        ]
+
+        for name, mode in test_cases:
+            f = temp_repo / name
+            f.write_text(f"# {name}")
+            os.chmod(f, mode)
+
+        with patch.object(CloudRunClient, "__init__", lambda self, config: None):
+            client = CloudRunClient.__new__(CloudRunClient)
+            client.config = CloudRunClientConfig(project_id="test", gcs_bucket="test-bucket")
+
+            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as f:
+                tar_path = Path(f.name)
+
+            try:
+                client._tar_inputs({"repo": temp_repo}, tar_path)
+
+                with tempfile.TemporaryDirectory() as extract_dir:
+                    with tarfile.open(tar_path, "r:gz") as tar:
+                        tar.extractall(extract_dir)
+
+                    for name, expected_mode in test_cases:
+                        extracted = Path(extract_dir) / "repo" / name
+                        actual_mode = os.stat(extracted).st_mode & 0o777
+                        assert (
+                            actual_mode == expected_mode
+                        ), f"{name}: expected {oct(expected_mode)}, got {oct(actual_mode)}"
+            finally:
+                tar_path.unlink(missing_ok=True)
+
+
 class TestDeterministicTarring:
     """Test that tarring is deterministic (same content = same hash)."""
 

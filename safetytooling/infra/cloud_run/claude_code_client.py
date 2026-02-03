@@ -45,6 +45,7 @@ Usage:
 
 import json
 import os
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -216,6 +217,9 @@ def _build_claude_command(
     ]
     if config.skip_permissions:
         claude_flags.append("--dangerously-skip-permissions")
+    elif config.allowed_tools:
+        quoted_tools = [shlex.quote(tool) for tool in config.allowed_tools]
+        claude_flags.append(f"--allowedTools {' '.join(quoted_tools)}")
 
     claude_flags_str = " ".join(claude_flags)
 
