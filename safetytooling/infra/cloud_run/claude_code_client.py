@@ -252,10 +252,16 @@ def _build_claude_command(
     if config.skip_permissions:
         claude_flags.append("--dangerously-skip-permissions")
     elif config.allowed_tools:
-        # Add each allowed tool pattern as a separate --allowedTools argument
+        # Pass all tools as space-separated arguments after --allowedTools
+        # Use double quotes for tools with special chars (works inside single-quoted shell command)
+        quoted_tools = []
         for tool in config.allowed_tools:
-            # Quote the tool pattern to handle spaces and special chars
-            claude_flags.append(f'--allowedTools "{tool}"')
+            if "(" in tool or " " in tool or "*" in tool:
+                quoted_tools.append(f'"{tool}"')
+            else:
+                quoted_tools.append(tool)
+        tools_str = " ".join(quoted_tools)
+        claude_flags.append(f"--allowedTools {tools_str}")
 
     claude_flags_str = " ".join(claude_flags)
 

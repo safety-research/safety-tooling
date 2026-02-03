@@ -551,7 +551,11 @@ exit 0
         return hashlib.md5("|".join(path_strs).encode()).hexdigest()
 
     def _tar_inputs(self, inputs: dict[str, Path], tar_path: Path) -> None:
-        """Create a deterministic gzipped tarball from inputs."""
+        """Create a deterministic gzipped tarball from inputs.
+
+        Preserves the executable bit from source files while normalizing
+        other metadata (mtime, uid, gid) for content-addressed caching.
+        """
 
         def _add_path_to_tar(tar: tarfile.TarFile, local_path: Path, arcname: str) -> None:
             if local_path.is_file():
@@ -560,7 +564,9 @@ exit 0
                 ti.mtime = 0
                 ti.uid = ti.gid = 0
                 ti.uname = ti.gname = ""
-                ti.mode = 0o644
+                # Preserve executable bit: 0o755 if executable, 0o644 otherwise
+                source_mode = local_path.stat().st_mode
+                ti.mode = 0o755 if source_mode & 0o111 else 0o644
                 with open(local_path, "rb") as f:
                     tar.addfile(ti, f)
             elif local_path.is_dir():

@@ -57,6 +57,115 @@ def mock_gcs_client():
     return MockClient(), uploads, existing_blobs
 
 
+class TestTarPermissionPreservation:
+    """Test that tarring preserves file permissions (especially executable bit)."""
+
+    def test_executable_bit_preserved(self, temp_repo):
+        """Executable files should remain executable after tar round-trip."""
+        import os
+        import tarfile
+
+        from safetytooling.infra.cloud_run.cloud_run_client import (
+            CloudRunClient,
+            CloudRunClientConfig,
+        )
+
+        # Create executable and non-executable files
+        script = temp_repo / "script.sh"
+        script.write_text("#!/bin/bash\necho hello")
+        os.chmod(script, 0o755)  # rwxr-xr-x
+
+        regular = temp_repo / "data.txt"
+        regular.write_text("just data")
+        os.chmod(regular, 0o644)  # rw-r--r--
+
+        # Verify source permissions
+        assert os.stat(script).st_mode & 0o111, "script.sh should be executable"
+        assert not (os.stat(regular).st_mode & 0o111), "data.txt should not be executable"
+
+        with patch.object(CloudRunClient, "__init__", lambda self, config: None):
+            client = CloudRunClient.__new__(CloudRunClient)
+            client.config = CloudRunClientConfig(project_id="test", gcs_bucket="test-bucket")
+
+            # Create tarball
+            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as f:
+                tar_path = Path(f.name)
+
+            try:
+                client._tar_inputs({"repo": temp_repo}, tar_path)
+
+                # Extract and check permissions
+                with tempfile.TemporaryDirectory() as extract_dir:
+                    with tarfile.open(tar_path, "r:gz") as tar:
+                        tar.extractall(extract_dir)
+
+                    extracted_script = Path(extract_dir) / "repo" / "script.sh"
+                    extracted_regular = Path(extract_dir) / "repo" / "data.txt"
+
+                    script_mode = os.stat(extracted_script).st_mode
+                    regular_mode = os.stat(extracted_regular).st_mode
+
+                    assert script_mode & 0o111, (
+                        f"script.sh should be executable after round-trip, got mode {oct(script_mode)}"
+                    )
+                    assert not (regular_mode & 0o111), (
+                        f"data.txt should NOT be executable after round-trip, got mode {oct(regular_mode)}"
+                    )
+            finally:
+                tar_path.unlink(missing_ok=True)
+
+    def test_nested_executable_preserved(self, temp_repo):
+        """Executable files in subdirectories should also be preserved."""
+        import os
+        import tarfile
+
+        from safetytooling.infra.cloud_run.cloud_run_client import (
+            CloudRunClient,
+            CloudRunClientConfig,
+        )
+
+        # Create nested structure with executables
+        scripts_dir = temp_repo / "scripts"
+        scripts_dir.mkdir()
+
+        build_script = scripts_dir / "build.sh"
+        build_script.write_text("#!/bin/bash\nmake all")
+        os.chmod(build_script, 0o755)
+
+        test_script = scripts_dir / "test.sh"
+        test_script.write_text("#!/bin/bash\npytest")
+        os.chmod(test_script, 0o755)
+
+        config_file = scripts_dir / "config.json"
+        config_file.write_text("{}")
+        os.chmod(config_file, 0o644)
+
+        with patch.object(CloudRunClient, "__init__", lambda self, config: None):
+            client = CloudRunClient.__new__(CloudRunClient)
+            client.config = CloudRunClientConfig(project_id="test", gcs_bucket="test-bucket")
+
+            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as f:
+                tar_path = Path(f.name)
+
+            try:
+                client._tar_inputs({"repo": temp_repo}, tar_path)
+
+                with tempfile.TemporaryDirectory() as extract_dir:
+                    with tarfile.open(tar_path, "r:gz") as tar:
+                        tar.extractall(extract_dir)
+
+                    for script_name in ["build.sh", "test.sh"]:
+                        extracted = Path(extract_dir) / "repo" / "scripts" / script_name
+                        mode = os.stat(extracted).st_mode
+                        assert mode & 0o111, f"{script_name} should be executable, got mode {oct(mode)}"
+
+                    config_extracted = Path(extract_dir) / "repo" / "scripts" / "config.json"
+                    mode = os.stat(config_extracted).st_mode
+                    assert not (mode & 0o111), f"config.json should NOT be executable, got mode {oct(mode)}"
+            finally:
+                tar_path.unlink(missing_ok=True)
+
+
 class TestDeterministicTarring:
     """Test that tarring is deterministic (same content = same hash)."""
 
