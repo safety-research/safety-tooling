@@ -528,13 +528,21 @@ exit 0
             tar_path.unlink(missing_ok=True)
 
     def _delete_job(self, job_name: str) -> None:
-        """Delete a Cloud Run job."""
-        try:
-            request = DeleteJobRequest(name=job_name)
-            operation = self._jobs_client.delete_job(request=request)
-            operation.result(timeout=60)
-        except Exception:
-            pass  # Best effort cleanup
+        """Delete a Cloud Run job with retries."""
+        import logging
+
+        for attempt in range(3):
+            try:
+                request = DeleteJobRequest(name=job_name)
+                operation = self._jobs_client.delete_job(request=request)
+                # Don't wait for completion - fire and forget
+                # The operation will complete async, avoiding timeout issues
+                return
+            except Exception as e:
+                if attempt == 2:
+                    logging.warning(f"Failed to delete job {job_name} after 3 attempts: {e}")
+                else:
+                    time.sleep(1)  # Brief pause before retry
 
     @classmethod
     def _get_inputs_lock(cls, inputs_key: str) -> threading.Lock:
