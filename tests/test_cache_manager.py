@@ -102,8 +102,8 @@ class TestLRUEvictionOrder:
             bin_b = Path(tmpdir) / "binB.json"
             bin_c = Path(tmpdir) / "binC.json"
 
-            cm.add_entry(bin_a, small)   # oldest
-            cm.add_entry(bin_b, large)   # newer
+            cm.add_entry(bin_a, small)  # oldest
+            cm.add_entry(bin_b, large)  # newer
 
             # Adding bin_c must evict bin_a (oldest), NOT bin_a (smallest).
             # Under the old smallest-first policy, bin_a would also have been
@@ -112,8 +112,8 @@ class TestLRUEvictionOrder:
             cm.add_entry(bin_c, small)
 
             assert bin_a not in cm.in_memory_cache  # evicted (oldest)
-            assert bin_b in cm.in_memory_cache       # kept (newer)
-            assert bin_c in cm.in_memory_cache       # just added
+            assert bin_b in cm.in_memory_cache  # kept (newer)
+            assert bin_c in cm.in_memory_cache  # just added
 
     def test_touch_prevents_eviction(self):
         """Accessing a bin via touch() moves it to the back of the LRU queue."""
