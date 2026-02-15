@@ -7,6 +7,7 @@ __pycache__
 *.ipyc
 .conda
 .venv
+build/
 
 # Mac
 .DS_Store
