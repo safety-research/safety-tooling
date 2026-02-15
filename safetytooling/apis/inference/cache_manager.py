@@ -158,10 +158,19 @@ class FileBasedCacheManager(BaseCacheManager):
         self.in_memory_cache[cache_file] = contents
 
         if self.max_mem_usage_mb is not None:
+            # Remove old size tracking if this bin was already loaded.
+            # Without this, free_space_for can evict the entry we're currently
+            # adding (self-eviction), leaving sizes and in_memory_cache out of
+            # sync and causing a KeyError on the next eviction cycle. It also
+            # prevents double-counting the old size in total_usage_mb.
+            if cache_file in self.sizes:
+                self.total_usage_mb -= self.sizes.pop(cache_file)
+
             size = total_size(contents)
             if self.total_usage_mb + size > self.max_mem_usage_mb:
                 space_available = self.free_space_for(size)
                 if not space_available:
+                    self.in_memory_cache.pop(cache_file, None)
                     return False
             self.sizes[cache_file] = size
             self.total_usage_mb += size
