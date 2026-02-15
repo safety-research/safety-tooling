@@ -1,7 +1,7 @@
 import logging
 import os
 import sys
-from collections import deque
+from collections import OrderedDict, deque
 from itertools import chain
 from pathlib import Path
 from typing import List, Tuple, Union
@@ -137,65 +137,54 @@ class BaseCacheManager:
 
 
 class FileBasedCacheManager(BaseCacheManager):
-    """Original file-based cache manager implementation."""
+    """File-based cache with an LRU-evicted in-memory layer."""
 
     def __init__(self, cache_dir: Path, num_bins: int = 20, max_mem_usage_mb: float = 5_000):
         super().__init__(cache_dir, num_bins)
-        self.in_memory_cache = {}
-        self.sizes = {}  # Track the size of each cache file in memory
-        self.total_usage_mb = 0
+        self.in_memory_cache: OrderedDict[Path, dict] = OrderedDict()
+        self.sizes: dict[Path, float] = {}
+        self.total_usage_mb = 0.0
         self.max_mem_usage_mb = max_mem_usage_mb
 
-    def remove_entry(self, cache_file: Path):
-        self.in_memory_cache.pop(cache_file)
+    def _evict_lru(self):
+        """Evict the least-recently-used bin from memory."""
+        lru_key = next(iter(self.in_memory_cache))
+        del self.in_memory_cache[lru_key]
+        self.total_usage_mb -= self.sizes.pop(lru_key)
+        LOGGER.info(f"Evicted LRU entry {lru_key} from mem cache. Total usage is now {self.total_usage_mb:.1f} MB.")
 
-        if self.max_mem_usage_mb is not None:
-            size = self.sizes.pop(cache_file)
-            self.total_usage_mb -= size
-            LOGGER.info(f"Removed entry from mem cache. Freed {size} MB.")
+    def add_entry(self, cache_file: Path, contents: dict) -> bool:
+        """Add or replace a bin in the in-memory cache, evicting LRU entries if needed.
 
-    def add_entry(self, cache_file: Path, contents: dict):
-        self.in_memory_cache[cache_file] = contents
+        Returns False if the single entry is larger than the entire cache limit.
+        """
+        size_mb = total_size(contents)
 
-        if self.max_mem_usage_mb is not None:
-            # Remove old size tracking if this bin was already loaded.
-            # Without this, free_space_for can evict the entry we're currently
-            # adding (self-eviction), leaving sizes and in_memory_cache out of
-            # sync and causing a KeyError on the next eviction cycle. It also
-            # prevents double-counting the old size in total_usage_mb.
-            if cache_file in self.sizes:
-                self.total_usage_mb -= self.sizes.pop(cache_file)
-
-            size = total_size(contents)
-            if self.total_usage_mb + size > self.max_mem_usage_mb:
-                space_available = self.free_space_for(size)
-                if not space_available:
-                    self.in_memory_cache.pop(cache_file, None)
-                    return False
-            self.sizes[cache_file] = size
-            self.total_usage_mb += size
-
-    def free_space_for(self, needed_space_mb: float):
-        if self.max_mem_usage_mb is None:
-            return True
-
-        if needed_space_mb > self.max_mem_usage_mb:
-            LOGGER.warning(
-                f"Needed space {needed_space_mb} MB is greater than max mem usage {self.max_mem_usage_mb} MB. "
-                "This is not possible."
-            )
+        if self.max_mem_usage_mb is not None and size_mb > self.max_mem_usage_mb:
+            LOGGER.warning(f"Entry {cache_file} ({size_mb:.1f} MB) exceeds cache limit ({self.max_mem_usage_mb} MB).")
             return False
-        LOGGER.info(f"Evicting entry from mem cache to free up {needed_space_mb} MB")
-        while self.total_usage_mb > self.max_mem_usage_mb - needed_space_mb:
-            # Find the entry with the smallest size
-            try:
-                smallest_entry = min(self.sizes.items(), key=lambda x: x[1])
-            except ValueError:
-                LOGGER.warning("No entries in mem cache to evict")
-                return True
-            self.remove_entry(smallest_entry[0])
-            LOGGER.info(f"Evicted entry from mem cache. Total usage is now {self.total_usage_mb} MB.")
+
+        # Remove old version first. This prevents self-eviction (the eviction
+        # loop below can only see OTHER bins) and prevents double-counting.
+        if cache_file in self.sizes:
+            del self.in_memory_cache[cache_file]
+            self.total_usage_mb -= self.sizes.pop(cache_file)
+
+        # Evict least-recently-used bins until there's room
+        if self.max_mem_usage_mb is not None:
+            while self.in_memory_cache and self.total_usage_mb + size_mb > self.max_mem_usage_mb:
+                self._evict_lru()
+
+        # Insert at the back (most-recently-used position)
+        self.in_memory_cache[cache_file] = contents
+        self.sizes[cache_file] = size_mb
+        self.total_usage_mb += size_mb
         return True
+
+    def touch(self, cache_file: Path):
+        """Mark a bin as recently used (moves it to the back of the LRU queue)."""
+        if cache_file in self.in_memory_cache:
+            self.in_memory_cache.move_to_end(cache_file)
 
     def get_cache_file(self, prompt: Prompt, params: LLMParams) -> tuple[Path, str]:
         # Use the SHA-1 hash of the prompt for the dictionary key
@@ -220,6 +209,7 @@ class FileBasedCacheManager(BaseCacheManager):
                 self.add_entry(cache_file, contents)
         else:
             contents = self.in_memory_cache[cache_file]
+            self.touch(cache_file)
 
         data = contents.get(prompt_hash, None)
         return None if data is None else LLMCache.model_validate_json(data)
