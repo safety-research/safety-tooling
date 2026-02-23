@@ -20,6 +20,13 @@ VLLM_MODELS = {
     # Add more models and their endpoints as needed
 }
 
+# Separate registries for chat vs completion endpoints.
+# Same model_id can appear in both — the prompt format determines which is used.
+# MessageRole.none prompts → COMPLETION_VLLM_MODELS
+# Normal chat prompts → CHAT_COMPLETION_VLLM_MODELS
+CHAT_COMPLETION_VLLM_MODELS: dict[str, str] = {}
+COMPLETION_VLLM_MODELS: dict[str, str] = {}
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -50,7 +57,7 @@ class VLLMChatModel(InferenceAPIModel):
         }
 
     async def query(self, model_url: str, payload: dict, session: aiohttp.ClientSession, timeout: int = 1000) -> dict:
-        async with session.post(model_url, headers=self.headers, json=payload, timeout=timeout) as response:
+        async with session.post(model_url, headers=self.headers, json=payload, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
             if response.status != 200:
                 error_text = await response.text()
                 if "<!DOCTYPE html>" in str(error_text) and "<title>" in str(error_text):
@@ -115,6 +122,23 @@ class VLLMChatModel(InferenceAPIModel):
 
         return top_logprobs
 
+    def _resolve_model_url(self, model_id: str, is_raw_completion: bool) -> str:
+        """Resolve the endpoint URL for a model_id.
+
+        Priority:
+        1. If raw completion (MessageRole.none): COMPLETION_VLLM_MODELS
+        2. If chat: CHAT_COMPLETION_VLLM_MODELS
+        3. Fallback: VLLM_MODELS (legacy, URL encodes mode)
+        4. Default: self.vllm_base_url
+        """
+        if is_raw_completion:
+            if model_id in COMPLETION_VLLM_MODELS:
+                return COMPLETION_VLLM_MODELS[model_id]
+        else:
+            if model_id in CHAT_COMPLETION_VLLM_MODELS:
+                return CHAT_COMPLETION_VLLM_MODELS[model_id]
+        return VLLM_MODELS.get(model_id, self.vllm_base_url)
+
     async def __call__(
         self,
         model_id: str,
@@ -126,7 +150,15 @@ class VLLMChatModel(InferenceAPIModel):
     ) -> list[LLMResponse]:
         start = time.time()
 
-        model_url = VLLM_MODELS.get(model_id, self.vllm_base_url)
+        # Detect raw completion mode (MessageRole.none)
+        is_raw_completion = prompt.is_none_in_messages()
+        model_url = self._resolve_model_url(model_id, is_raw_completion)
+
+        # Format messages based on mode
+        if is_raw_completion:
+            messages = [{"role": "none", "content": msg.content} for msg in prompt.messages]
+        else:
+            messages = prompt.together_format()
 
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
@@ -147,7 +179,7 @@ class VLLMChatModel(InferenceAPIModel):
 
                     response_data = await self.run_query(
                         model_url,
-                        prompt.together_format(),
+                        messages,
                         kwargs,
                         continue_final_message=prompt.is_last_message_assistant(),
                     )
@@ -157,7 +189,6 @@ class VLLMChatModel(InferenceAPIModel):
                         LOGGER.error(f"Invalid response format: {response_data}")
                         raise RuntimeError(f"Invalid response format: {response_data}")
 
-                    ### TODO: Kinda jank, find a better solution
                     if "/chat/" not in model_url:
                         if not all(is_valid(choice["text"]) for choice in response_data["choices"]):
                             LOGGER.error(f"Invalid responses according to is_valid {response_data}")
@@ -190,7 +221,7 @@ class VLLMChatModel(InferenceAPIModel):
                 model_id=model_id,
                 completion=(
                     choice["message"]["content"] if "/chat/" in model_url else choice["text"]
-                ),  # TODO: Kinda jank, find a better solution
+                ),
                 stop_reason=choice["finish_reason"],
                 api_duration=api_duration,
                 duration=duration,
