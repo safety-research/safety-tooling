@@ -125,11 +125,10 @@ class VLLMChatModel(InferenceAPIModel):
     def _resolve_model_url(self, model_id: str, is_raw_completion: bool) -> str:
         """Resolve the endpoint URL for a model_id.
 
-        Priority:
-        1. If raw completion (MessageRole.none): COMPLETION_VLLM_MODELS
-        2. If chat: CHAT_COMPLETION_VLLM_MODELS
-        3. Fallback: VLLM_MODELS (legacy, URL encodes mode)
-        4. Default: self.vllm_base_url
+        Lookup order:
+        1. Typed dicts (CHAT_COMPLETION / COMPLETION based on prompt format)
+        2. VLLM_MODELS (legacy, URL encodes mode)
+        3. Default: self.vllm_base_url, swapped to match prompt format
         """
         if is_raw_completion:
             if model_id in COMPLETION_VLLM_MODELS:
@@ -137,7 +136,19 @@ class VLLMChatModel(InferenceAPIModel):
         else:
             if model_id in CHAT_COMPLETION_VLLM_MODELS:
                 return CHAT_COMPLETION_VLLM_MODELS[model_id]
-        return VLLM_MODELS.get(model_id, self.vllm_base_url)
+
+        if model_id in VLLM_MODELS:
+            return VLLM_MODELS[model_id]
+
+        # Fallback: derive from vllm_base_url, swap endpoint to match prompt format
+        url = self.vllm_base_url
+        if is_raw_completion:
+            return url.replace("/v1/chat/completions", "/v1/completions")
+        else:
+            # If URL is already /v1/completions (no /chat/), upgrade to chat
+            if "/v1/completions" in url and "/v1/chat/completions" not in url:
+                return url.replace("/v1/completions", "/v1/chat/completions")
+            return url
 
     async def __call__(
         self,
