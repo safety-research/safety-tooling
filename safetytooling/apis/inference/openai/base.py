@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 from pathlib import Path
 from traceback import format_exc
@@ -69,7 +70,14 @@ class OpenAIModel(InferenceAPIModel):
         if openai_api_key:
             self.aclient = openai.AsyncClient(api_key=openai_api_key, base_url=self.base_url)
         else:
-            self.aclient = openai.AsyncClient(base_url=self.base_url)
+            # openai v1+ requires api_key at construction time — it will raise OpenAIError
+            # if OPENAI_API_KEY is not set, even when only non-OpenAI models are used.
+            # Fall back to a sentinel so the client initialises cleanly; actual OpenAI
+            # calls will fail with a 401 if a real key is not set in the environment.
+            self.aclient = openai.AsyncClient(
+                api_key=os.environ.get("OPENAI_API_KEY", "not-configured"),
+                base_url=self.base_url,
+            )
         self.openai_api_key = openai_api_key
 
         self.token_capacity = dict()

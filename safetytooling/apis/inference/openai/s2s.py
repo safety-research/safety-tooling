@@ -46,7 +46,10 @@ class S2SRateLimiter:
 
 class OpenAIS2SModel(InferenceAPIModel):
     def __init__(self):
-        self.api_key = os.environ["OPENAI_API_KEY"]
+        # Use .get() with a sentinel so the model initialises even when OPENAI_API_KEY
+        # is not set; actual S2S WebSocket connections will fail at call time if no
+        # real key is provided.
+        self.api_key = os.environ.get("OPENAI_API_KEY", "not-configured")
         self.base_url = "wss://api.openai.com/v1/realtime"
         self.model = "gpt-4o-realtime-preview-2024-10-01"
         self.max_size = 10 * 1024 * 1024  # 10MB

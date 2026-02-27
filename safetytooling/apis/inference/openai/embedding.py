@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 import traceback
 
@@ -20,7 +21,9 @@ class OpenAIEmbeddingModel:
         self.num_threads = 1
         self.batch_size = batch_size  # Max batch size for embedding endpoint
 
-        self.aclient = openai.AsyncClient()
+        # openai v1+ requires api_key at construction; fall back to sentinel so
+        # the client initialises even when OPENAI_API_KEY is not set in the environment.
+        self.aclient = openai.AsyncClient(api_key=os.environ.get("OPENAI_API_KEY", "not-configured"))
         self.available_requests = asyncio.BoundedSemaphore(self.num_threads)
 
     async def embed(

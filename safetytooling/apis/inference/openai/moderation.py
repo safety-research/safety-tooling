@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 from traceback import format_exc
 from typing import Awaitable
@@ -27,7 +28,9 @@ class OpenAIModerationModel:
         self.num_threads = num_threads
         self._batch_size = 32  # Max batch size for moderation endpoint
 
-        self.aclient = openai.AsyncClient()
+        # openai v1+ requires api_key at construction; fall back to sentinel so
+        # the client initialises even when OPENAI_API_KEY is not set in the environment.
+        self.aclient = openai.AsyncClient(api_key=os.environ.get("OPENAI_API_KEY", "not-configured"))
         self.available_requests = asyncio.BoundedSemaphore(self.num_threads)
 
     async def _single_moderation_request(
