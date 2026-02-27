@@ -151,7 +151,7 @@ class FileBasedCacheManager(BaseCacheManager):
         lru_key = next(iter(self.in_memory_cache))
         del self.in_memory_cache[lru_key]
         self.total_usage_mb -= self.sizes.pop(lru_key)
-        LOGGER.info(f"Evicted LRU entry {lru_key} from mem cache. Total usage is now {self.total_usage_mb:.1f} MB.")
+        LOGGER.debug(f"Evicted LRU entry {lru_key} from mem cache. Total usage is now {self.total_usage_mb:.1f} MB.")
 
     def add_entry(self, cache_file: Path, contents: dict) -> bool:
         """Add or replace a bin in the in-memory cache, evicting LRU entries if needed.
@@ -203,7 +203,7 @@ class FileBasedCacheManager(BaseCacheManager):
             return None
 
         if (cache_file not in self.in_memory_cache) or (prompt_hash not in self.in_memory_cache[cache_file]):
-            LOGGER.info(f"Cache miss, loading from disk: {cache_file=}, {prompt_hash=}, {params}")
+            LOGGER.debug(f"Cache miss, loading from disk: {cache_file=}, {prompt_hash=}, {params}")
             with filelock.FileLock(str(cache_file) + ".lock"):
                 contents = load_json(cache_file)
                 self.add_entry(cache_file, contents)
@@ -270,7 +270,7 @@ class FileBasedCacheManager(BaseCacheManager):
 
             if cached_result is not None:
                 cache_file, _ = self.get_cache_file(prompt=individual_prompt, params=params)
-                LOGGER.info(f"Loaded cache for prompt from {cache_file}")
+                LOGGER.debug(f"Loaded cache for prompt from {cache_file}")
 
                 prop_empty_completions = sum(
                     1 for response in cached_result.responses if response.completion == ""
@@ -332,7 +332,7 @@ class FileBasedCacheManager(BaseCacheManager):
         for i in range(len(responses)):
             responses[i].api_failures = failed_cache_responses[0][i].api_failures + 1
 
-        LOGGER.info(
+        LOGGER.debug(
             f"""Updating previous failures for: \n
                     {prompt} \n
                     with responses: \n
@@ -478,7 +478,7 @@ class RedisCacheManager(BaseCacheManager):
 
             if cached_result is not None:
                 cache_dir, _ = self.get_cache_file(prompt=individual_prompt, params=params)
-                LOGGER.info(f"Loaded cache for prompt from {cache_dir}")
+                LOGGER.debug(f"Loaded cache for prompt from {cache_dir}")
 
                 prop_empty_completions = sum(
                     1 for response in cached_result.responses if response.completion == ""
@@ -535,7 +535,7 @@ class RedisCacheManager(BaseCacheManager):
         for i in range(len(responses)):
             responses[i].api_failures = failed_cache_responses[0][i].api_failures + 1
 
-        LOGGER.info(
+        LOGGER.debug(
             f"""Updating previous failures for: \n
                     {prompt} \n
                     with responses: \n
@@ -596,7 +596,7 @@ def get_cache_manager(
     cache_dir: Path, use_redis: bool = False, num_bins: int = 20, max_mem_usage_mb: float = 5_000
 ) -> BaseCacheManager:
     """Factory function to get the appropriate cache manager based on environment variable."""
-    print(f"{cache_dir=}, {use_redis=}, {num_bins=}")
+    LOGGER.debug(f"{cache_dir=}, {use_redis=}, {num_bins=}")
     if use_redis:
         return RedisCacheManager(cache_dir, num_bins)
     return FileBasedCacheManager(cache_dir, num_bins, max_mem_usage_mb)

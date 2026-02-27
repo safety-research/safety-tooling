@@ -335,7 +335,7 @@ class InferenceAPI:
                 f"Average RPM {avg_rpm} with {self.n_calls} calls made in {total_runtime} minutes is above rate limit of {self.gpt4o_s2s_rpm_cap}! Sleeping for {wait_time} seconds"
             )
             await asyncio.sleep(wait_time)
-        LOGGER.info(f"Average RPM is {avg_rpm} with {self.n_calls} calls made in {total_runtime} minutes")
+        LOGGER.debug(f"Average RPM is {avg_rpm} with {self.n_calls} calls made in {total_runtime} minutes")
 
     def filter_responses(
         self,
@@ -350,7 +350,7 @@ class InferenceAPI:
         num_valid = len(valid_responses)
         success_rate = num_valid / num_candidates
         if success_rate < 1:
-            LOGGER.info(f"`is_valid` success rate: {success_rate * 100:.2f}%")
+            LOGGER.debug(f"`is_valid` success rate: {success_rate * 100:.2f}%")
 
         # return the valid responses, or pad with invalid responses if there aren't enough
         if num_valid < n:
@@ -367,7 +367,7 @@ class InferenceAPI:
                     *valid_responses,
                     *invalid_responses[:invalids_needed],
                 ]
-                LOGGER.info(
+                LOGGER.debug(
                     f"Padded {num_valid} valid responses with {invalids_needed} invalid responses to get {len(responses)} total responses"
                 )
             else:

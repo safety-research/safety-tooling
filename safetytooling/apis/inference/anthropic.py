@@ -485,7 +485,7 @@ class AnthropicModelBatch:
         _ = await self.poll_message_batch(batch_id)
 
         results = self.retrieve_message_batch_results(batch_id)
-        LOGGER.info(f"{results[0]=}")
+        LOGGER.debug(f"{results[0]=}")
 
         responses_dict = {}
         for result in results:
