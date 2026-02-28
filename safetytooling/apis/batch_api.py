@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 from safetytooling.apis.inference.anthropic import ANTHROPIC_MODELS, AnthropicModelBatch
-from safetytooling.apis.inference.cache_manager import get_cache_manager
+from safetytooling.apis.inference.cache_manager import CacheBackend, get_cache_manager
 from safetytooling.apis.inference.openai.batch_api import OpenAIModelBatch
 from safetytooling.apis.inference.openai.utils import GPT_CHAT_MODELS
 from safetytooling.data_models import LLMParams, LLMResponse, Prompt
@@ -52,7 +52,8 @@ class BatchInferenceAPI:
         log_dir: Path | Literal["default"] = "default",
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
-        use_redis: bool = False,
+        cache_backend: CacheBackend = CacheBackend.FILE,
+        use_redis: bool = False,  # deprecated: use cache_backend=CacheBackend.REDIS
         anthropic_api_key: str | None = None,
         openai_api_key: str | None = None,
         no_cache: bool = False,
@@ -66,7 +67,8 @@ class BatchInferenceAPI:
                 Set to "default" to use the default directory.
             cache_dir: Directory to store cache. Set to None to disable.
                 Set to "default" to use the default directory.
-            use_redis: Whether to use Redis for caching.
+            cache_backend: Which cache backend to use (FILE, SQLITE, or REDIS).
+            use_redis: Deprecated. Use cache_backend=CacheBackend.REDIS instead.
             anthropic_api_key: Optional API key for Anthropic. If not provided, will try to load from environment.
             openai_api_key: Optional API key for OpenAI. If not provided, will try to load from environment.
             no_cache: If True, disable caching regardless of other settings.
@@ -93,11 +95,15 @@ class BatchInferenceAPI:
             assert isinstance(cache_dir, Path) or cache_dir is None
             self.cache_dir = cache_dir
 
-        # Check REDIS_CACHE in os.environ
-        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
+        if use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true":
+            self.cache_backend = CacheBackend.REDIS
+        else:
+            self.cache_backend = cache_backend
         self.cache_manager = None
         if self.cache_dir is not None and not self.no_cache:
-            self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis, max_mem_usage_mb=max_mem_usage_mb)
+            self.cache_manager = get_cache_manager(
+                self.cache_dir, self.cache_backend, max_mem_usage_mb=max_mem_usage_mb
+            )
             print(f"{self.cache_manager=}")
 
         self._anthropic_batch = AnthropicModelBatch(anthropic_api_key=anthropic_api_key)
