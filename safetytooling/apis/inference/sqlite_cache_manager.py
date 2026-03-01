@@ -208,7 +208,7 @@ class SQLiteCacheManager(BaseCacheManager):
 
         if version != SCHEMA_VERSION:
             self.stats.stale += 1
-            LOGGER.info(f"Cache stale (schema v{version} != v{SCHEMA_VERSION}) for {prompt_hash}")
+            LOGGER.debug(f"Cache stale (schema v{version} != v{SCHEMA_VERSION}) for {prompt_hash}")
             return None
 
         # Update access metadata
@@ -314,7 +314,7 @@ class SQLiteCacheManager(BaseCacheManager):
             if cached_result is not None and cached_result.responses is not None:
                 responses_list = cached_result.responses
                 db_path, _ = self.get_cache_file(prompt=individual_prompt, params=params)
-                LOGGER.info(f"Loaded cache for prompt from {db_path}")
+                LOGGER.debug(f"Loaded cache for prompt from {db_path}")
 
                 prop_empty_completions = sum(1 for response in responses_list if response.completion == "") / len(
                     responses_list
@@ -369,7 +369,7 @@ class SQLiteCacheManager(BaseCacheManager):
         for i in range(len(responses)):
             responses[i].api_failures = (failed_cache_responses[0][i].api_failures or 0) + 1
 
-        LOGGER.info(f"Updating previous failures for prompt with {len(responses)} responses")
+        LOGGER.debug(f"Updating previous failures for prompt with {len(responses)} responses")
         return responses
 
     def save_cache(self, prompt: Prompt, params: LLMParams, responses: list):
@@ -514,7 +514,7 @@ class SQLiteCacheManager(BaseCacheManager):
     # ──────────────────────────────────────────────
 
     def print_stats(self):
-        LOGGER.info(self.stats.summary())
+        LOGGER.debug(self.stats.summary())
 
     def db_sizes(self) -> dict[str, float]:
         """Return size in MB of each SQLite database in the cache dir."""
