@@ -31,7 +31,7 @@ from safetytooling.utils.tool_utils import make_tools_hashable
 from safetytooling.utils.utils import get_repo_root
 
 from .anthropic import ANTHROPIC_MODELS, AnthropicChatModel
-from .cache_manager import BaseCacheManager, get_cache_manager
+from .cache_manager import BaseCacheManager, CacheBackend, get_cache_manager
 from .gemini.genai import GeminiModel
 from .gemini.vertexai import GeminiVertexAIModel
 from .gray_swan import GRAYSWAN_MODELS, GraySwanChatModel
@@ -82,7 +82,8 @@ class InferenceAPI:
         deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
-        use_redis: bool = False,
+        cache_backend: CacheBackend = CacheBackend.FILE,
+        use_redis: bool = False,  # deprecated: use cache_backend=CacheBackend.REDIS
         empty_completion_threshold: int = 0,
         use_gpu_models: bool = False,
         anthropic_api_key: str | None = None,
@@ -151,9 +152,14 @@ class InferenceAPI:
             self.cache_dir = cache_dir
 
         self.cache_manager: BaseCacheManager | None = None
-        self.use_redis = use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true"
+        if use_redis or os.environ.get("REDIS_CACHE", "false").lower() == "true":
+            self.cache_backend = CacheBackend.REDIS
+        else:
+            self.cache_backend = cache_backend
         if self.cache_dir is not None:
-            self.cache_manager = get_cache_manager(self.cache_dir, self.use_redis, max_mem_usage_mb=max_mem_usage_mb)
+            self.cache_manager = get_cache_manager(
+                self.cache_dir, self.cache_backend, max_mem_usage_mb=max_mem_usage_mb
+            )
             print(f"{self.cache_manager=}")
 
         self._openai_completion = OpenAICompletionModel(

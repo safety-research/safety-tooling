@@ -6,7 +6,7 @@ from pathlib import Path
 import jsonlines
 import numpy as np
 
-from safetytooling.apis import InferenceAPI
+from safetytooling.apis import CacheBackend, InferenceAPI
 from safetytooling.utils import utils
 
 LOGGER = logging.getLogger(__name__)
@@ -21,7 +21,8 @@ class ExperimentConfigBase:
     # If None, defaults to output_dir / "cache"
     enable_cache: bool = True
     cache_dir: Path | None = None
-    use_redis: bool = False
+    cache_backend: CacheBackend = CacheBackend.FILE
+    use_redis: bool = False  # deprecated: use cache_backend=CacheBackend.REDIS
 
     # If None, defaults to output_dir / "prompt-history"
     enable_prompt_history: bool = False
@@ -95,6 +96,7 @@ class ExperimentConfigBase:
                 cache_dir=self.cache_dir,
                 max_mem_usage_mb=self.max_mem_usage_mb,
                 prompt_history_dir=self.prompt_history_dir,
+                cache_backend=self.cache_backend,
                 use_redis=self.use_redis,
                 print_prompt_and_response=self.print_prompt_and_response,
                 use_vllm_if_model_not_found=self.use_vllm_if_model_not_found,

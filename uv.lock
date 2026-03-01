@@ -3188,6 +3188,7 @@ dependencies = [
     { name = "tqdm" },
     { name = "transformers" },
     { name = "wandb" },
+    { name = "zstandard" },
 ]
 
 [package.metadata]
@@ -3232,6 +3233,7 @@ requires-dist = [
     { name = "tqdm", specifier = "==4.67.1" },
     { name = "transformers", specifier = "==4.50.3" },
     { name = "wandb", specifier = "==0.19.9" },
+    { name = "zstandard", specifier = ">=0.23.0" },
 ]
 
 [[package]]
