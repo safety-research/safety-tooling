@@ -31,6 +31,8 @@ OPENROUTER_MODELS = {
     "meta-llama/llama-3.1-405b-instruct",
     "nousresearch/hermes-3-llama-3.1-405b",
     "mistralai/mistral-small-24b-instruct-2501",
+    "moonshotai/kimi-k2.5",
+    "qwen/qwen3-32b",
 }
 
 LOGGER = logging.getLogger(__name__)
