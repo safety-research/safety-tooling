@@ -177,11 +177,130 @@ client = ClaudeCodeClient(
 - **Without this, Claude could take over your entire GCP project** - don't skip this step!
 
 **What this doesn't limit:**
-- Outbound network access (Claude could exfiltrate data to external URLs)
+- Outbound network access (see Egress Firewall below)
 - Anthropic API usage (Claude could use your API key for other purposes)
 
 For the "yolo Claude" use case, the main risks are data exfiltration and API key abuse.
 Containers are ephemeral (destroyed after job), so there's no persistence risk.
+
+## Egress Firewall (Recommended)
+
+By default, containers can make outbound requests to any host. To restrict egress (e.g., only allow `api.anthropic.com` and Google APIs), use VPC Direct Egress with Cloud NGFW firewall rules.
+
+**How it works:** When `vpc_network` is set, all container traffic routes through a VPC where a Cloud NGFW firewall policy controls access by domain name (FQDN rules). This covers both IPv4 and IPv6.
+
+**Usage:**
+
+```python
+client = ClaudeCodeClient(
+    project_id="my-project",
+    gcs_bucket="my-bucket",
+    api_key_secret="anthropic-api-key-USERNAME",
+    service_account="claude-runner@my-project.iam.gserviceaccount.com",
+    vpc_network="my-egress-vpc",       # VPC with NGFW firewall policy
+    vpc_subnet="my-egress-subnet",     # Subnet in the VPC
+    vpc_egress="all-traffic",          # Route all traffic through VPC
+)
+```
+
+**One-time GCP setup:**
+
+1. **VPC + Subnet** (with Private Google Access for Google APIs):
+   ```bash
+   gcloud compute networks create egress-firewall-vpc --subnet-mode=custom
+   gcloud compute networks subnets create egress-firewall-subnet \
+       --network=egress-firewall-vpc --region=us-central1 \
+       --range=10.100.0.0/24 --enable-private-ip-google-access
+   ```
+
+2. **Cloud Router + NAT** (required for internet access from VPC):
+   ```bash
+   gcloud compute routers create egress-firewall-router \
+       --network=egress-firewall-vpc --region=us-central1
+   gcloud compute routers nats create egress-firewall-nat \
+       --router=egress-firewall-router --region=us-central1 \
+       --auto-allocate-nat-external-ips \
+       --endpoint-types=ENDPOINT_TYPE_VM,ENDPOINT_TYPE_MANAGED_PROXY_LB \
+       --nat-all-subnet-ip-ranges
+   ```
+   Note: `ENDPOINT_TYPE_MANAGED_PROXY_LB` is required — Cloud Run Direct VPC Egress uses managed proxy load balancers internally.
+
+3. **Cloud NGFW firewall policy** with FQDN rules:
+   ```bash
+   # Create policy and associate with VPC
+   gcloud compute network-firewall-policies create egress-firewall-policy --global
+   gcloud compute network-firewall-policies associations create \
+       --firewall-policy=egress-firewall-policy --network=egress-firewall-vpc --global-firewall-policy
+
+   # Allow DNS
+   gcloud compute network-firewall-policies rules create 100 \
+       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
+       --dest-ip-ranges=0.0.0.0/0 --layer4-configs=udp:53,tcp:53 --global-firewall-policy
+
+   # Allow metadata server
+   gcloud compute network-firewall-policies rules create 200 \
+       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
+       --dest-ip-ranges=169.254.169.254/32 --layer4-configs=all --global-firewall-policy
+
+   # Allow Google APIs (list each subdomain — wildcards not supported)
+   gcloud compute network-firewall-policies rules create 250 \
+       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
+       --dest-fqdns=storage.googleapis.com,oauth2.googleapis.com,www.googleapis.com,\
+   secretmanager.googleapis.com,accounts.googleapis.com,cloudresourcemanager.googleapis.com,\
+   run.googleapis.com,logging.googleapis.com,gcr.io,iamcredentials.googleapis.com \
+       --layer4-configs=tcp:443 --global-firewall-policy
+
+   # Allow Private Google Access VIPs
+   gcloud compute network-firewall-policies rules create 300 \
+       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
+       --dest-ip-ranges=199.36.153.0/24 --layer4-configs=tcp:443 --global-firewall-policy
+
+   # Allow your API providers
+   gcloud compute network-firewall-policies rules create 400 \
+       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
+       --dest-fqdns=api.anthropic.com,openrouter.ai \
+       --layer4-configs=tcp:443 --global-firewall-policy
+
+   # Allow package managers + GitHub (needed if agents install dependencies)
+   gcloud compute network-firewall-policies rules create 450 \
+       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
+       --dest-fqdns=registry.npmjs.org,pypi.org,files.pythonhosted.org,\
+   crates.io,static.crates.io,proxy.golang.org,sum.golang.org,index.golang.org,\
+   rubygems.org,github.com,raw.githubusercontent.com,objects.githubusercontent.com \
+       --layer4-configs=tcp:443,tcp:80 --global-firewall-policy
+
+   # Deny everything else (IPv4 + IPv6)
+   gcloud compute network-firewall-policies rules create 10000 \
+       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=deny \
+       --dest-ip-ranges=0.0.0.0/0 --layer4-configs=all --global-firewall-policy
+   gcloud compute network-firewall-policies rules create 10001 \
+       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=deny \
+       --dest-ip-ranges=::/0 --layer4-configs=all --global-firewall-policy
+   ```
+
+**Costs:** Cloud NAT charges per VM-hour and per GB processed ([pricing](https://cloud.google.com/nat/pricing)). NGFW Standard charges $0.018/GB on internet-bound traffic evaluated by FQDN rules ([pricing](https://cloud.google.com/firewall/pricing)) — negligible for typical API call workloads but could add up if transferring large files.
+
+**Key facts:**
+- FQDN rules don't support wildcards — must list each Google API subdomain individually
+- IPv6 is fully blocked at the VPC level (deny `::/0`)
+
+**Verifying your setup:**
+
+An integration test is included at `tests/test_vpc_egress.py`. It launches a Cloud Run container with VPC egress enabled and curls several domains from inside:
+
+- Allowed domains (`api.anthropic.com`, `pypi.org`, `registry.npmjs.org`) should return an HTTP response
+- Blocked domains (`example.com`) should time out (HTTP code `000`)
+- IPv6 requests (`curl -6`) should be blocked
+
+```bash
+# Set env vars for your GCP project
+export GCP_PROJECT_ID=my-project GCS_BUCKET=my-bucket
+export API_KEY_SECRET=anthropic-api-key-USERNAME
+export SERVICE_ACCOUNT=claude-runner@my-project.iam.gserviceaccount.com
+export VPC_NETWORK=egress-firewall-vpc VPC_SUBNET=egress-firewall-subnet
+
+pytest tests/test_vpc_egress.py -v --run-integration
+```
 
 ## How It Works
 
@@ -255,6 +374,9 @@ ClaudeCodeClientConfig(
     memory: str = "2Gi",   # Up to 32Gi
     skip_permissions: bool = True,  # --dangerously-skip-permissions
     image: str = DEFAULT_CLAUDE_CODE_IMAGE,  # Pre-built image with Claude Code
+    vpc_network: str = None,       # VPC for egress firewall (see Egress Firewall section)
+    vpc_subnet: str = None,        # Subnet in the VPC (required when vpc_network is set)
+    vpc_egress: str = "all-traffic",  # "all-traffic" or "private-ranges-only"
 )
 ```
 
@@ -333,6 +455,9 @@ CloudRunClientConfig(
     env: dict = {},        # Environment variables
     secrets: dict = {},    # Secret Manager secrets as env vars
     service_account: str = None,  # Restricted service account (see Security Hardening)
+    vpc_network: str = None,       # VPC for egress firewall
+    vpc_subnet: str = None,        # Subnet in the VPC
+    vpc_egress: str = None,        # "all-traffic" or "private-ranges-only"
 )
 ```
 

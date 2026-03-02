@@ -87,6 +87,12 @@ class ClaudeCodeClientConfig:
                         SECURITY: Use a restricted service account to limit container access.
                         See README for setup instructions.
                         Format: "name@project.iam.gserviceaccount.com"
+        vpc_network: VPC network name for Direct VPC Egress. When set with vpc_egress="all-traffic",
+                     all outbound traffic routes through the VPC where Cloud NGFW firewall policies
+                     control access. This covers both IPv4 and IPv6. Requires a Cloud NAT gateway
+                     with ENDPOINT_TYPE_MANAGED_PROXY_LB on the VPC for internet access.
+        vpc_subnet: VPC subnet name (required when vpc_network is set).
+        vpc_egress: VPC egress setting - "all-traffic" or "private-ranges-only" (default: "all-traffic").
     """
 
     project_id: str
@@ -102,6 +108,9 @@ class ClaudeCodeClientConfig:
     image: str = DEFAULT_CLAUDE_CODE_IMAGE
     api_key_secret: str | None = None
     service_account: str | None = None
+    vpc_network: str | None = None
+    vpc_subnet: str | None = None
+    vpc_egress: str = "all-traffic"
 
 
 # Instructions prepended to task when output_instructions=True
@@ -405,6 +414,9 @@ class ClaudeCodeClient:
             env={},
             secrets=secrets,
             service_account=self.config.service_account,
+            vpc_network=self.config.vpc_network,
+            vpc_subnet=self.config.vpc_subnet,
+            vpc_egress=self.config.vpc_egress if self.config.vpc_network else None,
         )
         self._cloud_run = CloudRunClient(cloud_run_config)
 

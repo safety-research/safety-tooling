@@ -102,6 +102,9 @@ class CloudRunClientConfig:
     env: dict[str, str] = field(default_factory=dict)
     secrets: dict[str, str] = field(default_factory=dict)
     service_account: str | None = None
+    vpc_network: str | None = None
+    vpc_subnet: str | None = None
+    vpc_egress: str | None = None  # "all-traffic" or "private-ranges-only"
 
 
 @dataclass(frozen=True)
@@ -496,15 +499,27 @@ exit 0
             if self.config.service_account:
                 job.template.template.service_account = self.config.service_account
 
-            parent = f"projects/{self.config.project_id}/locations/{self.config.region}"
-            request = CreateJobRequest(parent=parent, job=job, job_id=job_id)
+            if self.config.vpc_network:
+                vpc_access = run_v2.VpcAccess(
+                    network_interfaces=[
+                        run_v2.VpcAccess.NetworkInterface(
+                            network=self.config.vpc_network,
+                            subnetwork=self.config.vpc_subnet,
+                        )
+                    ],
+                )
+                if self.config.vpc_egress == "all-traffic":
+                    vpc_access.egress = run_v2.VpcAccess.VpcEgress.ALL_TRAFFIC
+                job.template.template.vpc_access = vpc_access
 
+            parent = f"projects/{self.config.project_id}/locations/{self.config.region}"
+
+            request = CreateJobRequest(parent=parent, job=job, job_id=job_id)
             try:
                 operation = self._jobs_client.create_job(request=request)
                 created_job = operation.result()
                 job_name = created_job.name
             except Exception as e:
-                # Job might already exist (from previous process/session)
                 if "already exists" in str(e).lower():
                     job_name = f"{parent}/jobs/{job_id}"
                 else:
@@ -657,6 +672,9 @@ exit 0
             self.config.memory,
             self.config.service_account or "",
             self.config.gcs_bucket,
+            self.config.vpc_network or "",
+            self.config.vpc_subnet or "",
+            self.config.vpc_egress or "",
         ]
         # Add sorted env vars
         for k, v in sorted(self.config.env.items()):
