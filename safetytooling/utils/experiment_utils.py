@@ -109,7 +109,7 @@ class ExperimentConfigBase:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         # set seed
         random.seed(self.seed)
-        np.random.seed(42)
+        np.random.seed(self.seed)
 
         # Set up logging
         if self.log_to_file:
