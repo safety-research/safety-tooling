@@ -102,6 +102,9 @@ class CloudRunClientConfig:
     env: dict[str, str] = field(default_factory=dict)
     secrets: dict[str, str] = field(default_factory=dict)
     service_account: str | None = None
+    vpc_network: str | None = None
+    vpc_subnet: str | None = None
+    vpc_egress: str | None = None  # "all-traffic" or "private-ranges-only"
 
 
 @dataclass(frozen=True)
@@ -496,15 +499,27 @@ exit 0
             if self.config.service_account:
                 job.template.template.service_account = self.config.service_account
 
-            parent = f"projects/{self.config.project_id}/locations/{self.config.region}"
-            request = CreateJobRequest(parent=parent, job=job, job_id=job_id)
+            if self.config.vpc_network:
+                vpc_access = run_v2.VpcAccess(
+                    network_interfaces=[
+                        run_v2.VpcAccess.NetworkInterface(
+                            network=self.config.vpc_network,
+                            subnetwork=self.config.vpc_subnet,
+                        )
+                    ],
+                )
+                if self.config.vpc_egress == "all-traffic":
+                    vpc_access.egress = run_v2.VpcAccess.VpcEgress.ALL_TRAFFIC
+                job.template.template.vpc_access = vpc_access
 
+            parent = f"projects/{self.config.project_id}/locations/{self.config.region}"
+
+            request = CreateJobRequest(parent=parent, job=job, job_id=job_id)
             try:
                 operation = self._jobs_client.create_job(request=request)
                 created_job = operation.result()
                 job_name = created_job.name
             except Exception as e:
-                # Job might already exist (from previous process/session)
                 if "already exists" in str(e).lower():
                     job_name = f"{parent}/jobs/{job_id}"
                 else:
@@ -512,6 +527,19 @@ exit 0
 
             self._job_cache[config_hash] = job_name
             return job_name
+
+    _GCS_COMMANDS_PREFIX: ClassVar[str] = "cloudrun-commands"
+    _COMMAND_SIZE_LIMIT: ClassVar[int] = 30000  # Leave headroom below 32768 env var limit
+
+    def _upload_command_to_gcs(self, command: str) -> str:
+        """Upload a large command to GCS and return its path."""
+        cmd_hash = hashlib.sha256(command.encode()).hexdigest()[:16]
+        gcs_path = f"{self._GCS_COMMANDS_PREFIX}/{cmd_hash}.sh"
+        bucket = self._storage_client.bucket(self.config.gcs_bucket)
+        blob = bucket.blob(gcs_path)
+        if not blob.exists():
+            blob.upload_from_string(command, content_type="text/plain")
+        return gcs_path
 
     def _run_job_execution(
         self,
@@ -524,7 +552,17 @@ exit 0
         """Run an execution of an existing job with specific inputs/outputs/command.
 
         Uses RunJobRequest.Overrides to pass per-execution environment variables.
+        If the command exceeds the env var size limit, it's uploaded to GCS and
+        a small bootstrap script downloads and evals it.
         """
+        # If command is too large for an env var, stash it in GCS
+        if len(command.encode()) > self._COMMAND_SIZE_LIMIT:
+            gcs_path = self._upload_command_to_gcs(command)
+            command = (
+                f'gcloud storage cp "gs://{self.config.gcs_bucket}/{gcs_path}" /tmp/large_command.sh '
+                f"&& bash /tmp/large_command.sh"
+            )
+
         # Build env var overrides for this execution
         env_overrides = [
             run_v2.EnvVar(name="OUTPUT_GCS_PATH", value=output_gcs_path),
@@ -634,6 +672,9 @@ exit 0
             self.config.memory,
             self.config.service_account or "",
             self.config.gcs_bucket,
+            self.config.vpc_network or "",
+            self.config.vpc_subnet or "",
+            self.config.vpc_egress or "",
         ]
         # Add sorted env vars
         for k, v in sorted(self.config.env.items()):
