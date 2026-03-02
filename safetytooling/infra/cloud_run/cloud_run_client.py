@@ -513,6 +513,19 @@ exit 0
             self._job_cache[config_hash] = job_name
             return job_name
 
+    _GCS_COMMANDS_PREFIX: ClassVar[str] = "cloudrun-commands"
+    _COMMAND_SIZE_LIMIT: ClassVar[int] = 30000  # Leave headroom below 32768 env var limit
+
+    def _upload_command_to_gcs(self, command: str) -> str:
+        """Upload a large command to GCS and return its path."""
+        cmd_hash = hashlib.sha256(command.encode()).hexdigest()[:16]
+        gcs_path = f"{self._GCS_COMMANDS_PREFIX}/{cmd_hash}.sh"
+        bucket = self._storage_client.bucket(self.config.gcs_bucket)
+        blob = bucket.blob(gcs_path)
+        if not blob.exists():
+            blob.upload_from_string(command, content_type="text/plain")
+        return gcs_path
+
     def _run_job_execution(
         self,
         job_name: str,
@@ -524,7 +537,17 @@ exit 0
         """Run an execution of an existing job with specific inputs/outputs/command.
 
         Uses RunJobRequest.Overrides to pass per-execution environment variables.
+        If the command exceeds the env var size limit, it's uploaded to GCS and
+        a small bootstrap script downloads and evals it.
         """
+        # If command is too large for an env var, stash it in GCS
+        if len(command.encode()) > self._COMMAND_SIZE_LIMIT:
+            gcs_path = self._upload_command_to_gcs(command)
+            command = (
+                f'gcloud storage cp "gs://{self.config.gcs_bucket}/{gcs_path}" /tmp/large_command.sh '
+                f"&& bash /tmp/large_command.sh"
+            )
+
         # Build env var overrides for this execution
         env_overrides = [
             run_v2.EnvVar(name="OUTPUT_GCS_PATH", value=output_gcs_path),
