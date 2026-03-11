@@ -324,11 +324,14 @@ def _parse_jsonl(path: Path) -> list[dict] | None:
 def _extract_agent_id(tool_result_text: str) -> str | None:
     """Extract agentId from a Task/Agent tool result text.
 
-    Claude Code appends 'agentId: <hex>' to subagent results.
+    Claude Code appends 'agentId: <hex>' to subagent results,
+    often without a preceding newline (e.g. '...text.agentId: abc123').
     """
-    for line in tool_result_text.split("\n"):
-        if line.startswith("agentId:"):
-            return line.split(":", 1)[1].strip().split()[0]
+    import re
+
+    match = re.search(r"agentId:\s*(\S+)", tool_result_text)
+    if match:
+        return match.group(1)
     return None
 
 
