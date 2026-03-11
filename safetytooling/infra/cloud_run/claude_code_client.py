@@ -313,20 +313,133 @@ exit $CLAUDE_EXIT
     return script
 
 
+def _parse_jsonl(path: Path) -> list[dict] | None:
+    """Parse a JSONL file into a list of dicts. Returns None on failure."""
+    try:
+        return [json.loads(line) for line in path.read_text().strip().split("\n") if line.strip()]
+    except Exception:
+        return None
+
+
+def _extract_agent_id(tool_result_text: str) -> str | None:
+    """Extract agentId from a Task/Agent tool result text.
+
+    Claude Code appends 'agentId: <hex>' to subagent results.
+    """
+    for line in tool_result_text.split("\n"):
+        if line.startswith("agentId:"):
+            return line.split(":", 1)[1].strip().split()[0]
+    return None
+
+
+def _inline_subagent_transcripts(
+    main_transcript: list[dict],
+    subagent_transcripts: dict[str, list[dict]],
+) -> list[dict]:
+    """Inline subagent transcripts into the main transcript.
+
+    For each Task/Agent tool_result, if we can match its agentId to a
+    subagent JSONL, replace the text-only summary with the full trace.
+    """
+    if not subagent_transcripts:
+        return main_transcript
+
+    result = []
+    for entry in main_transcript:
+        message = entry.get("message", {})
+        role = message.get("role", "")
+        content = message.get("content", "")
+
+        if role != "user" or not isinstance(content, list):
+            result.append(entry)
+            continue
+
+        new_content = []
+        modified = False
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                new_content.append(block)
+                continue
+
+            # Extract text from tool_result to find agentId
+            inner = block.get("content", "")
+            full_text = ""
+            if isinstance(inner, list):
+                for ib in inner:
+                    if isinstance(ib, dict) and ib.get("type") == "text":
+                        full_text += ib.get("text", "")
+            elif isinstance(inner, str):
+                full_text = inner
+
+            agent_id = _extract_agent_id(full_text)
+            if not agent_id:
+                new_content.append(block)
+                continue
+
+            # Match against subagent transcripts
+            # Filenames: "agent-ac5c4fde.jsonl" or "agent-acompact-b68394.jsonl"
+            # agentId in text: "ac5c4fde05c86448f" or "acompact-b68394"
+            # The filename stem (minus "agent-" prefix) equals the agentId,
+            # or is a prefix of it
+            matched_key = None
+            for key in subagent_transcripts:
+                stem = key.replace(".jsonl", "")
+                if stem.startswith("agent-"):
+                    stem = stem[len("agent-") :]
+                if agent_id == stem or agent_id.startswith(stem) or stem.startswith(agent_id):
+                    matched_key = key
+                    break
+
+            if matched_key is None:
+                new_content.append(block)
+                continue
+
+            # Inline: keep original text but add subagent_transcript field
+            enriched = dict(block)
+            enriched["subagent_transcript"] = subagent_transcripts[matched_key]
+            new_content.append(enriched)
+            modified = True
+
+        if modified:
+            new_entry = dict(entry)
+            new_entry["message"] = dict(message)
+            new_entry["message"]["content"] = new_content
+            result.append(new_entry)
+        else:
+            result.append(entry)
+
+    return result
+
+
 def _extract_transcript(output_dir: Path) -> list[dict] | None:
-    """Extract conversation transcript from .claude/ directory."""
+    """Extract conversation transcript from .claude/ directory.
+
+    Finds the main session JSONL and any subagent JSONLs, then inlines
+    subagent transcripts into the main transcript at the corresponding
+    Task/Agent tool_result locations.
+    """
     claude_home = output_dir / "claude_home"
     if not claude_home.exists():
         return None
 
-    for jsonl_file in claude_home.rglob("*.jsonl"):
-        try:
-            transcript = [json.loads(line) for line in jsonl_file.read_text().strip().split("\n") if line.strip()]
-            return transcript
-        except Exception:
-            pass
+    # Collect all JSONL files, separating main from subagent
+    main_transcript = None
+    subagent_transcripts: dict[str, list[dict]] = {}
 
-    return None
+    for jsonl_file in claude_home.rglob("*.jsonl"):
+        parsed = _parse_jsonl(jsonl_file)
+        if parsed is None:
+            continue
+
+        if "subagents" in jsonl_file.parts:
+            subagent_transcripts[jsonl_file.name] = parsed
+        elif main_transcript is None:
+            main_transcript = parsed
+
+    if main_transcript is None:
+        return None
+
+    return _inline_subagent_transcripts(main_transcript, subagent_transcripts)
 
 
 def _convert_result(cloud_run_result: CloudRunResult) -> ClaudeCodeResult:
