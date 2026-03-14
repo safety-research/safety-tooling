@@ -10,6 +10,7 @@ class FinetuneConfig:
     n_epochs: int = 1  # Number of epochs to train for
     batch_size: int | str = 16
     dry_run: bool = False  # Just validate the data, don't launch the job
+    seed: int | None = None  # Sets the finetune job seed. Currently only works for OpenAI.
 
     logging_level: str = "info"
 
