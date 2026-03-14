@@ -347,16 +347,16 @@ def main():
 Examples:
   # Generate config for all running pods
   python runpod_ssh_config.py
-  
+
   # Filter by cluster name (for Instant Clusters)
   python runpod_ssh_config.py --cluster-name "My Cluster"
-  
+
   # Specify SSH key
   python runpod_ssh_config.py --identity-file ~/.ssh/id_rsa
-  
+
   # Combine options
   python runpod_ssh_config.py --cluster-name "My Cluster" --identity-file ~/.ssh/id_rsa
-  
+
   # Custom output path
   python runpod_ssh_config.py --output-path ~/my-custom-ssh-config
         """,
