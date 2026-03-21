@@ -52,7 +52,7 @@ class BatchInferenceAPI:
         log_dir: Path | Literal["default"] = "default",
         prompt_history_dir: Path | Literal["default"] | None = "default",
         cache_dir: Path | Literal["default"] | None = "default",
-        cache_backend: CacheBackend = CacheBackend.FILE,
+        cache_backend: CacheBackend = CacheBackend.SQLITE,
         use_redis: bool = False,  # deprecated: use cache_backend=CacheBackend.REDIS
         anthropic_api_key: str | None = None,
         openai_api_key: str | None = None,

@@ -21,6 +21,10 @@ VISION_MODELS = (
     "gpt-5-mini-2025-08-07",
     "gpt-5",
     "gpt-5-2025-08-07",
+    "gpt-5.2",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
     "gpt-4.1-nano",
     "gpt-4.1-nano-2025-04-14",
     "gpt-4.1-mini",
@@ -45,6 +49,10 @@ _GPT_5_MODELS = (
     "gpt-5-mini-2025-08-07",
     "gpt-5",
     "gpt-5-2025-08-07",
+    "gpt-5.2",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
 )
 
 _GPT_4_MODELS = (
@@ -271,6 +279,14 @@ def price_per_token(model_id: str) -> tuple[float, float]:
         "gpt-5-2025-08-07",
     ):
         prices = 1.25, 10
+    elif model_id in ("gpt-5.2",):
+        prices = 1.75, 14
+    elif model_id in ("gpt-5.4",):
+        prices = 2.50, 15
+    elif model_id in ("gpt-5.4-mini",):
+        prices = 0.75, 4.50
+    elif model_id in ("gpt-5.4-nano",):
+        prices = 0.20, 1.25
     elif model_id in (
         "o3-pro",
         "o3-pro-2025-06-10",

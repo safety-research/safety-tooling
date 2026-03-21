@@ -21,7 +21,7 @@ class ExperimentConfigBase:
     # If None, defaults to output_dir / "cache"
     enable_cache: bool = True
     cache_dir: Path | None = None
-    cache_backend: CacheBackend = CacheBackend.FILE
+    cache_backend: CacheBackend = CacheBackend.SQLITE
     use_redis: bool = False  # deprecated: use cache_backend=CacheBackend.REDIS
 
     # If None, defaults to output_dir / "prompt-history"

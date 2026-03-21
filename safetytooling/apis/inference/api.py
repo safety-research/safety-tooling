@@ -82,7 +82,7 @@ class InferenceAPI:
         deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
-        cache_backend: CacheBackend = CacheBackend.FILE,
+        cache_backend: CacheBackend = CacheBackend.SQLITE,
         use_redis: bool = False,  # deprecated: use cache_backend=CacheBackend.REDIS
         empty_completion_threshold: int = 0,
         use_gpu_models: bool = False,
