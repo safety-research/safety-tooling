@@ -1,8 +1,6 @@
 # Cloud Run Module
 
-Run many Claude Code instances in parallel on ephemeral GCP Cloud Run containers. Send files in, get artifacts back.
-
-**Primary use case**: Batch processing with Claude Code - review many PRs, analyze many codebases, run many investigations in parallel without managing infrastructure.
+Run Claude Code instances in parallel on ephemeral GCP Cloud Run containers. Send files in, get transcripts and artifacts back.
 
 ## Quick Start
 
@@ -12,44 +10,176 @@ from safetytooling.infra.cloud_run import ClaudeCodeClient, ClaudeCodeTask
 client = ClaudeCodeClient(
     project_id="my-project",
     gcs_bucket="my-bucket",
-    api_key_secret="anthropic-api-key-USERNAME",  # Your Secret Manager secret name
+    api_key_secret="anthropic-api-key-USERNAME",
+    service_account="claude-runner@my-project.iam.gserviceaccount.com",
 )
 
-# Single task
+# Run a single task
 result = client.run_single(
     task="Review this code for security issues",
     inputs={"repo": "./my_repo"},
 )
-print(result.response)
+print(result.response)       # Claude's stdout
+print(result.transcript)     # Full conversation transcript (list of dicts)
+print(result.output_dir)     # Path to downloaded /workspace/output/ contents
+print(result.success)        # True if no error and exit code 0
 
-# Multiple tasks in parallel
+# Run many tasks in parallel
 tasks = [
-    ClaudeCodeTask(
-        id="haiku",
-        task="Write a haiku about this code",
-        inputs=(("repo", "./my_repo"),),
-        n=5,
-    ),
-    ClaudeCodeTask(
-        id="limerick", 
-        task="Write a limerick about this code",
-        inputs=(("repo", "./my_repo"),),
-        n=5,
-    ),
+    ClaudeCodeTask(id="review-xss", task="Review for XSS", inputs=(("repo", "./my_repo"),), n=10),
+    ClaudeCodeTask(id="review-sqli", task="Review for SQL injection", inputs=(("repo", "./my_repo"),), n=5),
 ]
-results = client.run(tasks)  # Runs 10 jobs, uploads repo only once
+results = client.run(tasks)  # Uploads repo once, runs 15 jobs
 
 for task in tasks:
-    print(f"\n{task.id}:")
     for r in results[task]:
-        print(r.response)
-
-# Stream results as they complete
-for task, run_idx, result in client.run_stream(tasks):
-    print(f"{task.id}[{run_idx}]: {result.response[:50]}...")
+        print(f"{task.id}: {r.response[:80]}")
 ```
 
-## Custom Containers (low-level)
+### Streaming Results
+
+```python
+for task, run_idx, result in client.run_stream(tasks):
+    print(f"{task.id}[{run_idx}]: {result.response[:80]}...")
+    save_to_db(task, run_idx, result)
+```
+
+## Prerequisites
+
+1. **GCP project** with Cloud Run, Cloud Storage, and Secret Manager APIs enabled
+2. **GCS bucket** for file transfer between local machine and containers
+3. **Authentication**: `gcloud auth application-default login`
+4. **Anthropic API key** stored in GCP Secret Manager (see setup below)
+5. **Restricted service account** (see setup below)
+
+### One-Time GCP Setup
+
+```bash
+PROJECT=your-project
+BUCKET=your-bucket
+
+# Store your API key in Secret Manager
+echo -n "sk-ant-api03-YOUR_KEY" | gcloud secrets create anthropic-api-key-USERNAME \
+    --data-file=- --project=$PROJECT
+
+# Create a restricted service account (limits what the container can access)
+gcloud iam service-accounts create claude-runner \
+    --display-name="Claude Code Runner (restricted)" --project=$PROJECT
+SA_EMAIL="claude-runner@${PROJECT}.iam.gserviceaccount.com"
+
+# Grant access to your bucket only
+gsutil iam ch "serviceAccount:${SA_EMAIL}:objectUser" "gs://${BUCKET}"
+
+# Grant access to your API key secret
+gcloud secrets add-iam-policy-binding anthropic-api-key-USERNAME \
+    --project=$PROJECT --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/secretmanager.secretAccessor"
+
+# Grant log writing
+gcloud projects add-iam-policy-binding $PROJECT \
+    --member="serviceAccount:${SA_EMAIL}" --role="roles/logging.logWriter"
+```
+
+To rotate the API key later:
+```bash
+echo -n "NEW_KEY" | gcloud secrets versions add anthropic-api-key-USERNAME \
+    --data-file=- --project=$PROJECT
+```
+
+## API
+
+### ClaudeCodeTask
+
+```python
+ClaudeCodeTask(
+    id="my-task",                        # Unique identifier
+    task="Analyze this repo",            # Prompt for Claude Code
+    inputs=(("repo", "./my_repo"),),     # Files to upload (tuple of pairs for hashability)
+    system_prompt="You are a reviewer",  # Custom system prompt
+    pre_claude_command="git config ...", # Shell command before Claude
+    post_claude_command="cat report.md", # Shell command after Claude
+    root_setup_command="echo ...",       # Shell command as root before dropping to claude user
+    n=5,                                 # Run this task 5 times
+    output_instructions=True,            # Tell Claude about /workspace/input and /workspace/output
+)
+```
+
+### ClaudeCodeClient
+
+Constructor accepts a `ClaudeCodeClientConfig` or individual kwargs (passed through to config):
+
+```python
+client = ClaudeCodeClient(
+    project_id="my-project",              # Or set GCLOUD_PROJECT_ID env var
+    gcs_bucket="my-bucket",               # Or set GCLOUD_GCS_BUCKET env var
+    api_key_secret="anthropic-api-key-USERNAME",  # Secret Manager secret name (required at run time)
+    service_account="claude-runner@...",   # Restricted service account (required at run time)
+    model="claude-opus-4-5-20251101",     # Default model
+    max_turns=100,                         # Max conversation turns
+    timeout=300,                           # Job timeout in seconds
+    cpu="1",                               # vCPUs: 1, 2, 4, or 8
+    memory="2Gi",                          # Up to 32Gi
+    skip_permissions=True,                 # --dangerously-skip-permissions (default: False)
+)
+
+# Three ways to run:
+result = client.run_single(task="...", inputs={...})           # Single task, returns ClaudeCodeResult
+results = client.run(tasks)                                     # Batch, returns dict[Task, list[Result]]
+for task, idx, result in client.run_stream(tasks):              # Streaming, yields as completed
+    ...
+```
+
+Both `run()` and `run_stream()` accept `max_workers` to control parallelism (default: unlimited).
+
+### ClaudeCodeResult
+
+```python
+result.response          # str: Claude's stdout
+result.transcript        # list[dict] | None: Full conversation transcript (see below)
+result.output_dir        # Path: Local dir with /workspace/output contents
+result.returncode        # int: Exit code
+result.duration_seconds  # float: Wall-clock time
+result.success           # bool: No error and returncode == 0
+result.error             # Exception | None
+```
+
+**Transcripts**: The `transcript` field is a list of JSONL entries from Claude Code's `.claude/` session directory. Each entry has a `message` dict with `role` and `content`. When Claude Code spawns subagents (via the Task/Agent tool), the subagent's full transcript is inlined into the parent transcript at the corresponding `tool_result` block as a `subagent_transcript` field. This gives you the complete execution trace in a single structure.
+
+`project_id` and `gcs_bucket` can also be set via `GCLOUD_PROJECT_ID` and `GCLOUD_GCS_BUCKET` env vars instead of passing them explicitly.
+
+## How It Works
+
+```
+Local files ──tar+hash──▶ GCS bucket ──download──▶ Cloud Run container
+                          (cached)                  /workspace/input/
+                                                    Claude Code runs here
+                          GCS bucket ◀──upload────── /workspace/output/
+Download ◀────────────── (auto-deleted)
+```
+
+1. Local inputs are tarred with deterministic timestamps and content-hashed
+2. Identical content is uploaded once (in-memory + GCS deduplication)
+3. Concurrent requests for the same inputs block until the first upload completes
+4. Cloud Run job downloads inputs, runs Claude Code, uploads outputs
+5. Outputs are downloaded locally and the GCS copy is deleted
+
+Running `n=100` with the same inputs tars and uploads only once.
+
+### Workspace Layout (Inside Container)
+
+```
+/workspace/
+├── input/
+│   ├── repo/         ← from inputs=(("repo", Path(...)),)
+│   └── data.json     ← from inputs=(("data.json", Path(...)),)
+└── output/           ← Write results here (retrieved after job completes)
+```
+
+By default (`output_instructions=True`), Claude is told where to find inputs and write outputs.
+
+## Low-Level: CloudRunClient
+
+For running arbitrary commands (not Claude Code) in containers:
 
 ```python
 from safetytooling.infra.cloud_run import CloudRunClient, CloudRunClientConfig, CloudRunTask
@@ -60,577 +190,54 @@ client = CloudRunClient(CloudRunClientConfig(
     image="gcr.io/my-project/my-image:latest",
 ))
 
-# Single command (convenience method)
 result = client.run_single(
     command="cd /workspace/input/repo && python script.py",
-    inputs={"repo": Path("./my_repo"), "data.json": Path("./config.json")},
+    inputs={"repo": Path("./my_repo")},
 )
-
-print(f"Exit code: {result.returncode}")
-print(f"stdout: {result.stdout}")
-print(f"stderr: {result.stderr}")
-print(f"Outputs at: {result.output_dir}")
-
-# Multiple commands in parallel
-tasks = [
-    CloudRunTask(id="task-1", command="python script1.py", inputs=(("repo", "./repo"),), n=10),
-    CloudRunTask(id="task-2", command="python script2.py", inputs=(("repo", "./repo"),), n=5),
-]
-results = client.run(tasks)
+print(result.stdout, result.returncode)
 ```
 
-## Prerequisites
+Same `run()`, `run_stream()`, and `run_single()` interface as `ClaudeCodeClient`.
 
-1. **GCP Project** with Cloud Run, Cloud Storage, and Secret Manager APIs enabled
-2. **GCS Bucket** for file transfer
-3. **Authentication**: `gcloud auth application-default login` or service account
-4. **Anthropic API Key** (for ClaudeCodeClient): Stored in GCP Secret Manager (see below)
+## Egress Firewall (Optional)
 
-## API Key Setup (Required for ClaudeCodeClient)
-
-The Anthropic API key is stored securely in GCP Secret Manager and injected at runtime. This avoids exposing the key in scripts, logs, or job specs.
-
-**One-time setup:**
-
-```bash
-# 1. Enable Secret Manager API
-gcloud services enable secretmanager.googleapis.com --project=YOUR_PROJECT
-
-# 2. Create your secret (use your username for per-user secrets)
-echo -n "sk-ant-api03-YOUR_KEY" | gcloud secrets create anthropic-api-key-USERNAME \
-    --data-file=- \
-    --project=YOUR_PROJECT
-
-# 3. Grant Cloud Run access to read it
-PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT --format='value(projectNumber)')
-gcloud secrets add-iam-policy-binding anthropic-api-key-USERNAME \
-    --project=YOUR_PROJECT \
-    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-    --role="roles/secretmanager.secretAccessor"
-```
-
-**To rotate the key later:**
-
-```bash
-echo -n "NEW_KEY" | gcloud secrets versions add anthropic-api-key-USERNAME \
-    --data-file=- \
-    --project=YOUR_PROJECT
-```
-
-The client uses `version="latest"` so new keys are picked up automatically on the next job.
-
-## Security Hardening (Recommended)
-
-By default, Cloud Run jobs use the project's default compute service account, which often has broad permissions (e.g., `roles/editor`). This means a misbehaving Claude could:
-
-- Access **all** GCS buckets in the project
-- Read/write other GCP services
-- Make outbound network requests anywhere
-
-**Recommendation**: Create a dedicated service account with minimal permissions.
-
-**One-time setup:**
-
-```bash
-PROJECT=your-project
-BUCKET=your-bucket
-SECRET=anthropic-api-key-USERNAME
-
-# 1. Create restricted service account
-gcloud iam service-accounts create claude-runner \
-    --display-name="Claude Code Runner (restricted)" \
-    --project=$PROJECT
-
-SA_EMAIL="claude-runner@${PROJECT}.iam.gserviceaccount.com"
-
-# 2. Grant ONLY access to your specific bucket (not all buckets)
-# objectUser = create, get, delete, list objects (no admin capabilities)
-gsutil iam ch "serviceAccount:${SA_EMAIL}:objectUser" "gs://${BUCKET}"
-
-# 3. Grant access to read your API key secret
-gcloud secrets add-iam-policy-binding $SECRET \
-    --project=$PROJECT \
-    --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/secretmanager.secretAccessor"
-
-# 4. Grant permission to write Cloud Run job logs
-gcloud projects add-iam-policy-binding $PROJECT \
-    --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/logging.logWriter"
-```
-
-**Use it in your code:**
+To restrict outbound network access from containers (e.g., only allow `api.anthropic.com` and Google APIs), use VPC Direct Egress with Cloud NGFW firewall rules:
 
 ```python
 client = ClaudeCodeClient(
-    project_id="my-project",
-    gcs_bucket="my-bucket",
-    api_key_secret="anthropic-api-key-USERNAME",
-    service_account="claude-runner@my-project.iam.gserviceaccount.com",  # Restricted!
+    ...,
+    vpc_network="my-egress-vpc",
+    vpc_subnet="my-egress-subnet",
+    vpc_egress="all-traffic",
 )
 ```
 
-**What this limits:**
-- Container can only access `my-bucket`, not other buckets in the project
-- Container can only read the specific API key secret
-- Container cannot access BigQuery, Pub/Sub, other Cloud Run jobs, etc.
-- **Without this, Claude could take over your entire GCP project** - don't skip this step!
+This routes all container traffic through a VPC where FQDN-based firewall rules control which domains are reachable. See `tests/test_vpc_egress.py` for an integration test that verifies the setup.
 
-**What this doesn't limit:**
-- Outbound network access (see Egress Firewall below)
-- Anthropic API usage (Claude could use your API key for other purposes)
-
-For the "yolo Claude" use case, the main risks are data exfiltration and API key abuse.
-Containers are ephemeral (destroyed after job), so there's no persistence risk.
-
-## Egress Firewall (Recommended)
-
-By default, containers can make outbound requests to any host. To restrict egress (e.g., only allow `api.anthropic.com` and Google APIs), use VPC Direct Egress with Cloud NGFW firewall rules.
-
-**How it works:** When `vpc_network` is set, all container traffic routes through a VPC where a Cloud NGFW firewall policy controls access by domain name (FQDN rules). This covers both IPv4 and IPv6.
-
-**Usage:**
-
-```python
-client = ClaudeCodeClient(
-    project_id="my-project",
-    gcs_bucket="my-bucket",
-    api_key_secret="anthropic-api-key-USERNAME",
-    service_account="claude-runner@my-project.iam.gserviceaccount.com",
-    vpc_network="my-egress-vpc",       # VPC with NGFW firewall policy
-    vpc_subnet="my-egress-subnet",     # Subnet in the VPC
-    vpc_egress="all-traffic",          # Route all traffic through VPC
-)
-```
-
-**One-time GCP setup:**
-
-1. **VPC + Subnet** (with Private Google Access for Google APIs):
-   ```bash
-   gcloud compute networks create egress-firewall-vpc --subnet-mode=custom
-   gcloud compute networks subnets create egress-firewall-subnet \
-       --network=egress-firewall-vpc --region=us-central1 \
-       --range=10.100.0.0/24 --enable-private-ip-google-access
-   ```
-
-2. **Cloud Router + NAT** (required for internet access from VPC):
-   ```bash
-   gcloud compute routers create egress-firewall-router \
-       --network=egress-firewall-vpc --region=us-central1
-   gcloud compute routers nats create egress-firewall-nat \
-       --router=egress-firewall-router --region=us-central1 \
-       --auto-allocate-nat-external-ips \
-       --endpoint-types=ENDPOINT_TYPE_VM,ENDPOINT_TYPE_MANAGED_PROXY_LB \
-       --nat-all-subnet-ip-ranges
-   ```
-   Note: `ENDPOINT_TYPE_MANAGED_PROXY_LB` is required — Cloud Run Direct VPC Egress uses managed proxy load balancers internally.
-
-3. **Cloud NGFW firewall policy** with FQDN rules:
-   ```bash
-   # Create policy and associate with VPC
-   gcloud compute network-firewall-policies create egress-firewall-policy --global
-   gcloud compute network-firewall-policies associations create \
-       --firewall-policy=egress-firewall-policy --network=egress-firewall-vpc --global-firewall-policy
-
-   # Allow DNS
-   gcloud compute network-firewall-policies rules create 100 \
-       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
-       --dest-ip-ranges=0.0.0.0/0 --layer4-configs=udp:53,tcp:53 --global-firewall-policy
-
-   # Allow metadata server
-   gcloud compute network-firewall-policies rules create 200 \
-       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
-       --dest-ip-ranges=169.254.169.254/32 --layer4-configs=all --global-firewall-policy
-
-   # Allow Google APIs (list each subdomain — wildcards not supported)
-   gcloud compute network-firewall-policies rules create 250 \
-       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
-       --dest-fqdns=storage.googleapis.com,oauth2.googleapis.com,www.googleapis.com,\
-   secretmanager.googleapis.com,accounts.googleapis.com,cloudresourcemanager.googleapis.com,\
-   run.googleapis.com,logging.googleapis.com,gcr.io,iamcredentials.googleapis.com \
-       --layer4-configs=tcp:443 --global-firewall-policy
-
-   # Allow Private Google Access VIPs
-   gcloud compute network-firewall-policies rules create 300 \
-       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
-       --dest-ip-ranges=199.36.153.0/24 --layer4-configs=tcp:443 --global-firewall-policy
-
-   # Allow your API providers
-   gcloud compute network-firewall-policies rules create 400 \
-       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
-       --dest-fqdns=api.anthropic.com,openrouter.ai \
-       --layer4-configs=tcp:443 --global-firewall-policy
-
-   # Allow package managers + GitHub (needed if agents install dependencies)
-   gcloud compute network-firewall-policies rules create 450 \
-       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=allow \
-       --dest-fqdns=registry.npmjs.org,pypi.org,files.pythonhosted.org,\
-   crates.io,static.crates.io,proxy.golang.org,sum.golang.org,index.golang.org,\
-   rubygems.org,github.com,raw.githubusercontent.com,objects.githubusercontent.com \
-       --layer4-configs=tcp:443,tcp:80 --global-firewall-policy
-
-   # Deny everything else (IPv4 + IPv6)
-   gcloud compute network-firewall-policies rules create 10000 \
-       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=deny \
-       --dest-ip-ranges=0.0.0.0/0 --layer4-configs=all --global-firewall-policy
-   gcloud compute network-firewall-policies rules create 10001 \
-       --firewall-policy=egress-firewall-policy --direction=EGRESS --action=deny \
-       --dest-ip-ranges=::/0 --layer4-configs=all --global-firewall-policy
-   ```
-
-**Costs:** Cloud NAT charges per VM-hour and per GB processed ([pricing](https://cloud.google.com/nat/pricing)). NGFW Standard charges $0.018/GB on internet-bound traffic evaluated by FQDN rules ([pricing](https://cloud.google.com/firewall/pricing)) — negligible for typical API call workloads but could add up if transferring large files.
-
-**Key facts:**
-- FQDN rules don't support wildcards — must list each Google API subdomain individually
-- IPv6 is fully blocked at the VPC level (deny `::/0`)
-
-**Verifying your setup:**
-
-An integration test is included at `tests/test_vpc_egress.py`. It launches a Cloud Run container with VPC egress enabled and curls several domains from inside:
-
-- Allowed domains (`api.anthropic.com`, `pypi.org`, `registry.npmjs.org`) should return an HTTP response
-- Blocked domains (`example.com`) should time out (HTTP code `000`)
-- IPv6 requests (`curl -6`) should be blocked
+## Testing
 
 ```bash
-# Set env vars for your GCP project
+# Unit tests (no GCP required) - caching, thread-safety, deterministic tarring
+pytest tests/test_cloud_run_caching.py -v
+
+# Integration tests (requires GCP)
 export GCP_PROJECT_ID=my-project GCS_BUCKET=my-bucket
 export API_KEY_SECRET=anthropic-api-key-USERNAME
 export SERVICE_ACCOUNT=claude-runner@my-project.iam.gserviceaccount.com
-export VPC_NETWORK=egress-firewall-vpc VPC_SUBNET=egress-firewall-subnet
-
-pytest tests/test_vpc_egress.py -v --run-integration
-```
-
-## How It Works
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────────────────────┐
-│ Local files │────▶│ GCS bucket  │────▶│ Cloud Run container         │
-│             │     │             │     │                             │
-│ inputs={    │     │ inputs/     │     │  /workspace/input/repo/     │
-│   "repo": / │     │ {hash}.tgz  │     │  /workspace/output/         │
-│ }           │  ▲  │  (cached)   │     │                             │
-└─────────────┘  │  │ outputs/    │◀────│  (Claude Code runs here)    │
-       ▲         │  │ {job}.tgz   │     └─────────────────────────────┘
-       │         │  └─────────────┘
-       │         │
-       │         └── Thread lock: concurrent requests for same
-       │             inputs block until first upload completes,
-       │             then use cached hash
-       └──────────────────┘
-         Download outputs
-```
-
-1. **Tar and hash** local inputs (deterministic tarball)
-2. **Check in-memory cache** - same path in this process? Use cached GCS path
-3. **Check GCS cache** - same content hash? Skip upload
-4. **Thread blocking** - concurrent requests for same inputs wait for first to finish, then use its cached result
-5. **Create Cloud Run Job** that downloads inputs, runs command, uploads outputs
-6. **Download outputs** and return result
-
-This means running `n=100` with the same inputs only tars and uploads once.
-
-## API Reference
-
-### ClaudeCodeTask
-
-```python
-ClaudeCodeTask(
-    id: str,                    # Unique identifier (required)
-    task: str,                  # Prompt/instruction for Claude Code (required)
-    inputs: tuple | None,       # Tuple of (name, path) pairs, e.g. (("repo", "./repo"),)
-    system_prompt: str | None,  # Custom system prompt / constitution
-    pre_claude_command: str | None,   # Shell command before Claude
-    post_claude_command: str | None,  # Shell command after Claude
-    n: int = 1,                 # Number of times to run this task
-    output_instructions: bool = True,  # Prepend instructions about /workspace paths
-)
-```
-
-Note: `inputs` uses tuples (not dicts) so the task is hashable and can be used as a dict key.
-
-When `output_instructions=True` (default), the task is prepended with:
-```
-Write any output files to /workspace/output/ so they can be retrieved after the job completes.
-Input files are available at /workspace/input/.
-```
-
-Set `output_instructions=False` if you're providing your own instructions or don't need file outputs.
-
-### ClaudeCodeClientConfig
-
-```python
-ClaudeCodeClientConfig(
-    project_id: str,       # GCP project ID (required)
-    gcs_bucket: str,       # GCS bucket for file I/O (required)
-    api_key_secret: str,   # Secret Manager secret name (required)
-    service_account: str,  # Restricted service account (required, see Security Hardening)
-    region: str = "us-central1",
-    model: str = "claude-opus-4-5-20251101",
-    max_turns: int = 100,  # Max conversation turns
-    timeout: int = 300,    # Job timeout in seconds (reduced - pre-built image has no setup)
-    cpu: str = "1",        # vCPUs: 1, 2, 4, or 8
-    memory: str = "2Gi",   # Up to 32Gi
-    skip_permissions: bool = True,  # --dangerously-skip-permissions
-    image: str = DEFAULT_CLAUDE_CODE_IMAGE,  # Pre-built image with Claude Code
-    vpc_network: str = None,       # VPC for egress firewall (see Egress Firewall section)
-    vpc_subnet: str = None,        # Subnet in the VPC (required when vpc_network is set)
-    vpc_egress: str = "all-traffic",  # "all-traffic" or "private-ranges-only"
-)
-```
-
-### ClaudeCodeClient.run()
-
-```python
-results = client.run(
-    tasks: list[ClaudeCodeTask],  # List of tasks
-    max_workers: int = None,      # Max parallel jobs (default: unlimited)
-    progress: bool = True,        # Show progress bar (requires tqdm)
-)
-# Returns: dict[ClaudeCodeTask, list[ClaudeCodeResult]]
-```
-
-Note: API key is injected via Secret Manager (configured in `api_key_secret`).
-
-### ClaudeCodeClient.run_stream()
-
-```python
-for task, run_idx, result in client.run_stream(tasks):
-    # Process each result as it completes
-    print(f"{task.id}[{run_idx}]: {result.success}")
-# Yields: tuple[ClaudeCodeTask, int, ClaudeCodeResult]
-```
-
-### ClaudeCodeClient.run_single()
-
-```python
-result = client.run_single(
-    task: str,                        # The prompt for Claude Code
-    inputs: dict[str, Path] = None,   # Files at /workspace/input/
-    system_prompt: str = None,        # Custom system prompt / constitution
-    pre_claude_command: str = None,   # Shell command before Claude
-    post_claude_command: str = None,  # Shell command after Claude
-    output_instructions: bool = True, # Prepend instructions about /workspace paths
-)
-# Returns: ClaudeCodeResult
-```
-
-### ClaudeCodeResult
-
-```python
-result.response          # str: Claude's stdout
-result.transcript        # list[dict]: Parsed conversation from .claude/
-result.output_dir        # Path: Local dir with /workspace/output contents
-result.returncode        # int: Exit code
-result.duration_seconds  # float: Total execution time
-result.success           # bool: True if no error occurred
-result.error             # Exception | None: Error if task failed
-```
-
-### CloudRunTask
-
-```python
-CloudRunTask(
-    id: str,                # Unique identifier (required)
-    command: str,           # Shell command to execute (required)
-    inputs: tuple | None,   # Tuple of (name, path) pairs
-    n: int = 1,             # Number of times to run this task
-    timeout: int | None,    # Override default timeout
-)
-```
-
-### CloudRunClientConfig
-
-```python
-CloudRunClientConfig(
-    project_id: str,       # GCP project ID (required)
-    gcs_bucket: str,       # GCS bucket for file I/O (required)
-    name_prefix: str = "cloudrun",
-    region: str = "us-central1",
-    image: str = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim",
-    cpu: str = "1",        # vCPUs: 1, 2, 4, or 8
-    memory: str = "2Gi",   # Up to 32Gi
-    timeout: int = 600,    # Job timeout in seconds
-    env: dict = {},        # Environment variables
-    secrets: dict = {},    # Secret Manager secrets as env vars
-    service_account: str = None,  # Restricted service account (see Security Hardening)
-    vpc_network: str = None,       # VPC for egress firewall
-    vpc_subnet: str = None,        # Subnet in the VPC
-    vpc_egress: str = None,        # "all-traffic" or "private-ranges-only"
-)
-```
-
-### CloudRunClient.run()
-
-```python
-results = client.run(
-    tasks: list[CloudRunTask],  # List of tasks
-    max_workers: int = None,    # Max parallel jobs (default: unlimited)
-    progress: bool = True,      # Show progress bar (requires tqdm)
-)
-# Returns: dict[CloudRunTask, list[CloudRunResult]]
-```
-
-### CloudRunClient.run_stream()
-
-```python
-for task, run_idx, result in client.run_stream(tasks):
-    # Process each result as it completes
-    print(f"{task.id}[{run_idx}]: {result.success}")
-# Yields: tuple[CloudRunTask, int, CloudRunResult]
-```
-
-### CloudRunClient.run_single()
-
-```python
-result = client.run_single(
-    command: str,                   # Shell command to execute
-    inputs: dict[str, Path] = None, # Files at /workspace/input/
-    timeout: int = None,            # Job timeout (default: from config)
-)
-# Returns: CloudRunResult
-```
-
-### CloudRunResult
-
-```python
-result.stdout            # str: Command stdout
-result.stderr            # str: Command stderr
-result.output_dir        # Path: Local dir with /workspace/output contents
-result.returncode        # int: Exit code
-result.duration_seconds  # float: Total execution time
-result.success           # bool: True if no error and returncode == 0
-result.error             # Exception | None: Error if job failed
-```
-
-## Workspace Layout
-
-Inside the container:
-
-```
-/workspace/              <- Working directory
-├── input/
-│   ├── repo/            <- from inputs=(("repo", Path(...)),)
-│   └── data.json        <- from inputs=(("data.json", Path(...)),)
-└── output/              <- Write results here (retrieved after job completes)
-```
-
-**Important**: Claude doesn't automatically know about these paths. By default, `output_instructions=True` prepends instructions telling Claude to write outputs to `/workspace/output/`. If you set `output_instructions=False`, you need to tell Claude where to write files in your task prompt:
-
-```python
-# With output_instructions=True (default) - Claude is told about paths automatically
-task = ClaudeCodeTask(
-    id="analyze",
-    task="Analyze the code and write a report",  # Will be prepended with path instructions
-    inputs=(("repo", "./my_repo"),),
-)
-
-# With output_instructions=False - you must specify paths yourself
-task = ClaudeCodeTask(
-    id="analyze",
-    task="Analyze /workspace/input/repo and write report to /workspace/output/report.md",
-    inputs=(("repo", "./my_repo"),),
-    output_instructions=False,
-)
-```
-
-## Caching
-
-Two levels of caching minimize redundant work:
-
-1. **In-memory cache**: Same input paths within a process skip re-tarring
-2. **GCS cache**: Same content hash across processes/machines skips re-uploading
-
-Content hashing uses MD5 of the tarball. Tarballs are deterministic (sorted entries, zeroed timestamps) so identical files = identical hash = cache hit.
-
-## GCS Cleanup
-
-Outputs are deleted after download. For inputs, set up a lifecycle policy:
-
-```bash
-cat > lifecycle.json << 'EOF'
-{
-  "rule": [
-    {"action": {"type": "Delete"}, "condition": {"age": 7, "matchesPrefix": ["cloudrun-inputs/"]}}
-  ]
-}
-EOF
-
-gsutil lifecycle set lifecycle.json gs://your-bucket
+pytest tests/test_cloud_run_integration.py -v --run-integration
 ```
 
 ## Cost
 
-Cloud Run Jobs pricing (as of 2024):
-- ~$0.00002400/vCPU-second
-- ~$0.00000250/GiB-second
-
-A typical 2-minute job with 1 vCPU and 2GB RAM costs ~$0.003.
-
-## Testing
-
-The module has two test suites:
-
-### Unit tests (no GCP required)
-
-Test caching, thread-safety, and deterministic tarring locally:
-
-```bash
-pytest tests/test_cloud_run_caching.py -v
-```
-
-These tests verify:
-- **Deterministic tarring**: Same content produces identical hashes
-- **In-memory caching**: Prevents redundant tarring within a session
-- **GCS caching**: Prevents redundant uploads (mocked)
-- **Thread-safety**: Concurrent uploads of same inputs only tar/upload once
-- **Lock correctness**: Verifies locks actually block concurrent access
-
-### Integration tests (requires GCP)
-
-Full end-to-end tests against real Cloud Run:
-
-```bash
-export GCP_PROJECT_ID="your-project"
-export GCS_BUCKET="your-bucket"
-export API_KEY_SECRET="anthropic-api-key-USERNAME"  # Secret Manager secret name
-export SERVICE_ACCOUNT="claude-runner@your-project.iam.gserviceaccount.com"  # Restricted SA
-
-pytest tests/test_cloud_run_integration.py -v --run-integration
-```
-
-**Recommended workflow**: Run unit tests during development, integration tests before merging.
+Cloud Run Jobs: ~$0.003 per 2-minute job (1 vCPU, 2GB RAM).
 
 ## Troubleshooting
 
-**"api_key_secret is required"**: Set `api_key_secret` in your config pointing to a Secret Manager secret.
-
-**"Secret not found"**: Ensure the secret exists and has at least one version:
-```bash
-gcloud secrets versions list YOUR_SECRET_NAME --project=YOUR_PROJECT
-```
-
-**"Permission denied" on secret**: Grant the Cloud Run service account access:
-```bash
-PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT --format='value(projectNumber)')
-gcloud secrets add-iam-policy-binding YOUR_SECRET_NAME \
-    --project=YOUR_PROJECT \
-    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-    --role="roles/secretmanager.secretAccessor"
-```
-
-**"Invalid API key"**: The secret value may be incorrect. Add a new version:
-```bash
-echo -n "sk-ant-api03-CORRECT_KEY" | gcloud secrets versions add YOUR_SECRET_NAME \
-    --data-file=- --project=YOUR_PROJECT
-```
-
-**Job timeout**: Increase `timeout` in config. Default is 600s.
-
-**"quota exceeded"**: Run `gcloud auth application-default set-quota-project PROJECT_ID`.
-
-**View logs**: 
-```bash
-gcloud logging read 'resource.type="cloud_run_job"' --project=PROJECT --limit=50
-```
+| Problem | Fix |
+|---------|-----|
+| `api_key_secret is required` | Set `api_key_secret` pointing to a Secret Manager secret |
+| `Secret not found` | `gcloud secrets versions list SECRET --project=PROJECT` |
+| `Permission denied` on secret | Grant the service account `secretmanager.secretAccessor` |
+| Job timeout | Increase `timeout` in config |
+| Quota exceeded | `gcloud auth application-default set-quota-project PROJECT` |
+| View logs | `gcloud logging read 'resource.type="cloud_run_job"' --project=PROJECT --limit=50` |
