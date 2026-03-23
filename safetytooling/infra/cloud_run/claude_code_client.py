@@ -76,7 +76,8 @@ class ClaudeCodeClientConfig:
         timeout: Job timeout in seconds (default: 300). Pre-built image needs no setup time.
         cpu: vCPUs - 1, 2, 4, or 8 (default: 1)
         memory: Memory limit up to 32Gi (default: 2Gi)
-        skip_permissions: Use --dangerously-skip-permissions (default: True)
+        skip_permissions: Use --dangerously-skip-permissions (default: False)
+        allowed_tools: List of allowed tools when skip_permissions is False (e.g., ["Bash", "Read"])
         image: Container image (default: pre-built claude-code-runner).
                The default image has Claude Code pre-installed, saving ~2 min setup.
                Set to "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim" for stock image.
@@ -104,7 +105,8 @@ class ClaudeCodeClientConfig:
     timeout: int = 300  # Reduced from 600 - no setup time needed with pre-built image
     cpu: str = "1"
     memory: str = "2Gi"
-    skip_permissions: bool = True
+    skip_permissions: bool = False
+    allowed_tools: list[str] | None = None
     image: str = DEFAULT_CLAUDE_CODE_IMAGE
     api_key_secret: str | None = None
     service_account: str | None = None
@@ -133,6 +135,8 @@ class ClaudeCodeTask:
         system_prompt: Optional system prompt / constitution
         pre_claude_command: Shell command to run before Claude Code (e.g., git config, repo setup)
         post_claude_command: Shell command to run after Claude Code
+        root_setup_command: Shell command to run as root before dropping to claude user
+            (e.g., editing /etc/hosts to simulate fake package registries)
         n: Number of times to run this task (default: 1)
         output_instructions: Prepend instructions telling Claude where to write output files (default: True)
     """
@@ -143,6 +147,7 @@ class ClaudeCodeTask:
     system_prompt: str | None = None
     pre_claude_command: str | None = None
     post_claude_command: str | None = None
+    root_setup_command: str | None = None
     n: int = 1
     output_instructions: bool = True
 
@@ -168,6 +173,7 @@ class ClaudeCodeTask:
             system_prompt=self.system_prompt,
             pre_claude_command=self.pre_claude_command,
             post_claude_command=self.post_claude_command,
+            root_setup_command=self.root_setup_command,
             config=config,
         )
         return CloudRunTask(
@@ -206,6 +212,7 @@ def _build_claude_command(
     system_prompt: str | None,
     pre_claude_command: str | None,
     post_claude_command: str | None,
+    root_setup_command: str | None,
     config: ClaudeCodeClientConfig,
 ) -> str:
     """Build the shell script that runs Claude Code inside the container.
@@ -238,6 +245,7 @@ def _build_claude_command(
 
     pre_command_section = pre_claude_command or ""
     post_command_section = post_claude_command or ""
+    root_setup_section = root_setup_command or ""
 
     script = f"""
 set -e
@@ -288,6 +296,13 @@ chmod +x /tmp/post_claude.sh
 # Set permissions
 chown -R claude:claude /workspace
 
+# Run root setup command (e.g., /etc/hosts for simulating fake registries)
+cat > /tmp/root_setup.sh << 'ROOT_SETUP_EOF'
+{root_setup_section}
+ROOT_SETUP_EOF
+chmod +x /tmp/root_setup.sh
+/tmp/root_setup.sh
+
 # Run Claude Code as non-root user
 # Use 'su claude' (not 'su - claude') to preserve environment including ANTHROPIC_API_KEY
 echo "Starting Claude Code..."
@@ -324,11 +339,14 @@ def _parse_jsonl(path: Path) -> list[dict] | None:
 def _extract_agent_id(tool_result_text: str) -> str | None:
     """Extract agentId from a Task/Agent tool result text.
 
-    Claude Code appends 'agentId: <hex>' to subagent results.
+    Claude Code appends 'agentId: <hex>' to subagent results,
+    often without a preceding newline (e.g. '...text.agentId: abc123').
     """
-    for line in tool_result_text.split("\n"):
-        if line.startswith("agentId:"):
-            return line.split(":", 1)[1].strip().split()[0]
+    import re
+
+    match = re.search(r"agentId:\s*(\S+)", tool_result_text)
+    if match:
+        return match.group(1)
     return None
 
 
@@ -635,6 +653,7 @@ class ClaudeCodeClient:
         system_prompt: str | None = None,
         pre_claude_command: str | None = None,
         post_claude_command: str | None = None,
+        root_setup_command: str | None = None,
         output_instructions: bool = True,
     ) -> ClaudeCodeResult:
         """
@@ -646,6 +665,7 @@ class ClaudeCodeClient:
             system_prompt: Optional system prompt / constitution
             pre_claude_command: Shell command to run before Claude Code
             post_claude_command: Shell command to run after Claude Code
+            root_setup_command: Shell command to run as root before dropping to claude user
             output_instructions: Prepend instructions telling Claude where to write output files (default: True)
 
         Returns:
@@ -666,6 +686,7 @@ class ClaudeCodeClient:
             system_prompt=system_prompt,
             pre_claude_command=pre_claude_command,
             post_claude_command=post_claude_command,
+            root_setup_command=root_setup_command,
             output_instructions=output_instructions,
         )
         results = self.run([claude_task], progress=False)
