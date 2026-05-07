@@ -195,6 +195,7 @@ class ClaudeCodeResult:
     returncode: int
     duration_seconds: float
     error: Exception | None = None  # Set if this task failed
+    stderr: str = ""  # Cloud Run stderr
 
     @property
     def success(self) -> bool:
@@ -307,7 +308,12 @@ chmod +x /tmp/root_setup.sh
 # Use 'su claude' (not 'su - claude') to preserve environment including ANTHROPIC_API_KEY
 echo "Starting Claude Code..."
 set +e
-su claude -c 'cd /workspace && /tmp/pre_claude.sh && claude {claude_flags_str} {system_prompt_arg} "$(cat /tmp/task.txt)"; echo $? > /tmp/claude_exitcode.txt; /tmp/post_claude.sh'
+su claude -c 'cd /workspace && /tmp/pre_claude.sh && cat /tmp/task.txt | claude {claude_flags_str} {system_prompt_arg} 2>/tmp/claude_stderr.txt; echo $? > /tmp/claude_exitcode.txt; /tmp/post_claude.sh'
+if [ -f /tmp/claude_stderr.txt ] && [ -s /tmp/claude_stderr.txt ]; then
+    echo "=== Claude Code stderr ==="
+    cat /tmp/claude_stderr.txt
+    echo "=== End stderr ==="
+fi
 CLAUDE_EXIT=$?
 set -e
 
@@ -471,6 +477,7 @@ def _convert_result(cloud_run_result: CloudRunResult) -> ClaudeCodeResult:
         returncode=cloud_run_result.returncode,
         duration_seconds=cloud_run_result.duration_seconds,
         error=cloud_run_result.error,
+        stderr=cloud_run_result.stderr,
     )
 
 
