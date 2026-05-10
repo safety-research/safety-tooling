@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from collections import OrderedDict, deque
+from enum import Enum
 from itertools import chain
 from pathlib import Path
 from typing import List, Tuple, Union
@@ -268,34 +269,31 @@ class FileBasedCacheManager(BaseCacheManager):
         for individual_prompt in prompts:
             cached_result = self.maybe_load_cache(prompt=individual_prompt, params=params)
 
-            if cached_result is not None:
+            if cached_result is not None and cached_result.responses is not None:
+                responses_list = cached_result.responses
                 cache_file, _ = self.get_cache_file(prompt=individual_prompt, params=params)
                 LOGGER.info(f"Loaded cache for prompt from {cache_file}")
 
-                prop_empty_completions = sum(
-                    1 for response in cached_result.responses if response.completion == ""
-                ) / len(cached_result.responses)
+                prop_empty_completions = sum(1 for response in responses_list if response.completion == "") / len(
+                    responses_list
+                )
 
                 if prop_empty_completions > empty_completion_threshold:
-                    if len(cached_result.responses) == 1:
+                    if len(responses_list) == 1:
                         LOGGER.warning("Cache does not contain completion; likely due to recitation")
                     else:
                         LOGGER.warning(
                             f"Proportion of cache responses that contain empty completions ({prop_empty_completions}) is greater than threshold {empty_completion_threshold}. Likely due to recitation"
                         )
-                    failed_cache_response = cached_result.responses
+                    failed_cache_response = responses_list
                     cached_result = None
                     cached_response = None
                 else:
-                    cached_response = (
-                        cached_result.responses
-                    )  # We want a list of LLMResponses if we have n responses in a cache
+                    cached_response = responses_list
                     if insufficient_valids_behaviour != "continue":
-                        assert (
-                            len(cached_result.responses) == n
-                        ), f"cache is inconsistent with n={n}\n{cached_result.responses}"
+                        assert len(responses_list) == n, f"cache is inconsistent with n={n}\n{responses_list}"
                     if print_prompt_and_response:
-                        individual_prompt.pretty_print(cached_result.responses)
+                        individual_prompt.pretty_print(responses_list)
 
                     failed_cache_response = None
             else:
@@ -330,7 +328,7 @@ class FileBasedCacheManager(BaseCacheManager):
             failed_cache_responses[0]
         ), f"There should be the same number of responses and failed_cache_responses! Instead we have {len(responses)} responses and {len(failed_cache_responses)} failed_cache_responses."
         for i in range(len(responses)):
-            responses[i].api_failures = failed_cache_responses[0][i].api_failures + 1
+            responses[i].api_failures = (failed_cache_responses[0][i].api_failures or 0) + 1
 
         LOGGER.info(
             f"""Updating previous failures for: \n
@@ -449,7 +447,7 @@ class RedisCacheManager(BaseCacheManager):
     def maybe_load_cache(self, prompt: Prompt, params: LLMParams):
         cache_dir, prompt_hash = self.get_cache_file(prompt, params)
         key = self._make_key(f"{cache_dir}/{prompt_hash}")
-        data = self.db.get(key)
+        data: bytes | None = self.db.get(key)  # type: ignore[assignment]
         if data is None:
             return None
         return LLMCache.model_validate_json(data.decode("utf-8"))
@@ -476,32 +474,31 @@ class RedisCacheManager(BaseCacheManager):
         for individual_prompt in prompts:
             cached_result = self.maybe_load_cache(prompt=individual_prompt, params=params)
 
-            if cached_result is not None:
+            if cached_result is not None and cached_result.responses is not None:
+                responses_list = cached_result.responses
                 cache_dir, _ = self.get_cache_file(prompt=individual_prompt, params=params)
                 LOGGER.info(f"Loaded cache for prompt from {cache_dir}")
 
-                prop_empty_completions = sum(
-                    1 for response in cached_result.responses if response.completion == ""
-                ) / len(cached_result.responses)
+                prop_empty_completions = sum(1 for response in responses_list if response.completion == "") / len(
+                    responses_list
+                )
 
                 if prop_empty_completions > empty_completion_threshold:
-                    if len(cached_result.responses) == 1:
+                    if len(responses_list) == 1:
                         LOGGER.warning("Cache does not contain completion; likely due to recitation")
                     else:
                         LOGGER.warning(
                             f"Proportion of cache responses that contain empty completions ({prop_empty_completions}) is greater than threshold {empty_completion_threshold}. Likely due to recitation"
                         )
-                    failed_cache_response = cached_result.responses
+                    failed_cache_response = responses_list
                     cached_result = None
                     cached_response = None
                 else:
-                    cached_response = cached_result.responses
+                    cached_response = responses_list
                     if insufficient_valids_behaviour != "continue":
-                        assert (
-                            len(cached_result.responses) == n
-                        ), f"cache is inconsistent with n={n}\n{cached_result.responses}"
+                        assert len(responses_list) == n, f"cache is inconsistent with n={n}\n{responses_list}"
                     if print_prompt_and_response:
-                        individual_prompt.pretty_print(cached_result.responses)
+                        individual_prompt.pretty_print(responses_list)
 
                     failed_cache_response = None
             else:
@@ -533,7 +530,7 @@ class RedisCacheManager(BaseCacheManager):
             failed_cache_responses[0]
         ), f"There should be the same number of responses and failed_cache_responses! Instead we have {len(responses)} responses and {len(failed_cache_responses)} failed_cache_responses."
         for i in range(len(responses)):
-            responses[i].api_failures = failed_cache_responses[0][i].api_failures + 1
+            responses[i].api_failures = (failed_cache_responses[0][i].api_failures or 0) + 1
 
         LOGGER.info(
             f"""Updating previous failures for: \n
@@ -560,7 +557,7 @@ class RedisCacheManager(BaseCacheManager):
     def maybe_load_moderation(self, texts: list[str]):
         _, hash = self.get_moderation_file(texts)
         key = self._make_key(f"moderation/{hash}")
-        data = self.db.get(key)
+        data: bytes | None = self.db.get(key)  # type: ignore[assignment]
         if data is None:
             return None
         return LLMCacheModeration.model_validate_json(data.decode("utf-8"))
@@ -581,7 +578,7 @@ class RedisCacheManager(BaseCacheManager):
     def maybe_load_embeddings(self, params: EmbeddingParams) -> EmbeddingResponseBase64 | None:
         _, hash = self.get_embeddings_file(params)
         key = self._make_key(f"embeddings/{hash}")
-        data = self.db.get(key)
+        data: bytes | None = self.db.get(key)  # type: ignore[assignment]
         if data is None:
             return None
         return EmbeddingResponseBase64.model_validate_json(data.decode("utf-8"))
@@ -592,11 +589,26 @@ class RedisCacheManager(BaseCacheManager):
         self.db.set(key, response.model_dump_json())
 
 
+class CacheBackend(str, Enum):
+    """Cache backend selection."""
+
+    FILE = "file"
+    SQLITE = "sqlite"
+    REDIS = "redis"
+
+
 def get_cache_manager(
-    cache_dir: Path, use_redis: bool = False, num_bins: int = 20, max_mem_usage_mb: float = 5_000
+    cache_dir: Path,
+    backend: CacheBackend = CacheBackend.FILE,
+    num_bins: int = 20,
+    max_mem_usage_mb: float = 5_000,
 ) -> BaseCacheManager:
-    """Factory function to get the appropriate cache manager based on environment variable."""
-    print(f"{cache_dir=}, {use_redis=}, {num_bins=}")
-    if use_redis:
+    """Factory function to get the appropriate cache manager."""
+    print(f"{cache_dir=}, {backend=}")
+    if backend == CacheBackend.REDIS:
         return RedisCacheManager(cache_dir, num_bins)
+    if backend == CacheBackend.SQLITE:
+        from .sqlite_cache_manager import SQLiteCacheManager
+
+        return SQLiteCacheManager(cache_dir)
     return FileBasedCacheManager(cache_dir, num_bins, max_mem_usage_mb)
