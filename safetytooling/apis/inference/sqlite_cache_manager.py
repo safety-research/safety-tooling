@@ -39,7 +39,7 @@ LOGGER = logging.getLogger(__name__)
 
 # Bump this when LLMCache/LLMResponse pydantic schema changes.
 # Old entries with mismatched version are treated as cache misses.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2: model-partitioned files + composite (prompt_hash, params_hash) PK
 
 # zstd compression level (3 is a good speed/ratio tradeoff)
 ZSTD_LEVEL = 3
@@ -90,6 +90,9 @@ def _init_db_sync(db_path: Path) -> None:
     """Initialize the SQLite database schema synchronously.
 
     Called once per database file. Uses WAL mode for concurrent read access.
+    Schema v2: composite (prompt_hash, params_hash) primary key, so the same
+    prompt with different params (seed, temperature, max_tokens, …) coexists
+    as separate rows in the same model-partitioned file.
     """
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -102,7 +105,7 @@ def _init_db_sync(db_path: Path) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS responses (
-                prompt_hash TEXT PRIMARY KEY,
+                prompt_hash TEXT NOT NULL,
                 params_hash TEXT NOT NULL,
                 response_blob BLOB NOT NULL,
                 schema_version INTEGER NOT NULL,
@@ -110,7 +113,8 @@ def _init_db_sync(db_path: Path) -> None:
                 last_accessed REAL NOT NULL,
                 access_count INTEGER DEFAULT 1,
                 cost REAL DEFAULT 0.0,
-                total_tokens INTEGER DEFAULT 0
+                total_tokens INTEGER DEFAULT 0,
+                PRIMARY KEY (prompt_hash, params_hash)
             )
         """
         )
@@ -144,9 +148,29 @@ def _init_db_sync(db_path: Path) -> None:
         conn.close()
 
 
+_FS_UNSAFE = str.maketrans({c: "_" for c in '/\\:*?"<>| \t'})
+
+
+def _slug_for_partition(params: LLMParams) -> str:
+    """Stable filesystem-safe partition key derived from LLMParams.
+
+    Currently partitions on `params.model` only. Other LLMParams fields (n,
+    temperature, max_tokens, seed, tools, …) are NOT part of the partition —
+    they only affect the per-row params_hash used as part of the composite PK.
+
+    This keeps file count bounded (one file per model in the cache_dir).
+    """
+    return params.model.translate(_FS_UNSAFE)
+
+
 def _db_path_for_model(cache_dir: Path, params: LLMParams) -> Path:
-    """Get the SQLite database path for a given model."""
-    return cache_dir / f"{params.model_hash()}.sqlite"
+    """Get the SQLite database path for a given model.
+
+    Filename is `model_{slug}.sqlite` where slug = `params.model` with
+    filesystem-unsafe chars replaced by underscores. The `model_` prefix
+    distinguishes v2 files from legacy v1 hash-named files during migration.
+    """
+    return cache_dir / f"model_{_slug_for_partition(params)}.sqlite"
 
 
 class SQLiteCacheManager(BaseCacheManager):
@@ -193,11 +217,13 @@ class SQLiteCacheManager(BaseCacheManager):
 
     def maybe_load_cache(self, prompt: Prompt, params: LLMParams) -> LLMCache | None:
         db_path, prompt_hash = self.get_cache_file(prompt, params)
+        params_hash = params.model_hash()
         conn = self._get_sync_conn(db_path)
 
         row = conn.execute(
-            "SELECT response_blob, schema_version, cost FROM responses WHERE prompt_hash = ?",
-            (prompt_hash,),
+            "SELECT response_blob, schema_version, cost FROM responses "
+            "WHERE prompt_hash = ? AND params_hash = ?",
+            (prompt_hash, params_hash),
         ).fetchone()
 
         if row is None:
@@ -214,8 +240,9 @@ class SQLiteCacheManager(BaseCacheManager):
         # Update access metadata
         now = time.time()
         conn.execute(
-            "UPDATE responses SET last_accessed = ?, access_count = access_count + 1 WHERE prompt_hash = ?",
-            (now, prompt_hash),
+            "UPDATE responses SET last_accessed = ?, access_count = access_count + 1 "
+            "WHERE prompt_hash = ? AND params_hash = ?",
+            (now, prompt_hash, params_hash),
         )
         conn.commit()
 
@@ -231,12 +258,15 @@ class SQLiteCacheManager(BaseCacheManager):
         """Batch lookup — chunked SQL queries for multiple prompts.
 
         SQLite limits bind variables to 999 per query, so large batches
-        are automatically chunked.
+        are automatically chunked. Rows are scoped to the current params_hash
+        (composite PK part), so two batches with different params don't see
+        each other's cache.
         """
         if not prompts:
             return {}
 
         db_path = _db_path_for_model(self.cache_dir, params)
+        params_hash = params.model_hash()
         conn = self._get_sync_conn(db_path)
 
         hashes = {p.model_hash(): p for p in prompts}
@@ -246,14 +276,15 @@ class SQLiteCacheManager(BaseCacheManager):
         now = time.time()
         found_hashes = []
 
-        # SQLite SQLITE_MAX_VARIABLE_NUMBER is 999 by default
-        chunk_size = 900
+        # SQLite SQLITE_MAX_VARIABLE_NUMBER is 999 by default; leave one slot for params_hash
+        chunk_size = 899
         for i in range(0, len(hash_list), chunk_size):
             chunk = hash_list[i : i + chunk_size]
             placeholders = ",".join("?" * len(chunk))
             rows = conn.execute(
-                f"SELECT prompt_hash, response_blob, schema_version, cost FROM responses WHERE prompt_hash IN ({placeholders})",
-                chunk,
+                f"SELECT prompt_hash, response_blob, schema_version, cost FROM responses "
+                f"WHERE params_hash = ? AND prompt_hash IN ({placeholders})",
+                [params_hash, *chunk],
             ).fetchall()
 
             for prompt_hash, blob, version, cost in rows:
@@ -274,8 +305,9 @@ class SQLiteCacheManager(BaseCacheManager):
             chunk = found_hashes[i : i + chunk_size]
             placeholders = ",".join("?" * len(chunk))
             conn.execute(
-                f"UPDATE responses SET last_accessed = ?, access_count = access_count + 1 WHERE prompt_hash IN ({placeholders})",
-                [now, *chunk],
+                f"UPDATE responses SET last_accessed = ?, access_count = access_count + 1 "
+                f"WHERE params_hash = ? AND prompt_hash IN ({placeholders})",
+                [now, params_hash, *chunk],
             )
         if found_hashes:
             conn.commit()
