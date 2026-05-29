@@ -98,8 +98,8 @@ class LLMResponse(pydantic.BaseModel):
             return StopReason.PROMPT_BLOCKED
         elif v in ["api_error", "error"]:
             return StopReason.API_ERROR
-        elif v in ["tool_use"]:
-            return StopReason.TOOL_USE
+        elif v in ["tool_use", "tool_calls"]:
+            return StopReason.TOOL_USE  # tool_calls is OpenAI/OpenRouter format
         elif v in ["recitation"]:
             return GeminiStopReason.RECITATION
         elif v in ["safety"]:
