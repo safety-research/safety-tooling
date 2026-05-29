@@ -64,6 +64,15 @@ def setup_environment(
         os.environ["ANTHROPIC_API_KEY"] = os.environ[anthropic_tag]
     if openrouter_tag in os.environ:
         os.environ["OPENROUTER_API_KEY"] = os.environ[openrouter_tag]
+
+    # Blank values in .env are loaded as ""; treat any var ending in _API_KEY or HF_TOKEN as unset.
+    _other_secret_env_vars = ("HF_TOKEN",)
+    for key in list(os.environ):
+        if (key.endswith("_API_KEY") or key in _other_secret_env_vars) and (
+            (os.environ[key] or "").strip() == ""
+        ):
+            del os.environ[key]
+
     # warn if we do not have an openai api key
     if "OPENAI_API_KEY" not in os.environ:
         LOGGER.warning("OPENAI_API_KEY not found in environment, OpenAI API will not be available")
