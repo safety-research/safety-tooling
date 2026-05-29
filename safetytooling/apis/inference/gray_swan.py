@@ -23,7 +23,8 @@ class GraySwanChatModel(InferenceAPIModel):
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
-        if api_key is not None:
+        # Use truthy check so empty string (from blank .env line) is treated as unset
+        if api_key:
             try:
                 self.aclient = AsyncGraySwan(api_key=api_key)
             except TypeError as e:

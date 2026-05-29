@@ -62,7 +62,8 @@ class TogetherChatModel(InferenceAPIModel):
     ):
         self.num_threads = num_threads
         self.prompt_history_dir = prompt_history_dir
-        if api_key is not None:
+        # Use truthy check so empty string (from blank .env line) is treated as unset
+        if api_key:
             self.aclient = AsyncTogether(api_key=api_key)
         else:
             self.aclient = None
