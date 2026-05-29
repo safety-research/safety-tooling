@@ -59,7 +59,7 @@ class HuggingFaceModel(InferenceAPIModel):
 
     def count_tokens(self, text, model_name):
         if model_name not in self.tokenizers:
-            self.tokenizers[model_name] = AutoTokenizer.from_pretrained(model_name, use_auth_token=self.token)
+            self.tokenizers[model_name] = AutoTokenizer.from_pretrained(model_name, token=self.token)
         tokenizer = self.tokenizers[model_name]
         return len(tokenizer.tokenize(text))
 
