@@ -117,7 +117,7 @@ class OpenRouterChatModel(InferenceAPIModel):
         text_parts = [part for part in text_parts if part.strip() != ""]
         return "\n\n".join(text_parts) if text_parts else ""
 
-    async def _execute_tool_loop(self, messages, model_id, openai_tools, tools, **kwargs):
+    async def _execute_tool_loop(self, messages, model_id, real_model_id, openai_tools, tools, **kwargs):
         """Handle OpenAI-style tool execution loop and return all generated content."""
         current_messages = messages.copy()
         all_generated_content = []
@@ -125,7 +125,7 @@ class OpenRouterChatModel(InferenceAPIModel):
         while True:
             response_data = await self.aclient.chat.completions.create(
                 messages=current_messages,
-                model=model_id,
+                model=real_model_id,
                 tools=openai_tools,
                 tool_choice="auto",
                 **kwargs,
@@ -256,6 +256,12 @@ class OpenRouterChatModel(InferenceAPIModel):
         if tools:
             openai_tools = convert_tools_to_openai(tools)
 
+        # Remove openrouter/ prefix if it exists
+        if model_id.startswith("openrouter/"):
+            real_model_id = model_id.split("/", 1)[1]
+        else:
+            real_model_id = model_id
+
         start = time.time()
         prompt_file = self.create_prompt_history_file(prompt, model_id, self.prompt_history_dir)
 
@@ -279,12 +285,12 @@ class OpenRouterChatModel(InferenceAPIModel):
                     # Handle tool execution if tools are provided
                     if openai_tools:
                         response_data, generated_content = await self._execute_tool_loop(
-                            prompt.openai_format(), model_id, openai_tools, tools, **kwargs
+                            prompt.openai_format(), model_id, real_model_id, openai_tools, tools, **kwargs
                         )
                     else:
                         response_data = await self.aclient.chat.completions.create(
                             messages=prompt.openai_format(),
-                            model=model_id,
+                            model=real_model_id,
                             **kwargs,
                         )
                         # Convert single response to ChatMessage
@@ -308,7 +314,7 @@ class OpenRouterChatModel(InferenceAPIModel):
                         )
                     ):
                         # sometimes gemini will never return a response
-                        if model_id == "google/gemini-2.0-flash-001":
+                        if real_model_id == "google/gemini-2.0-flash-001":
                             LOGGER.warn(f"Empty response from {model_id} (returning empty response)")
                             return [
                                 LLMResponse(
